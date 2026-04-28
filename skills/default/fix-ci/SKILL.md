@@ -23,9 +23,8 @@ Skip anything listed under **Skipped Failures** — do not attempt to fix them.
 
 ## After All Fixes
 
-1. Stage only the files you changed (never `git add .` or `-A`)
-2. Commit with a clear message referencing what was fixed
-3. Do NOT push — the orchestrator handles that
+1. Commit with a clear message referencing what was fixed
+2. Do NOT push — the orchestrator handles that
 
 ## Guidelines
 
