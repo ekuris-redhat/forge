@@ -120,6 +120,22 @@ class GitOperations:
             )
             raise
 
+    def pull_rebase(self, remote: str = "fork") -> None:
+        """Fetch and rebase the current branch onto its remote counterpart.
+
+        Keeps the local workspace aligned with the remote branch before
+        making any changes, preventing non-fast-forward push failures when
+        another worker or external push has moved the branch tip forward.
+
+        Args:
+            remote: Remote name to pull from (default: 'fork').
+        """
+        branch = self.workspace.branch_name
+        logger.info(f"Syncing with {remote}/{branch} before implementing changes")
+        self._run_git("fetch", remote)
+        self._run_git("rebase", f"{remote}/{branch}")
+        logger.info(f"Rebase onto {remote}/{branch} complete")
+
     def add_fork_remote(self, fork_owner: str, fork_repo: str) -> None:
         """Add the fork as a remote named 'fork'.
 

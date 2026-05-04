@@ -13,9 +13,8 @@ from forge.prompts import load_prompt
 from forge.sandbox import ContainerRunner
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.nodes.code_review import run_post_change_review, sync_pr_description
+from forge.workflow.nodes.workspace_setup import prepare_workspace
 from forge.workflow.utils import set_paused, update_state_timestamp
-from forge.workspace.git_ops import GitOperations
-from forge.workspace.manager import Workspace, WorkspaceManager
 
 logger = logging.getLogger(__name__)
 
@@ -126,33 +125,15 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
     settings = get_settings()
 
     try:
-        # Recreate workspace if lost (same pattern as attempt_ci_fix)
-        if not workspace_path or not Path(workspace_path).exists():
-            logger.info(f"No workspace for {ticket_key} — recreating from fork branch")
-            if not branch_name or not current_repo or not fork_owner or not fork_repo:
-                return update_state_timestamp({
-                    **state,
-                    "last_error": "Cannot recreate workspace: missing branch/repo info",
-                    "current_node": "implement_review",  # preserved so retry resumes here
-                })
-            manager = WorkspaceManager()
-            workspace_obj = manager.create_workspace(
-                repo_name=current_repo, ticket_key=ticket_key
-            )
-            git_tmp = GitOperations(workspace_obj)
-            git_tmp.clone()
-            git_tmp.add_fork_remote(fork_owner, fork_repo)
-            git_tmp.checkout_branch(branch_name, remote="fork")
-            workspace_path = str(workspace_obj.path)
+        try:
+            workspace_path, git = prepare_workspace(state)
             state = {**state, "workspace_path": workspace_path}
-
-        workspace = Workspace(
-            path=Path(workspace_path),
-            repo_name=current_repo,
-            branch_name=branch_name,
-            ticket_key=ticket_key,
-        )
-        git = GitOperations(workspace)
+        except ValueError as e:
+            return update_state_timestamp({
+                **state,
+                "last_error": str(e),
+                "current_node": "implement_review",
+            })
 
         # ── Phase 0: Fetch all PR review comments from GitHub ─────────────────
         _owner, _, _repo = current_repo.partition("/")

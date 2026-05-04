@@ -22,7 +22,6 @@ from forge.workflow.gates import (
 from forge.workflow.nodes import (
     aggregate_epic_status,
     aggregate_feature_status,
-    aggregate_parallel_results,
     attempt_ci_fix,
     complete_tasks,
     create_pull_request,
@@ -377,7 +376,6 @@ def build_feature_graph() -> StateGraph:
     graph.add_node("regenerate_all_tasks", regenerate_all_tasks)
     graph.add_node("update_single_task", update_single_task)
 
-
     # Execution nodes (US6)
     graph.add_node("task_router", route_tasks_by_repo)
     graph.add_node("setup_workspace", setup_workspace)
@@ -589,7 +587,11 @@ def build_feature_graph() -> StateGraph:
     graph.add_conditional_edges(
         "attempt_ci_fix",
         lambda s: s.get("current_node", "wait_for_ci_gate"),
-        {"wait_for_ci_gate": "wait_for_ci_gate", "escalate_blocked": "escalate_blocked", "ci_evaluator": "ci_evaluator"},
+        {
+            "wait_for_ci_gate": "wait_for_ci_gate",
+            "escalate_blocked": "escalate_blocked",
+            "ci_evaluator": "ci_evaluator",
+        },
     )
     graph.add_edge("escalate_blocked", END)
 

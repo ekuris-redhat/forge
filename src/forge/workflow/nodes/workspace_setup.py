@@ -1,15 +1,79 @@
 """Workspace setup node for LangGraph workflow."""
 
 import logging
+from pathlib import Path
 from typing import Any
 
+from forge.config import get_settings
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.utils import update_state_timestamp
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.guardrails import GuardrailsLoader
-from forge.workspace.manager import WorkspaceManager
+from forge.workspace.manager import Workspace, WorkspaceManager
 
 logger = logging.getLogger(__name__)
+
+
+def prepare_workspace(
+    state: WorkflowState,
+    remote: str = "fork",
+) -> tuple[str, GitOperations]:
+    """Return a workspace path and GitOperations aligned with the remote.
+
+    If the workspace recorded in state already exists on disk, the branch is
+    rebased onto the remote so that subsequent pushes cannot be rejected as
+    non-fast-forward. If the workspace is missing it is recreated from the
+    fork branch via a fresh clone.
+
+    This is the single canonical entry point for all implementation nodes
+    (implement_review, attempt_ci_fix, etc.) instead of duplicating
+    workspace-recreation and pull logic in each one.
+
+    Args:
+        state: Current workflow state.
+        remote: Remote name to sync with when the workspace exists (default: 'fork').
+
+    Returns:
+        Tuple of (workspace_path, GitOperations).
+
+    Raises:
+        ValueError: If the workspace cannot be recreated due to missing state.
+        Exception: Any git error encountered during fetch/rebase/clone.
+    """
+    workspace_path = state.get("workspace_path", "")
+    current_repo = state.get("current_repo", "")
+    branch_name = state.get("context", {}).get("branch_name", "")
+    fork_owner = state.get("fork_owner", "")
+    fork_repo = state.get("fork_repo", "")
+    ticket_key = state["ticket_key"]
+
+    if workspace_path and Path(workspace_path).exists():
+        workspace = Workspace(
+            path=Path(workspace_path),
+            repo_name=current_repo,
+            branch_name=branch_name,
+            ticket_key=ticket_key,
+        )
+        git = GitOperations(workspace)
+        git.pull_rebase(remote=remote)
+        return workspace_path, git
+
+    # Workspace is missing — recreate from fork branch.
+    if not branch_name or not current_repo or not fork_owner or not fork_repo:
+        raise ValueError(
+            f"Cannot recreate workspace for {ticket_key}: "
+            "missing branch_name, current_repo, fork_owner, or fork_repo in state"
+        )
+
+    manager = WorkspaceManager(base_dir=get_settings().workspace_base_dir)
+    workspace_obj = manager.create_workspace(repo_name=current_repo, ticket_key=ticket_key)
+    git = GitOperations(workspace_obj)
+    git.clone()
+    git.add_fork_remote(fork_owner, fork_repo)
+    git.checkout_branch(branch_name, remote="fork")
+    logger.info(f"Workspace recreated at {workspace_obj.path} for {ticket_key}")
+    return str(workspace_obj.path), git
+
 
 # Global workspace manager instance
 _workspace_manager: WorkspaceManager | None = None
@@ -19,7 +83,7 @@ def get_workspace_manager() -> WorkspaceManager:
     """Get the global workspace manager."""
     global _workspace_manager
     if _workspace_manager is None:
-        _workspace_manager = WorkspaceManager()
+        _workspace_manager = WorkspaceManager(base_dir=get_settings().workspace_base_dir)
     return _workspace_manager
 
 

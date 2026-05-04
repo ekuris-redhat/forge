@@ -96,6 +96,15 @@ class Settings(BaseSettings):
         default="forge@example.com",
         description="Git user email for commits made by Forge",
     )
+    workspace_base_dir: str | None = Field(
+        default=None,
+        description=(
+            "Base directory for worker workspaces. "
+            "When set, workspaces are created as subdirectories here instead of "
+            "system temp, enabling a shared filesystem across workers. "
+            "Unset (default) uses a per-run system temp directory."
+        ),
+    )
 
     @property
     def known_repos(self) -> list[str]:

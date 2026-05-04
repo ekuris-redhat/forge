@@ -14,6 +14,7 @@ from forge.models.workflow import ForgeLabel
 from forge.prompts import load_prompt
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.nodes.code_review import run_post_change_review, sync_pr_description
+from forge.workflow.nodes.workspace_setup import prepare_workspace
 from forge.workflow.utils import update_state_timestamp
 
 logger = logging.getLogger(__name__)
@@ -242,57 +243,21 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
     attempt = state.get("ci_fix_attempts", 1)
 
     try:
-        from pathlib import Path
-
         from forge.sandbox import ContainerRunner
         from forge.workspace.git_ops import GitOperations
-        from forge.workspace.manager import Workspace, WorkspaceManager
+        from forge.workspace.manager import Workspace
 
-        # If workspace was lost (e.g. restart), recreate it by cloning upstream,
-        # adding the fork as a remote, and checking out the PR branch.
-        # Check both: path missing from state AND path no longer exists on disk.
-        if not workspace_path or not Path(workspace_path).exists():
-            logger.info(
-                f"No workspace for {ticket_key} — recreating from fork branch"
-            )
-            branch_name = state.get("context", {}).get("branch_name", "")
-            current_repo = state.get("current_repo", "")
-
-            if not branch_name or not current_repo or not fork_owner or not fork_repo:
-                logger.error(
-                    f"Cannot recreate workspace for {ticket_key}: missing "
-                    f"branch_name={branch_name!r}, current_repo={current_repo!r}, "
-                    f"fork_owner={fork_owner!r}"
-                )
-                return update_state_timestamp({
-                    **state,
-                    "last_error": "Cannot recreate workspace: missing branch/repo info",
-                    "current_node": "attempt_ci_fix"  # preserved so retry resumes here,
-                })
-
-            manager = WorkspaceManager()
-            workspace_obj = manager.create_workspace(
-                repo_name=current_repo, ticket_key=ticket_key
-            )
-            git_tmp = GitOperations(workspace_obj)
-            git_tmp.clone()
-            git_tmp.add_fork_remote(fork_owner, fork_repo)
-            git_tmp.checkout_branch(branch_name, remote="fork")
-
-            workspace_path = str(workspace_obj.path)
-            logger.info(f"Workspace recreated at {workspace_path}")
-
-            # Persist workspace_path so teardown can clean it up later
-            state = {**state, "workspace_path": workspace_path}
+        workspace_path, _ = prepare_workspace(state)
+        state = {**state, "workspace_path": workspace_path}
 
     except Exception as _setup_err:
-        logger.error(f"Workspace recreation failed for {ticket_key}: {_setup_err}")
+        logger.error(f"Workspace setup failed for {ticket_key}: {_setup_err}")
         from forge.workflow.nodes.error_handler import notify_error
         await notify_error(state, str(_setup_err), "attempt_ci_fix")
         return {
             **state,
             "last_error": str(_setup_err),
-            "current_node": "attempt_ci_fix"  # preserved so retry resumes here,
+            "current_node": "attempt_ci_fix",
         }
 
     try:
