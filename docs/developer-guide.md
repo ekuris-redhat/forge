@@ -566,6 +566,31 @@ LANGFUSE_ENABLED=false
 
 ## 10. Debugging Tools
 
+### Snapshot and restore a workflow checkpoint
+
+Save the full state of a ticket to a file and restore it later — useful for reproducing bugs, testing recovery paths, or resetting after a bad patch:
+
+```bash
+# Save current state (snapshot files go to devtools/snapshots/)
+uv run python devtools/snapshot_checkpoint.py snapshot AISOS-376
+uv run python devtools/snapshot_checkpoint.py snapshot AISOS-376 --label before-ci-fix
+
+# List saved snapshots for a ticket
+uv run python devtools/snapshot_checkpoint.py list AISOS-376
+
+# Preview what a restore would change (dry-run, default)
+uv run python devtools/snapshot_checkpoint.py restore AISOS-376 \
+  devtools/snapshots/AISOS-376_20260505_143201_before-ci-fix.json
+
+# Actually apply the restore
+uv run python devtools/snapshot_checkpoint.py restore AISOS-376 \
+  devtools/snapshots/AISOS-376_20260505_143201_before-ci-fix.json --apply
+```
+
+Snapshot files are saved to `devtools/snapshots/` and are gitignored — they stay local.
+
+---
+
 ### Patch a workflow checkpoint
 
 Directly edit Redis state for a ticket — useful when a workflow gets stuck due to a bug or incorrect state:
