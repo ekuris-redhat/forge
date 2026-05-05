@@ -9,6 +9,8 @@ Everything you need to run Forge locally, test it, observe what it's doing, and 
 1. [Prerequisites](#1-prerequisites)
 2. [Initial Setup](#2-initial-setup)
 3. [Environment Configuration](#3-environment-configuration)
+   - [Per-Project Repo Config (Production)](#️-per-project-repository-configuration-required-in-production)
+   - [Local Dev Fallback Mode](#️-local-development-env-var-fallback-mode)
 4. [Running Services](#4-running-services)
 5. [Running Tests](#5-running-tests)
 6. [Testing with Payloads](#6-testing-with-payloads)
@@ -64,8 +66,6 @@ JIRA_API_TOKEN=your-jira-api-token
 
 # GitHub
 GITHUB_TOKEN=github_pat_your_token
-GITHUB_KNOWN_REPOS=org/repo1,org/repo2   # repos Forge can work on
-GITHUB_DEFAULT_REPO=org/repo1
 
 # LLM — choose one backend
 
@@ -79,6 +79,84 @@ ANTHROPIC_VERTEX_REGION=us-east5
 # Which model to use
 LLM_MODEL=claude-opus-4-5@20251101
 ```
+
+---
+
+### ⚠️ Per-Project Repository Configuration (Required in Production)
+
+> **Forge does not use global `GITHUB_KNOWN_REPOS` / `GITHUB_DEFAULT_REPO` in production.**
+> Repository configuration is set **per Jira project** as project properties.
+> If not configured, Forge will block the workflow and post detailed instructions on the ticket.
+
+Each Jira project that Forge manages needs two properties set by a project admin:
+
+| Property key | Type | Description |
+|---|---|---|
+| `forge.repos` | JSON array of strings | Repos available to this project |
+| `forge.default_repo` | JSON string | Repo to use when no explicit assignment is made |
+
+#### Setting properties via the Jira REST API
+
+```bash
+# Set the available repos for a project
+curl -X PUT \
+  "https://your-org.atlassian.net/rest/api/3/project/MYPROJ/properties/forge.repos" \
+  -H "Content-Type: application/json" \
+  -u "you@example.com:YOUR_API_TOKEN" \
+  -d '["acme/backend", "acme/frontend"]'
+
+# Set the default repo
+curl -X PUT \
+  "https://your-org.atlassian.net/rest/api/3/project/MYPROJ/properties/forge.default_repo" \
+  -H "Content-Type: application/json" \
+  -u "you@example.com:YOUR_API_TOKEN" \
+  -d '"acme/backend"'
+```
+
+#### What happens when a property is missing
+
+Forge posts this comment on the ticket and sets `forge:blocked`:
+
+```
+⚠️ Forge configuration required for project MYPROJ
+
+This ticket cannot be processed because no repository configuration
+has been set for this Jira project.
+
+To fix this, a Jira project admin must set the following project property:
+
+  Key:   forge.repos
+  Value: ["owner/repo-name", "owner/other-repo"]
+
+Optionally, also set:
+
+  Key:   forge.default_repo
+  Value: "owner/repo-name"
+
+Once set, add the label `forge:retry` to this ticket to resume.
+```
+
+---
+
+### 🛠️ Local Development: Env Var Fallback Mode
+
+For local development you may not want to configure Jira project properties for every test project. Set this flag to fall back to env vars instead:
+
+```bash
+# .env — local dev only, do NOT use in production
+FORGE_REQUIRE_PROJECT_CONFIG=false
+GITHUB_KNOWN_REPOS=acme/backend,acme/frontend   # fallback repos when forge.repos not set
+GITHUB_DEFAULT_REPO=acme/backend                  # fallback when forge.default_repo not set
+```
+
+When `FORGE_REQUIRE_PROJECT_CONFIG=false`:
+- Missing `forge.repos` → warns in the log and falls back to `GITHUB_KNOWN_REPOS`
+- Missing `forge.default_repo` → falls back to `GITHUB_DEFAULT_REPO` silently
+- No blocking comment is posted to Jira
+
+> **Default is `true`.** The fallback flag exists only for local dev convenience. Production deployments should always leave it unset (or explicitly `true`) and configure project properties properly.
+
+---
 
 ### For Local Testing (skip webhook validation)
 
@@ -709,4 +787,9 @@ LANGFUSE_ENABLED=false       # disable tracing for speed
 JIRA_WEBHOOK_SECRET=         # skip signature validation
 GITHUB_WEBHOOK_SECRET=       # skip signature validation
 CI_FIX_MAX_RETRIES=1         # fail fast during CI testing
+
+# ⚠️ Dev only — fall back to env vars instead of requiring Jira project properties
+FORGE_REQUIRE_PROJECT_CONFIG=false
+GITHUB_KNOWN_REPOS=acme/backend,acme/frontend
+GITHUB_DEFAULT_REPO=acme/backend
 ```

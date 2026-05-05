@@ -17,6 +17,13 @@ MAX_RETRIES = 5
 INITIAL_BACKOFF_SECONDS = 1.0
 MAX_BACKOFF_SECONDS = 60.0
 
+# Module-level cache for project properties (persists per worker lifetime)
+_project_property_cache: dict[tuple[str, str], Any] = {}
+
+
+class MissingProjectConfig(Exception):
+    """Raised when a required Jira project property is absent or malformed."""
+
 
 class JiraClient:
     """Async client for Jira REST API v3.
@@ -782,6 +789,77 @@ class JiraClient:
             jql=jql,
             fields=["summary", "status", "issuetype"],
         )
+
+    async def get_project_property(self, project_key: str, property_key: str) -> Any | None:
+        """Fetch a Jira project property value.
+
+        Args:
+            project_key: The Jira project key (e.g., "MYPROJ").
+            property_key: The property key (e.g., "forge.repos").
+
+        Returns:
+            The property value, or None if the property is not set (404).
+        """
+        cache_key = (project_key, property_key)
+        if cache_key in _project_property_cache:
+            return _project_property_cache[cache_key]
+
+        client = await self._get_client()
+        response = await client.get(f"/project/{project_key}/properties/{property_key}")
+
+        if response.status_code == 404:
+            return None
+
+        response.raise_for_status()
+        value = response.json()["value"]
+        _project_property_cache[cache_key] = value
+        return value
+
+    async def get_project_repos(self, project_key: str) -> list[str]:
+        """Fetch the forge.repos project property.
+
+        Args:
+            project_key: The Jira project key.
+
+        Returns:
+            List of repo strings in "owner/repo" format.
+
+        Raises:
+            MissingProjectConfig: If the property is absent or malformed.
+        """
+        value = await self.get_project_property(project_key, "forge.repos")
+        if value is None:
+            raise MissingProjectConfig(f"forge.repos not set for project {project_key}")
+        if not isinstance(value, list) or any(
+            not isinstance(r, str) or "/" not in r for r in value
+        ):
+            raise MissingProjectConfig(
+                f"forge.repos for project {project_key} is malformed: {value!r}"
+            )
+        logger.info(f"Project {project_key}: repos from Jira property: {value}")
+        return value
+
+    async def get_project_default_repo(self, project_key: str) -> str:
+        """Fetch the forge.default_repo project property.
+
+        Args:
+            project_key: The Jira project key.
+
+        Returns:
+            Repo string in "owner/repo" format.
+
+        Raises:
+            MissingProjectConfig: If the property is absent or malformed.
+        """
+        value = await self.get_project_property(project_key, "forge.default_repo")
+        if value is None:
+            raise MissingProjectConfig(f"forge.default_repo not set for project {project_key}")
+        if not isinstance(value, str) or "/" not in value:
+            raise MissingProjectConfig(
+                f"forge.default_repo for project {project_key} is malformed: {value!r}"
+            )
+        logger.info(f"Project {project_key}: default repo: {value}")
+        return value
 
     @staticmethod
     def _text_to_adf(text: str) -> dict[str, Any]:

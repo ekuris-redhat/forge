@@ -84,6 +84,15 @@ class Settings(BaseSettings):
         default="",
         description="Comma-separated list of known repositories (owner/repo format) for repo assignment",
     )
+    forge_require_project_config: bool = Field(
+        default=True,
+        description=(
+            "When True (default), forge.repos and forge.default_repo must be set as "
+            "Jira project properties; missing config blocks the workflow. "
+            "Set to False for local development to fall back to GITHUB_KNOWN_REPOS "
+            "and GITHUB_DEFAULT_REPO env vars instead of blocking."
+        ),
+    )
     github_fork_owner: str = Field(
         default="",
         description="GitHub account/org where forks are created (defaults to authenticated user if empty)",

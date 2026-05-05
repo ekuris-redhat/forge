@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 
-from forge.integrations.jira.client import JiraClient
+from forge.integrations.jira.client import JiraClient, MissingProjectConfig
 from forge.models.workflow import ForgeLabel
 
 
@@ -217,3 +217,146 @@ class TestJiraClientADF:
 
         # Should have paragraph with inline marks
         assert adf["content"][0]["type"] == "paragraph"
+
+
+@pytest.fixture
+def jira_client():
+    """Jira client with mocked settings."""
+    with patch("forge.integrations.jira.client.get_settings") as mock_settings:
+        mock_settings.return_value.jira_base_url = "https://test.atlassian.net"
+        mock_settings.return_value.jira_api_token = MagicMock()
+        mock_settings.return_value.jira_api_token.get_secret_value.return_value = "token"
+        mock_settings.return_value.jira_user_email = "test@example.com"
+        yield JiraClient()
+
+
+class TestGetProjectProperty:
+    """Tests for get_project_property method."""
+
+    @pytest.mark.asyncio
+    async def test_returns_value_on_success(self, jira_client):
+        """Returns the property value when the API responds with 200."""
+        import forge.integrations.jira.client as client_module
+        client_module._project_property_cache.clear()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"key": "forge.repos", "value": ["acme/backend"]}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            result = await jira_client.get_project_property("MYPROJ", "forge.repos")
+
+        assert result == ["acme/backend"]
+
+    @pytest.mark.asyncio
+    async def test_returns_cached_value_on_second_call(self, jira_client):
+        """Returns cached value without hitting the API on second call."""
+        import forge.integrations.jira.client as client_module
+        client_module._project_property_cache.clear()
+        client_module._project_property_cache[("MYPROJ", "forge.repos")] = ["cached/repo"]
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_get_client.return_value = mock_http
+
+            result = await jira_client.get_project_property("MYPROJ", "forge.repos")
+
+        mock_http.get.assert_not_called()
+        assert result == ["cached/repo"]
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_404(self, jira_client):
+        """Returns None when the property is not set (404)."""
+        import forge.integrations.jira.client as client_module
+        client_module._project_property_cache.clear()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            result = await jira_client.get_project_property("MYPROJ", "forge.repos")
+
+        assert result is None
+
+
+class TestGetProjectRepos:
+    """Tests for get_project_repos method."""
+
+    @pytest.mark.asyncio
+    async def test_returns_repo_list_on_success(self, jira_client):
+        """Returns list of repos when forge.repos is set correctly."""
+        jira_client.get_project_property = AsyncMock(return_value=["acme/backend", "acme/frontend"])
+
+        result = await jira_client.get_project_repos("MYPROJ")
+
+        assert result == ["acme/backend", "acme/frontend"]
+
+    @pytest.mark.asyncio
+    async def test_raises_on_missing_property(self, jira_client):
+        """Raises MissingProjectConfig when forge.repos is not set."""
+        jira_client.get_project_property = AsyncMock(return_value=None)
+
+        with pytest.raises(MissingProjectConfig, match="forge.repos not set"):
+            await jira_client.get_project_repos("MYPROJ")
+
+    @pytest.mark.asyncio
+    async def test_raises_on_not_a_list(self, jira_client):
+        """Raises MissingProjectConfig when forge.repos is not a list."""
+        jira_client.get_project_property = AsyncMock(return_value="acme/backend")
+
+        with pytest.raises(MissingProjectConfig, match="malformed"):
+            await jira_client.get_project_repos("MYPROJ")
+
+    @pytest.mark.asyncio
+    async def test_raises_on_entry_without_slash(self, jira_client):
+        """Raises MissingProjectConfig when a repo entry lacks owner/repo format."""
+        jira_client.get_project_property = AsyncMock(return_value=["backend-only"])
+
+        with pytest.raises(MissingProjectConfig, match="malformed"):
+            await jira_client.get_project_repos("MYPROJ")
+
+
+class TestGetProjectDefaultRepo:
+    """Tests for get_project_default_repo method."""
+
+    @pytest.mark.asyncio
+    async def test_returns_repo_string_on_success(self, jira_client):
+        """Returns repo string when forge.default_repo is set correctly."""
+        jira_client.get_project_property = AsyncMock(return_value="acme/backend")
+
+        result = await jira_client.get_project_default_repo("MYPROJ")
+
+        assert result == "acme/backend"
+
+    @pytest.mark.asyncio
+    async def test_raises_on_missing_property(self, jira_client):
+        """Raises MissingProjectConfig when forge.default_repo is not set."""
+        jira_client.get_project_property = AsyncMock(return_value=None)
+
+        with pytest.raises(MissingProjectConfig, match="forge.default_repo not set"):
+            await jira_client.get_project_default_repo("MYPROJ")
+
+    @pytest.mark.asyncio
+    async def test_raises_on_not_a_string(self, jira_client):
+        """Raises MissingProjectConfig when forge.default_repo is not a string."""
+        jira_client.get_project_property = AsyncMock(return_value=["acme/backend"])
+
+        with pytest.raises(MissingProjectConfig, match="malformed"):
+            await jira_client.get_project_default_repo("MYPROJ")
+
+    @pytest.mark.asyncio
+    async def test_raises_on_string_without_slash(self, jira_client):
+        """Raises MissingProjectConfig when forge.default_repo lacks owner/repo format."""
+        jira_client.get_project_property = AsyncMock(return_value="backend-only")
+
+        with pytest.raises(MissingProjectConfig, match="malformed"):
+            await jira_client.get_project_default_repo("MYPROJ")

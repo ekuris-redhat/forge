@@ -230,8 +230,6 @@ JIRA_API_TOKEN=your-jira-api-token
 
 # GitHub
 GITHUB_TOKEN=github_pat_your_token
-GITHUB_KNOWN_REPOS=org/repo1,org/repo2
-GITHUB_DEFAULT_REPO=org/repo1
 
 # LLM (choose one)
 ANTHROPIC_API_KEY=sk-ant-your-api-key  # Direct Anthropic API
@@ -245,6 +243,32 @@ LLM_MODEL=claude-opus-4-5@20251101
 # Redis
 REDIS_URL=redis://localhost:6380/0
 ```
+
+### Per-Project Repository Configuration
+
+> **Repository configuration is set per Jira project, not in `.env`.**
+
+Each Jira project Forge manages needs two project properties set by an admin:
+
+```bash
+# Available repos for this project (set once per Jira project via REST API)
+curl -X PUT \
+  "https://your-org.atlassian.net/rest/api/3/project/MYPROJ/properties/forge.repos" \
+  -H "Content-Type: application/json" \
+  -u "you@example.com:YOUR_API_TOKEN" \
+  -d '["org/repo1", "org/repo2"]'
+
+# Default repo when no explicit assignment is made
+curl -X PUT \
+  "https://your-org.atlassian.net/rest/api/3/project/MYPROJ/properties/forge.default_repo" \
+  -H "Content-Type: application/json" \
+  -u "you@example.com:YOUR_API_TOKEN" \
+  -d '"org/repo1"'
+```
+
+If these properties are not set, Forge posts a clear configuration error comment on the ticket and blocks the workflow until they are added.
+
+> **Local development shortcut:** Set `FORGE_REQUIRE_PROJECT_CONFIG=false` in `.env` to fall back to `GITHUB_KNOWN_REPOS` / `GITHUB_DEFAULT_REPO` env vars instead of requiring Jira project properties. See the [Developer Guide](docs/developer-guide.md#️-local-development-env-var-fallback-mode) for details.
 
 See `.env.example` for the complete list of configuration options including:
 - MCP server configuration

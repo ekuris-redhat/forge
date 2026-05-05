@@ -6,7 +6,7 @@ from typing import Any
 
 from forge.config import get_settings
 from forge.integrations.agents import ForgeAgent
-from forge.integrations.jira.client import JiraClient
+from forge.integrations.jira.client import JiraClient, MissingProjectConfig
 from forge.models.workflow import ForgeLabel
 from forge.prompts import load_prompt
 from forge.workflow.feature.state import FeatureState as WorkflowState
@@ -44,8 +44,8 @@ async def generate_tasks(state: WorkflowState) -> WorkflowState:
     logger.info(f"Generating Tasks for {len(epic_keys)} Epics on {ticket_key}")
 
     settings = get_settings()
-    jira = JiraClient(settings)
-    agent = ForgeAgent(settings)
+    jira = JiraClient()
+    agent = ForgeAgent()
 
     all_task_keys: list[str] = []
     tasks_by_repo: dict[str, list[str]] = {}
@@ -131,7 +131,10 @@ async def generate_tasks(state: WorkflowState) -> WorkflowState:
                     repo = epic_repo  # Inherit from Epic
 
                 if not repo or repo == "unknown" or "/" not in repo:
-                    repo = settings.github_default_repo  # Fallback to config
+                    try:
+                        repo = await jira.get_project_default_repo(project_key)
+                    except MissingProjectConfig:
+                        repo = settings.github_default_repo if not settings.forge_require_project_config else ""
 
                 if not repo or "/" not in repo:
                     logger.warning(

@@ -5,13 +5,28 @@ from typing import Any
 
 from forge.config import get_settings
 from forge.integrations.agents import ForgeAgent
-from forge.integrations.jira.client import JiraClient
+from forge.integrations.jira.client import JiraClient, MissingProjectConfig
 from forge.models.workflow import ForgeLabel
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.qa_summary import post_qa_summary_if_needed
 
 logger = logging.getLogger(__name__)
+
+
+def _missing_repo_config_comment(project_key: str) -> str:
+    return (
+        f"⚠️ Forge configuration required for project {project_key}\n\n"
+        "This ticket cannot be processed because no repository configuration "
+        "has been set for this Jira project.\n\n"
+        "To fix this, a Jira project admin must set the following project property:\n\n"
+        "  Key:   forge.repos\n"
+        '  Value: ["owner/repo-name", "owner/other-repo"]\n\n'
+        "Optionally, also set:\n\n"
+        "  Key:   forge.default_repo\n"
+        '  Value: "owner/repo-name"\n\n'
+        "Once set, add the label `forge:retry` to this ticket to resume."
+    )
 
 
 async def decompose_epics(state: WorkflowState) -> WorkflowState:
@@ -60,8 +75,7 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
 
         # Build list of available repos from:
         # 1. Feature ticket labels (repo:owner/repo-name)
-        # 2. Configured known repos (GITHUB_KNOWN_REPOS)
-        settings = get_settings()
+        # 2. forge.repos Jira project property (required)
         feature_labels = await jira.get_labels(ticket_key)
 
         available_repos = set()
@@ -71,9 +85,24 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
             if label.startswith("repo:"):
                 available_repos.add(label[5:])
 
-        # Add known repos from config
-        for repo in settings.known_repos:
-            available_repos.add(repo)
+        # Add repos from Jira project property (required in strict mode)
+        settings = get_settings()
+        try:
+            for repo in await jira.get_project_repos(project_key):
+                available_repos.add(repo)
+        except MissingProjectConfig as e:
+            if settings.forge_require_project_config:
+                logger.error(
+                    f"Project {project_key}: {e} — posting config instructions and blocking"
+                )
+                await jira.add_comment(ticket_key, _missing_repo_config_comment(project_key))
+                await jira.set_workflow_label(ticket_key, ForgeLabel.BLOCKED)
+                return {**state, "last_error": str(e), "current_node": "decompose_epics"}
+            logger.warning(
+                f"Project {project_key}: {e} — falling back to GITHUB_KNOWN_REPOS"
+            )
+            for repo in settings.known_repos:
+                available_repos.add(repo)
 
         available_repos = list(available_repos)
 
