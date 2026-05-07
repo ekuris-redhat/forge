@@ -469,6 +469,34 @@ async def cmd_logs(args: argparse.Namespace) -> int:
         return 1
 
 
+async def cmd_skills_install(args: argparse.Namespace) -> int:
+    """Install a skill from a Git URL or local path."""
+    # Validation: exactly one of --project or --default must be provided
+    if not args.project and not args.default:
+        print(
+            "Error: exactly one of --project or --default must be provided",
+            file=sys.stderr,
+        )
+        return 2
+    if args.project and args.default:
+        print(
+            "Error: --project and --default are mutually exclusive; provide exactly one",
+            file=sys.stderr,
+        )
+        return 2
+    return 0
+
+
+async def cmd_skills_list(_args: argparse.Namespace) -> int:
+    """List installed skills."""
+    return 0
+
+
+async def cmd_skills_update(_args: argparse.Namespace) -> int:
+    """Update installed skills."""
+    return 0
+
+
 async def cmd_health(_args: argparse.Namespace) -> int:
     """Check system health."""
     from forge.orchestrator.checkpointer import get_redis_client
@@ -636,11 +664,86 @@ def main() -> int:
         help="Number of log entries to show (default: 50)",
     )
 
+    # skills subparser group
+    skills_parser = subparsers.add_parser(
+        "skills",
+        help="Manage Forge skills",
+    )
+    skills_subparsers = skills_parser.add_subparsers(
+        dest="skills_command",
+        help="Skills commands",
+    )
+
+    # skills install subcommand
+    skills_install_parser = skills_subparsers.add_parser(
+        "install",
+        help="Install a skill from a Git URL or local path",
+    )
+    skills_install_parser.add_argument(
+        "source",
+        help="Git URL or local path to the skill",
+    )
+    skills_install_parser.add_argument(
+        "--project",
+        metavar="PROJECT_KEY",
+        help=(
+            "Project key to install the skill under (e.g. MYPROJ). "
+            "Exactly one of --project or --default must be provided."
+        ),
+    )
+    skills_install_parser.add_argument(
+        "--default",
+        action="store_true",
+        help=(
+            "Install the skill to skills/default/ (shared across all projects). "
+            "Exactly one of --project or --default must be provided."
+        ),
+    )
+    skills_install_parser.add_argument(
+        "--ref",
+        metavar="REF",
+        help="Git ref (tag, branch, or SHA) to check out",
+    )
+
+    # skills list subcommand
+    skills_subparsers.add_parser(
+        "list",
+        help="List installed skills",
+    )
+
+    # skills update subcommand
+    skills_update_parser = skills_subparsers.add_parser(
+        "update",
+        help="Update installed skills",
+    )
+    skills_update_parser.add_argument(
+        "--project",
+        metavar="PROJECT_KEY",
+        help="Filter updates to skills installed under a specific project key",
+    )
+
     args = parser.parse_args()
     setup_logging(args.verbose)
 
     if args.command is None:
         parser.print_help()
+        return 0
+
+    # Handle skills subcommands
+    if args.command == "skills":
+        skills_handlers = {
+            "install": cmd_skills_install,
+            "list": cmd_skills_list,
+            "update": cmd_skills_update,
+        }
+        skills_cmd = getattr(args, "skills_command", None)
+        if skills_cmd is None:
+            skills_parser.print_help()
+            return 0
+        skills_handler = skills_handlers.get(skills_cmd)
+        if skills_handler:
+            return asyncio.run(skills_handler(args))
+        skills_parser.print_help()
         return 0
 
     # Map commands to async handlers
