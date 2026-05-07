@@ -1,7 +1,7 @@
 """Unit tests for the orchestrator worker."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -341,3 +341,101 @@ class TestEnsureSkillsIntegration:
             await worker._process_workflow(jira_message)
 
         assert received["jira_client"] is fake_client_instance
+
+    @pytest.mark.asyncio
+    async def test_ensure_skills_skipped_gracefully_when_forge_skills_not_set(
+        self, worker: OrchestratorWorker, jira_message: QueueMessage
+    ):
+        """When forge.skills is not configured, ensure_skills returns without error.
+
+        Simulates the real ensure_skills behaviour: get_skills_config returns None
+        (property not set), so the function returns early and the workflow continues.
+        """
+        ensure_skills_called = False
+
+        async def fake_ensure_skills_no_property(project_key, jira_client, _skills_dir) -> None:
+            """Simulate ensure_skills when forge.skills property is absent (returns None)."""
+            nonlocal ensure_skills_called
+            ensure_skills_called = True
+            # Mimic real behaviour: get_skills_config returns None → early return, no error
+            skills_config = await jira_client.get_skills_config(project_key)
+            if skills_config is None:
+                return
+
+        fake_jira = MagicMock()
+        fake_jira.get_skills_config = MagicMock(return_value=None)
+
+        with (
+            patch("forge.orchestrator.worker.ensure_skills", fake_ensure_skills_no_property),
+            patch("forge.orchestrator.worker.JiraClient", return_value=fake_jira),
+            patch.object(worker, "_find_workflow_by_state", return_value=(None, None)),
+            patch.object(worker, "_extract_ticket_type", return_value=MagicMock(value="UNKNOWN")),
+        ):
+            # Should not raise; workflow continues normally after early-return from ensure_skills
+            await worker._process_workflow(jira_message)
+
+        assert ensure_skills_called, (
+            "ensure_skills should be called even when forge.skills is unset"
+        )
+
+    @pytest.mark.asyncio
+    async def test_ensure_skills_called_for_resumed_workflows(
+        self, worker: OrchestratorWorker, jira_message: QueueMessage
+    ):
+        """ensure_skills is triggered for resumed (paused) workflows, not just new ones.
+
+        Verifies that skill synchronisation happens regardless of whether the workflow
+        is being started fresh or resumed from a checkpoint.
+        """
+        ensure_skills_called = False
+
+        async def fake_ensure_skills(*_args, **_kwargs) -> None:
+            nonlocal ensure_skills_called
+            ensure_skills_called = True
+
+        # Simulate a paused, in-progress workflow state stored in the checkpoint.
+        paused_state = MagicMock()
+        paused_state.values = {
+            "ticket_key": "TEST-123",
+            "ticket_type": "Feature",
+            "current_node": "prd_approval_gate",
+            "is_paused": True,
+        }
+
+        # Fake workflow instance returned by the router
+        fake_workflow = MagicMock()
+        fake_workflow.name = "feature_workflow"
+        fake_compiled = MagicMock()
+        fake_compiled.aget_state = AsyncMock(return_value=paused_state)
+        fake_compiled.aupdate_state = AsyncMock(return_value=None)
+        fake_compiled.ainvoke = AsyncMock(
+            return_value={
+                "current_node": "prd_approval_gate",
+                "is_paused": True,
+                "ticket_type": "Feature",
+            }
+        )
+
+        with (
+            patch("forge.orchestrator.worker.ensure_skills", fake_ensure_skills),
+            patch("forge.orchestrator.worker.JiraClient"),
+            patch.object(worker, "_extract_ticket_type", return_value=MagicMock(value="Feature")),
+            patch.object(worker.router, "resolve", return_value=fake_workflow),
+            patch.object(worker, "_get_compiled_workflow", return_value=fake_compiled),
+            patch.object(
+                worker,
+                "_handle_resume_event",
+                return_value={
+                    "ticket_key": "TEST-123",
+                    "current_node": "prd_approval_gate",
+                    "is_paused": False,
+                    "is_blocked": False,
+                    "ticket_type": "Feature",
+                },
+            ),
+        ):
+            await worker._process_workflow(jira_message)
+
+        assert ensure_skills_called, (
+            "ensure_skills must be called for resumed workflows, not just new ones"
+        )
