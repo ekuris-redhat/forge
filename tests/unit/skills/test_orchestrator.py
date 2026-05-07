@@ -485,3 +485,84 @@ class TestEnsureSkillsFetch:
         lock_entry: LockEntry = mock_update_lock.call_args[0][1]
         assert lock_entry.resolved_commit == ""
         assert lock_entry.ref == ""
+
+
+# ---------------------------------------------------------------------------
+# Missing lock file scenario
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureSkillsMissingLockFile:
+    @pytest.mark.asyncio
+    async def test_runs_without_existing_lock_file(self, tmp_path: Path) -> None:
+        """ensure_skills proceeds normally when no lock file exists on disk.
+
+        read_lock_file returns an empty LockFile for missing files, so the
+        orchestrator should treat all entries as needing a fetch.
+        """
+        entry = _make_skill_entry()
+        jira_client = _make_jira_client([entry])
+
+        # Confirm no lock file exists in tmp_path
+        lock_path = tmp_path / "skills.lock"
+        assert not lock_path.exists()
+
+        fake_clone = tmp_path / "clone"
+        (fake_clone / "skills").mkdir(parents=True)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=fake_clone)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "forge.skills.orchestrator.resolve_ref_sha",
+                new=AsyncMock(return_value=RESOLVED_SHA),
+            ),
+            patch("forge.skills.orchestrator.should_fetch_entry", return_value=True),
+            patch("forge.skills.orchestrator.clone_context", return_value=mock_cm),
+            patch(
+                "forge.skills.orchestrator.install_path_mode",
+                return_value=["skill-a"],
+            ),
+            patch("forge.skills.orchestrator.update_lock_file") as mock_update_lock,
+        ):
+            # No patch on read_lock_file — it runs against the real empty tmp_path
+            await ensure_skills(PROJECT_KEY, jira_client, tmp_path)
+
+        # Lock update should still be called even without a pre-existing lock file
+        mock_update_lock.assert_called_once()
+        lock_entry: LockEntry = mock_update_lock.call_args[0][1]
+        assert lock_entry.source == REPO_URL
+        assert lock_entry.resolved_commit == RESOLVED_SHA
+
+
+# ---------------------------------------------------------------------------
+# Invalid / malformed skills config returned by JiraClient
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureSkillsInvalidConfig:
+    @pytest.mark.asyncio
+    async def test_handles_empty_list_from_invalid_json(self, tmp_path: Path, caplog) -> None:
+        """When JiraClient.get_skills_config returns [] due to invalid JSON, exit early.
+
+        JiraClient.get_skills_config returns an empty list (not None) when the
+        stored property value cannot be parsed as valid JSON or a SkillEntry schema.
+        ensure_skills should treat this the same as an explicitly empty config and
+        log an info message, making no git or file-system calls.
+        """
+        # Simulate JiraClient returning [] due to JSON/schema parse error
+        jira_client = _make_jira_client([])
+
+        with (
+            patch("forge.skills.orchestrator.clone_context") as mock_clone,
+            patch("forge.skills.orchestrator.update_lock_file") as mock_update_lock,
+            caplog.at_level(logging.INFO, logger="forge.skills.orchestrator"),
+        ):
+            await ensure_skills(PROJECT_KEY, jira_client, tmp_path)
+
+        # No git clone or lock file write should happen
+        mock_clone.assert_not_called()
+        mock_update_lock.assert_not_called()
+        assert "is empty" in caplog.text
