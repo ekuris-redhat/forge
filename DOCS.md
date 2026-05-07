@@ -28,11 +28,22 @@ Output goes to the `site/` directory (gitignored).
 
 ## Deploy to GitHub Pages
 
+Build first, then push to the `gh-pages` branch:
+
 ```bash
+uv run zensical build
 uv run ghp-import -n -p -f site
 ```
 
-CI does this automatically on every push to `main` that touches `docs/`, `zensical.toml`, `CONTRIBUTING.md`, or `README.md`.
+Flags: `-n` adds a `.nojekyll` file (required for GitHub Pages to serve correctly), `-p` pushes to the remote, `-f` force-pushes.
+
+GitHub Pages serves the `gh-pages` branch automatically. Enable it once under **Repository Settings → Pages → Source → Deploy from branch → `gh-pages`**.
+
+The site will be live at `https://forge-sdlc.github.io/forge/`.
+
+### Automatic deployment
+
+CI deploys on every push to `main` that touches `docs/`, `zensical.toml`, `CONTRIBUTING.md`, or `README.md` — no manual deploy needed after the initial setup.
 
 ## Structure
 
