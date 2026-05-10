@@ -490,6 +490,114 @@ async def cmd_skills_update(_args: argparse.Namespace) -> int:
     return await _handler(_args)
 
 
+async def cmd_project_setup(args: argparse.Namespace) -> int:
+    """Configure Jira project properties for Forge."""
+    import json
+
+    from forge.integrations.jira.client import JiraClient
+
+    project_key = args.project_key.upper()
+    jira = JiraClient()
+
+    try:
+        # forge.repos
+        if args.repo:
+            invalid = [r for r in args.repo if "/" not in r]
+            if invalid:
+                print(
+                    f"Error: invalid repo format (expected owner/repo): {invalid}",
+                    file=sys.stderr,
+                )
+                return 1
+            await jira.set_project_property(project_key, "forge.repos", args.repo)
+            print(f"[OK] forge.repos = {args.repo}")
+
+        # forge.default_repo
+        if args.default_repo:
+            if "/" not in args.default_repo:
+                print(
+                    f"Error: --default-repo must be owner/repo, got: {args.default_repo!r}",
+                    file=sys.stderr,
+                )
+                return 1
+            await jira.set_project_property(project_key, "forge.default_repo", args.default_repo)
+            print(f"[OK] forge.default_repo = {args.default_repo!r}")
+
+        # forge.skills — built from --add-skill flags and/or --skills-config JSON
+        skill_entries: list[dict] = []
+
+        if args.skills_config:
+            try:
+                from_json = json.loads(args.skills_config)
+            except json.JSONDecodeError as exc:
+                print(f"Error: --skills-config is not valid JSON: {exc}", file=sys.stderr)
+                return 1
+            if not isinstance(from_json, list):
+                print("Error: --skills-config must be a JSON array", file=sys.stderr)
+                return 1
+            skill_entries.extend(from_json)
+
+        for raw in args.add_skill or []:
+            # Format: source=<url>[,ref=<ref>][,path=<path>]
+            #         source=<url>[,ref=<ref>],mapping=<name>:<repo_path>[,mapping=...]
+            entry: dict = {}
+            mappings: dict[str, str] = {}
+            for part in raw.split(","):
+                if "=" not in part:
+                    print(
+                        f"Error: --add-skill part {part!r} missing '=' (expected key=value)",
+                        file=sys.stderr,
+                    )
+                    return 1
+                key, _, val = part.partition("=")
+                key = key.strip()
+                val = val.strip()
+                if key == "mapping":
+                    skill_name, _, repo_path = val.partition(":")
+                    mappings[skill_name] = repo_path
+                else:
+                    entry[key] = val
+
+            if not entry.get("source"):
+                print("Error: --add-skill requires source=<git-url>", file=sys.stderr)
+                return 1
+            if mappings:
+                entry["skill_mapping"] = mappings
+            elif "path" not in entry:
+                entry["path"] = ""
+            skill_entries.append(entry)
+
+        if skill_entries:
+            from forge.skills.models import SkillEntry
+
+            validated = []
+            for i, raw_entry in enumerate(skill_entries):
+                try:
+                    validated.append(SkillEntry(**raw_entry).model_dump(exclude_none=True))
+                except Exception as exc:
+                    print(f"Error: skills entry {i} is invalid: {exc}", file=sys.stderr)
+                    return 1
+            skill_entries = validated
+
+            await jira.set_project_property(project_key, "forge.skills", skill_entries)
+            print(f"[OK] forge.skills = {len(skill_entries)} entries")
+
+        if not any([args.repo, args.default_repo, args.skills_config, args.add_skill]):
+            print(
+                "Nothing to set — specify at least one of: "
+                "--repo, --default-repo, --skills-config, --add-skill"
+            )
+            return 1
+
+        return 0
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        await jira.close()
+
+
 async def cmd_health(_args: argparse.Namespace) -> int:
     """Check system health."""
     from forge.orchestrator.checkpointer import get_redis_client
@@ -727,6 +835,59 @@ def main() -> int:
         ),
     )
 
+    # project-setup command
+    setup_parser = subparsers.add_parser(
+        "project-setup",
+        help="Configure Jira project properties for Forge",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="""Configure Forge metadata on a Jira project.
+
+Examples:
+  # Set GitHub repos and default
+  forge project-setup MYPROJ \\
+    --repo owner/repo1 --repo owner/repo2 \\
+    --default-repo owner/repo1
+
+  # Add a skills package (path mode)
+  forge project-setup MYPROJ \\
+    --add-skill source=https://github.com/acme/skills,ref=v1.0,path=
+
+  # Add a skills package (skill_mapping mode)
+  forge project-setup MYPROJ \\
+    --add-skill source=https://github.com/acme/docs,ref=main,mapping=generate-prd:docs/prompts/prd
+
+  # Set skills from a JSON array
+  forge project-setup MYPROJ \\
+    --skills-config '[{"source":"https://github.com/acme/skills","ref":"v1.0","path":""}]'
+""",
+    )
+    setup_parser.add_argument("project_key", help="Jira project key (e.g., MYPROJ)")
+    setup_parser.add_argument(
+        "--repo",
+        action="append",
+        metavar="OWNER/REPO",
+        help="GitHub repo in owner/repo format (repeatable, sets forge.repos)",
+    )
+    setup_parser.add_argument(
+        "--default-repo",
+        metavar="OWNER/REPO",
+        help="Primary GitHub repo (sets forge.default_repo)",
+    )
+    setup_parser.add_argument(
+        "--add-skill",
+        action="append",
+        metavar="source=URL[,ref=REF][,path=PATH|,mapping=NAME:PATH]",
+        help=(
+            "Add a skill package entry (repeatable, appended to --skills-config if also given). "
+            "Use path= for path mode or mapping=name:path for skill_mapping mode."
+        ),
+    )
+    setup_parser.add_argument(
+        "--skills-config",
+        metavar="JSON",
+        help="Full forge.skills value as a JSON array of SkillEntry objects",
+    )
+
     args = parser.parse_args()
     setup_logging(args.verbose)
 
@@ -765,6 +926,7 @@ def main() -> int:
         "list": cmd_list,
         "retry": cmd_retry,
         "logs": cmd_logs,
+        "project-setup": cmd_project_setup,
     }
 
     handler = handlers.get(args.command)

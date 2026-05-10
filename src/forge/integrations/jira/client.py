@@ -818,6 +818,22 @@ class JiraClient:
         _project_property_cache[cache_key] = value
         return value
 
+    async def set_project_property(self, project_key: str, property_key: str, value: Any) -> None:
+        """Set a Jira project property value.
+
+        Args:
+            project_key: The Jira project key (e.g., "MYPROJ").
+            property_key: The property key (e.g., "forge.repos").
+            value: The value to set (must be JSON-serialisable).
+        """
+        client = await self._get_client()
+        response = await client.put(
+            f"/project/{project_key}/properties/{property_key}",
+            json=value,
+        )
+        response.raise_for_status()
+        _project_property_cache.pop((project_key, property_key), None)
+
     async def get_project_repos(self, project_key: str) -> list[str]:
         """Fetch the forge.repos project property.
 
