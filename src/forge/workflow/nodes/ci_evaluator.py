@@ -37,6 +37,8 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
     ticket_key = state["ticket_key"]
     pr_urls = state.get("pr_urls", [])
     ci_fix_attempts = state.get("ci_fix_attempts", 0)
+    current_attempt = state.get("current_attempt", 0)
+    max_attempts = state.get("max_attempts", 5)
     settings = get_settings()
 
     if not pr_urls:
@@ -146,6 +148,7 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
                     "ci_status": "passed",
                     "current_node": "human_review_gate",
                     "last_error": None,
+                    "current_attempt": 0,  # Reset attempt counter on success
                 }
             )
 
@@ -178,6 +181,21 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
 
         # CI failed - check if we can retry
         max_retries = settings.ci_fix_max_retries
+        
+        # Validate current_attempt doesn't exceed max_attempts
+        if current_attempt >= max_attempts:
+            logger.warning(f"CI fix attempt limit ({max_attempts}) reached for {ticket_key}")
+            record_ci_fix_attempt(repo=state.get("current_repo", "unknown"), result="exhausted")
+            return update_state_timestamp(
+                {
+                    **state,
+                    "ci_status": "failed",
+                    "ci_failed_checks": failed_checks,
+                    "current_node": "ci_evaluator",  # preserved so retry resumes here
+                    "last_error": "CI fix attempt limit reached",
+                }
+            )
+        
         if ci_fix_attempts >= max_retries:
             logger.warning(f"CI fix retry limit ({max_retries}) reached for {ticket_key}")
             record_ci_fix_attempt(repo=state.get("current_repo", "unknown"), result="exhausted")
@@ -191,14 +209,16 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
                 }
             )
 
-        # Attempt autonomous fix
-        logger.info(f"CI failed for {ticket_key}, attempt {ci_fix_attempts + 1}/{max_retries}")
+        # Increment current_attempt before attempting fix
+        next_attempt = current_attempt + 1
+        logger.info(f"CI failed for {ticket_key}, attempt {next_attempt}/{max_attempts}")
         return update_state_timestamp(
             {
                 **state,
                 "ci_status": "fixing",
                 "ci_failed_checks": failed_checks,
                 "ci_fix_attempts": ci_fix_attempts + 1,
+                "current_attempt": next_attempt,
                 "current_node": "attempt_ci_fix",
             }
         )

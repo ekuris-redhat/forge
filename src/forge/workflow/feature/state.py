@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any
 
+from forge.config import get_settings
 from forge.models.workflow import TicketType
 from forge.workflow.base import (
     BaseState,
@@ -48,6 +49,7 @@ class FeatureState(
 def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState:
     """Create initial state for a new Feature workflow run."""
     now = datetime.utcnow().isoformat()
+    settings = get_settings()
 
     # Default values - can be overridden by kwargs
     defaults = {
@@ -87,6 +89,8 @@ def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState
         "ci_failed_checks": [],
         "ci_fix_attempts": 0,
         "ci_skipped_checks": [],
+        "current_attempt": 0,
+        "max_attempts": settings.ci_fix_max_retries,
         "ai_review_status": None,
         "ai_review_results": [],
         "human_review_status": None,
