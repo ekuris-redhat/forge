@@ -1,8 +1,8 @@
 # Forge SDLC Performance Metrics Proposal
 **Author:** ekuris-redhat
-**Date:** May 10 2026
+**Date:** May 12 2026
 **Version:** 1.0 Draft
-## Summary
+## 1. Summary
 Forge is a system that uses AI to automate software development. It helps with planning, implementation and review. This proposal is about measuring how well Forge works.
 Forge uses tools like Jira, GitHub and LLM. We want to track how long it takes to finish a feature, how much it costs, and if it's worth it.
 ## 2. Motivation
@@ -69,7 +69,7 @@ The proposed pipeline has three stages:
 - `bug_total_iterations`
 - `bug_rca_accuracy`
 ### 4.3 Q&A Mode
-**Description:** Humans can ask questions, about generated artifacts.
+**Description:** Humans can ask questions about generated artifacts.
 **Impact Metrics:**
 | Metric | Description | Target |
 |--------|-------------|--------|
@@ -147,7 +147,7 @@ We implemented a feature called Skill Packages.
 We have a new feature called Repository Configuration via Jira.
 **Description:** Per-project repository configuration stored in Jira project properties eliminating hardcoded repo mappings.
 **Impact Metrics:**
-Metric | Description | Target |
+| Metric | Description | Target |
 |--------|-------------|--------|
 | `repo_config_resolution_time` | Time to resolve repository configuration | We aim for less than 200 milliseconds |
 | `multi_repo_feature_rate` | Percentage of features spanning multiple repositories | We will track |
