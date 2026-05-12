@@ -72,6 +72,7 @@ def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState
         "fork_repo": None,
         "merge_conflicts": [],
         "local_review_attempts": 0,
+        "local_review_pass_number": 1,
         "ci_status": None,
         "current_pr_url": None,
         "current_pr_number": None,

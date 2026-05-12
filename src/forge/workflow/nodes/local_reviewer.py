@@ -32,6 +32,7 @@ async def local_review_changes(state: WorkflowState) -> WorkflowState:
     ticket_key = state["ticket_key"]
     workspace_path = state.get("workspace_path")
     review_attempts = state.get("local_review_attempts", 0)
+    pass_number = state.get("local_review_pass_number", 1)
 
     if not workspace_path:
         logger.info(f"No workspace for local review on {ticket_key}, skipping")
@@ -105,6 +106,7 @@ async def local_review_changes(state: WorkflowState) -> WorkflowState:
                 {
                     **state,
                     "local_review_attempts": review_attempts + 1,
+                    "local_review_pass_number": pass_number + 1,
                     "current_node": "local_review",
                 }
             )

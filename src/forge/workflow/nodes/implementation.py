@@ -99,6 +99,7 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
             {
                 **state,
                 "current_node": "local_review",
+                "local_review_pass_number": 1,
                 "last_error": None,
             }
         )

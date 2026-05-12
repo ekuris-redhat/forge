@@ -53,6 +53,7 @@ class PRIntegrationState(TypedDict, total=False):
     fork_repo: str | None
     merge_conflicts: list[str]
     local_review_attempts: int
+    local_review_pass_number: int
 
 
 class CIIntegrationState(TypedDict, total=False):
