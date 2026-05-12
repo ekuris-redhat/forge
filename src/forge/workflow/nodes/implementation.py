@@ -19,6 +19,7 @@ from forge.integrations.jira.client import JiraClient
 from forge.sandbox import ContainerRunner
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.utils import update_state_timestamp
+from forge.workflow.utils.jira_status import post_status_comment
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.manager import Workspace
 
@@ -113,6 +114,13 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
         task_description = task_issue.description or ""
         task_summary = task_issue.summary
 
+        # Post status comment at task implementation start
+        await post_status_comment(
+            jira,
+            current_task,
+            "🔨 Forge is implementing this task.",
+        )
+
         # Get guardrails context
         guardrails = state.get("context", {}).get("guardrails", "")
 
@@ -141,6 +149,13 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
 
         if result.success:
             logger.info(f"Container completed successfully for {current_task}")
+
+            # Post status comment at task implementation completion
+            await post_status_comment(
+                jira,
+                current_task,
+                "✅ Implementation complete. Running local code review before PR.",
+            )
 
             # Track implemented tasks
             implemented = state.get("implemented_tasks", [])
