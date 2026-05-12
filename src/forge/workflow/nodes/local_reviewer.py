@@ -53,6 +53,19 @@ async def local_review_changes(state: WorkflowState) -> WorkflowState:
         finally:
             await jira.close()
 
+    # Post fix pass status comment on subsequent review iterations
+    if pass_number > 1:
+        settings = get_settings()
+        jira = JiraClient(settings)
+        try:
+            await post_status_comment(
+                jira,
+                ticket_key,
+                f"🔧 Local review found issues, applying fixes (pass {pass_number}).",
+            )
+        finally:
+            await jira.close()
+
     if review_attempts >= MAX_REVIEW_ATTEMPTS:
         logger.warning(
             f"Max local review attempts ({MAX_REVIEW_ATTEMPTS}) reached for "
