@@ -97,10 +97,19 @@ If any are missing, posts a targeted Jira comment naming only the absent fields,
 
 **`analyze_bug`** runs in a standard container (same `ForgeAgent` infra as `implement_bug_fix`, full write permissions inside the container, repo access). Receives the full Jira ticket, `triage_missing_fields`, and any `reflection_critique` from a previous iteration.
 
-The agent explores the codebase — clones repos, checks out branches, reads files, inspects git history — to locate the defect. The resulting RCA must include:
+The agent explores the codebase — clones repos, checks out branches, reads files, inspects git history — to locate the defect. The `analyze-bug.md` prompt instructs the agent to follow a hypothesis-driven investigation methodology:
+
+1. **Form explicit hypotheses** — before reading code, list candidate root causes ranked by likelihood given the bug report.
+2. **Test each hypothesis against the code** — read the relevant code paths, not just the most plausible one. Eliminate candidates explicitly: record which hypotheses were ruled out and why. This reasoning chain is visible to the human at `rca_option_gate` and gives `reflect_rca` something concrete to validate beyond structural checks.
+3. **Enumerate complete state spaces** — when the bug involves states, phases, conditions, or branching paths, search the codebase to identify *all* possible values or code paths rather than assuming. This prevents partial fixes that address some cases but miss others.
+
+The resulting RCA must include:
 - Confirmed code location (file, function, line range)
 - Mechanism of failure
 - Trace from trigger to symptom
+- **Hypothesis log**: candidates considered, evidence checked, reason each was accepted or eliminated
+- **When the bug was introduced**: the specific commit and PR (via `git blame` and history inspection) that caused the regression, or "unknown" if history is ambiguous. Surfaces at `rca_option_gate` as evidence the agent found the correct code path.
+- **Confidence level**: High / Medium / Low with a percentage (e.g., "Medium — 65%") and a one-sentence rationale. Not an escalation trigger — a quality signal for the human at `rca_option_gate` and a concrete input for `reflect_rca` (a low-confidence RCA that hasn't exhausted its hypotheses is a gap worth looping on).
 - **1–4 distinct fix options**, each with title, description, and trade-offs
 - Embedded code snippets sufficient for the critic to validate without independent exploration
 - **Reproducibility assessment**: whether the bug can be demonstrated by a unit or integration test in isolation, and if not, why (e.g., requires a running cluster, environment-specific state, specific infra). If a unit-level test is feasible, the agent includes the full source of a minimal failing test in the RCA output — the test is not committed, but the implementing agent uses it as a specification. If not, it documents the conditions under which the bug manifests so a human can verify independently.
@@ -110,6 +119,9 @@ The agent explores the codebase — clones repos, checks out branches, reads fil
 - Failure mechanism is actually possible given the code
 - Fix options are genuinely distinct
 - No unexplained gaps between trigger and symptom
+- **Hypothesis coverage**: multiple hypotheses were considered and the hypothesis log documents why each was accepted or eliminated — not just the first plausible match
+- **Historical grounding**: `git blame` or commit history was consulted and an introduction point is recorded (or explicitly marked unknown)
+- **Confidence level**: a confidence level is present; if Low or Medium, the gaps identified in the rationale are concrete enough to loop on
 
 Outputs `VALID` or a structured critique listing specific gaps. On gaps: stores critique in `reflection_critique`, routes back to `analyze_bug`. Max 3 iterations. After the third failed reflection, the best available RCA is used and a warning note is appended to the Jira comment.
 
@@ -238,7 +250,12 @@ The container performs two checks in sequence:
 2. **Qualitative check** (new): re-read the RCA and plan, then inspect the actual diff and ask:
    - Does the change address the confirmed root cause, or only a symptom?
    - Do the new or modified tests actually prove the bug is fixed (i.e., would they have caught this bug before the fix)?
+   - Could someone break this fix without a test failing? (the most actionable test-adequacy question)
    - Does the diff match the scope of the approved plan, or has it drifted significantly?
+   - **Completeness across call sites**: if the fix guards or wraps something in one location, are there similar patterns elsewhere in the codebase that need the same treatment?
+   - **Backward compatibility / rollback safety**: can this change be reverted cleanly if needed?
+   - **Security basics**: no secrets leaked in the diff, no injection vectors introduced, error messages don't expose internals.
+   - **Bidirectional test validation**: for any regression test the agent wrote itself (not provided in the RCA), does the commit log or implementation notes confirm that the test was verified to fail without the fix and pass with it?
 
 The reviewer is **read-only** — it never modifies files itself. All remediation is routed back to `implement_bug_fix` as structured feedback, so every change goes through the same review loop.
 
@@ -251,6 +268,18 @@ The qualitative check produces one of three verdicts stored in `local_review_ver
 | `symptom_only` | Fix addresses a symptom; root cause unresolved | Increment `qualitative_retry_count`, route back to `implement_bug_fix` with structured feedback on what was wrong and what the root cause still requires |
 
 In both non-adequate cases the workspace is **not reverted**. The implementing agent receives the current code state alongside the reviewer's feedback and decides what to keep, discard, or change. A blanket revert would discard potentially useful work — test scaffolding, refactoring, partial progress — even when only the fix direction was wrong.
+
+#### Bidirectional test validation
+
+The `implement-task.md` prompt instructs the implementing agent that for any regression test it writes itself (i.e., not the pre-written failing test supplied in the RCA, which was already validated red), it must:
+
+1. Write the test.
+2. Temporarily revert the fix (leaving the test in place).
+3. Confirm the test fails — if it passes without the fix, it is not catching the bug.
+4. Re-apply the fix and confirm the test passes.
+5. Note the outcome in the commit message (e.g., "Verified test fails without fix").
+
+This scope — agent-written tests only — avoids the complexity of reverting a fix that may be structurally entangled with new symbols the test file references. The `local-review-bug.md` qualitative check verifies bidirectional validation was done by inspecting the commit log or implementation notes; absence of evidence is a flagged gap, not a hard block.
 
 #### Re-implementation protocol
 
