@@ -6,7 +6,7 @@
 
 ## Summary
 
-When a Forge workflow reaches a terminal state — successful completion, blocked, or unrecoverable failure — the system should automatically post a detailed development statistics summary as a Jira comment on the Feature ticket. Additionally, a weekly status report should aggregate statistics across all active and completed tickets to give stakeholders visibility into cycle times, bottlenecks, and resource consumption. The weekly report is delivered via CLI, email, or Confluence — not on individual Jira tickets.
+When a Forge workflow reaches a terminal state — successful completion, blocked, or unrecoverable failure — the system should automatically post a development statistics summary as a Jira comment on the Feature ticket. The primary quality signal is iteration count: how many manual interventions and corrections were needed at each stage. Additionally, a weekly status report should aggregate statistics across all active and completed tickets per project to give stakeholders visibility into iteration rates, quality trends, and resource consumption. The weekly report is delivered via CLI (admin-only), email, or Confluence — not on individual Jira tickets.
 
 ## Motivation
 
@@ -14,11 +14,11 @@ When a Forge workflow reaches a terminal state — successful completion, blocke
 
 Forge orchestrates the full SDLC — from PRD generation through implementation, CI, and review — but produces no summary of the process once a workflow completes. Teams have no automated way to evaluate how efficiently the pipeline performed:
 
-- Duration of each stage in the workflow.
+- Number of manual interventions and corrections at each stage.
 - Amount of revision cycles prior to approval.
 - Token cost of the entire workflow.
-- Bottlenecks in the workflow that are repeated across tickets.
-- Overall throughput & health of their automated pipeline.
+- Which stages consistently require the most rework.
+- Overall throughput & quality of their automated pipeline.
 
 Without this data, stakeholders have no insight into how well the workflow is functioning, and engineers can't identify systemic bottlenecks.
 
@@ -32,8 +32,8 @@ Teams manually correlate Jira comment history and Langfuse traces to recreate ti
 
 Two complementary features:
 
-1. **Per-ticket summary** — a Jira comment posted automatically when the workflow ends, populated with information about stage durations, number of revisions at each stage, how many tokens were used, links to PRs & CI attempts at fixing them, and rounds of reviews.
-2. **Weekly status report** — report aggregating information about all tickets which saw activity during the reporting period. Report sent out as CLI output emailed to users and/or saved to a Confluence page.
+1. **Per-ticket summary** — a Jira comment posted automatically when the workflow ends, populated with information about iteration counts at each stage, stage durations, tokens used, links to PRs & CI attempts.
+2. **Weekly status report** — report aggregating information about all tickets per project which saw activity during the reporting period. Report available via admin CLI, emailed to subscribers, and/or saved to a Confluence page.
 
 Both of these features pull data from LangGraph's checkpoint state, which is augmented with statistic fields that are recorded during execution of the workflow. 
 
@@ -45,43 +45,34 @@ A new `StatsState` TypedDict mixin added to `workflow/base.py`, following the ex
 
 ```python
 class StatsState(TypedDict, total=False):
-    langfuse_trace_id: str | None
     stage_timestamps: dict[str, dict[str, str]]
-    gate_timestamps: dict[str, dict[str, str]]
     revision_counts: dict[str, int]
     token_usage: dict[str, int]
     stage_token_usage: dict[str, dict[str, int]]
-    review_rounds: int
     workflow_outcome: str | None
 ```
 
 | Field | Shape | Purpose |
 |-------|-------|---------|
-| `langfuse_trace_id` | `str` | Links to Langfuse trace for deep observability |
-| `stage_timestamps` | `{"prd": {"start": "...", "end": "..."}, ...}` | **Machine time** — duration of active Forge execution (generation, implementation, CI fixes) |
-| `gate_timestamps` | `{"prd_approval": {"start": "...", "end": "..."}, ...}` | **Human time** — duration waiting at approval gates and review stages |
-| `revision_counts` | `{"prd": 2, "spec": 1, ...}` | Number of regeneration cycles per stage |
+| `stage_timestamps` | `{"prd": {"start": "...", "end": "..."}, ...}` | Duration of active Forge execution per stage |
+| `revision_counts` | `{"prd": 2, "spec": 1, "review": 3, ...}` | Number of iterations/corrections per stage (including review cycles) |
 | `token_usage` | `{"input": 12345, "output": 6789}` | Aggregate token consumption |
 | `stage_token_usage` | `{"prd": {"input": ..., "output": ...}, ...}` | Per-stage token breakdown |
-| `review_rounds` | `int` | Number of human review → implement cycles |
 | `workflow_outcome` | `"completed" \| "blocked" \| "failed"` | Terminal status for reporting |
 
-**Machine time vs human time:** Each stage tracks two separate durations. Machine time measures how long Forge actively worked (e.g., generating a spec took 12 minutes). Human time measures how long the workflow waited at an approval gate or review stage (e.g., spec approval took 1 day 4 hours). Human time will often greatly exceed machine time. The number of human interactions - requested revisions, review rounds, approval cycles - can act as a proxy for Forge output quality. The fewer revision cycles there are, the better Forge is doing at producing quality artifacts humans can approve rapidly. Monitoring both metrics allows teams to understand not only where their time is going, but if Forge output quality is increasing over time.
+**Iteration tracking as quality signal:** The primary quality metric is the number of manual interventions and corrections at each stage. Fewer revision cycles mean Forge is producing higher-quality artifacts that humans can approve with minimal rework. When Forge output quality is high, the development process is more streamlined. Tracking iteration counts across stages — PRD revisions, spec revisions, plan revisions, CI fix attempts, review rounds — gives teams a direct measure of how well Forge is performing and where to focus improvements.
 
 `FeatureState` and `BugState` both add `StatsState` to their inheritance chain. `create_initial_feature_state` and `create_initial_bug_state` get default values for all new fields. Both workflow types get identical stats collection and per-ticket summary treatment.
 
 Tracked stages: `prd`, `spec`, `plan`, `task_generation`, `implementation`, `ci`, `review`.
-Tracked gates: `prd_approval`, `spec_approval`, `plan_approval`, `task_approval`, `human_review`.
 
 #### 2. Stats Instrumentation
 
-A utility module `workflow/stats/helpers.py` provides four helper functions that nodes call to record data points:
+A utility module `workflow/stats/helpers.py` provides helper functions that nodes call to record data points:
 
 ```python
-def record_stage_start(state: dict, stage: str) -> dict    # machine time start
-def record_stage_end(state: dict, stage: str) -> dict      # machine time end
-def record_gate_start(state: dict, gate: str) -> dict      # human wait start
-def record_gate_end(state: dict, gate: str) -> dict        # human wait end
+def record_stage_start(state: dict, stage: str) -> dict    # stage duration start
+def record_stage_end(state: dict, stage: str) -> dict      # stage duration end
 def record_tokens(state: dict, stage: str, input_tokens: int, output_tokens: int) -> dict
 def increment_revision(state: dict, stage: str) -> dict
 ```
@@ -99,14 +90,9 @@ Each returns the updated state dict with the stats fields modified. Node instrum
 | `generate_tasks` | `record_stage_start/end("task_generation")` + `record_tokens` |
 | `implement_task` | `record_stage_start("implementation")` on first task across all repos, `record_stage_end` when the last task in the last repo completes (spans workspace setup/teardown), `record_tokens` per task |
 | `evaluate_ci_status`, `attempt_ci_fix` | `record_stage_start/end("ci")` + `record_tokens` |
-| `human_review_gate` → review cycle | `record_stage_start/end("review")`, `review_rounds` incremented per cycle |
-| `prd_approval_gate` | `record_gate_start("prd_approval")` on pause, `record_gate_end("prd_approval")` on resume |
-| `spec_approval_gate` | `record_gate_start("spec_approval")` on pause, `record_gate_end("spec_approval")` on resume |
-| `plan_approval_gate` | `record_gate_start("plan_approval")` on pause, `record_gate_end("plan_approval")` on resume |
-| `task_approval_gate` | `record_gate_start("task_approval")` on pause, `record_gate_end("task_approval")` on resume |
-| `human_review_gate` | `record_gate_start("human_review")` on pause, `record_gate_end("human_review")` on resume |
+| `human_review_gate` → review cycle | `record_stage_start/end("review")`, `increment_revision("review")` per cycle |
 
-Token capture: extracted from LLM response objects that already carry `input_tokens` and `output_tokens` metadata. The `langfuse_trace_id` is captured once at the first LLM call and stored in state.
+Token capture: extracted from LLM response objects that carry `input_tokens` and `output_tokens` in `response_metadata`. For direct Anthropic API calls, this comes from `response.usage`. For Vertex AI (ChatAnthropicVertex), usage metadata is available via LangChain's `response_metadata` on the returned message objects.
 
 #### 3. Per-Ticket Summary Comment
 
@@ -132,62 +118,60 @@ The interim summary uses a distinct visual style so it's clearly not the final r
 ```
 {panel:title=Forge Workflow Summary|borderStyle=solid}
 
-*Outcome:* (/) Completed  |  *Total Duration:* 1d 6h 42m
-*Ticket:* PROJ-123  |  *Langfuse Trace:* [View Trace|https://langfuse.example.com/trace/abc123]
+*Outcome:* (/) Completed  |  *Total Duration:* 3h 34m
+*Ticket:* PROJ-123  |  *Langfuse:* [View Session|https://langfuse.example.com/sessions/PROJ-123]
 
-h4. Stage Timeline
-|| Stage || Machine Time || Human Time || Revisions || Tokens (in/out) ||
-| PRD Generation | 8m 12s | 2h 15m | 0 | 2,340 / 1,890 |
-| Spec Generation | 12m 04s | 1d 4h 10m | 1 | 4,120 / 3,450 |
-| Epic Decomposition | 6m 30s | 45m | 0 | 3,200 / 2,800 |
-| Task Generation | 4m 15s | 30m | 0 | 1,800 / 1,200 |
-| Implementation | 2h 45m | — | — | 18,500 / 12,300 |
-| CI Validation | 18m 20s | — | — | 1,200 / 900 |
-| Human Review | — | 8m 00s | — | — |
+h4. Stage Overview
+|| Stage || Duration || Iterations || Tokens (in/out) ||
+| PRD Generation | 8m 12s | 0 | 2,340 / 1,890 |
+| Spec Generation | 12m 04s | 1 | 4,120 / 3,450 |
+| Epic Decomposition | 6m 30s | 0 | 3,200 / 2,800 |
+| Task Generation | 4m 15s | 0 | 1,800 / 1,200 |
+| Implementation | 2h 45m | — | 18,500 / 12,300 |
+| CI Validation | 18m 20s | — | 1,200 / 900 |
+| Human Review | — | 2 | — |
 
 h4. Execution Details
 * *PRs Created:* [PR #42|https://github.com/...], [PR #43|https://github.com/...]
 * *CI Fix Attempts:* 1
-* *Review Rounds:* 2
+* *Total Iterations:* 4 (across all stages)
 * *Tasks Completed:* 5/5
-* *Total Machine Time:* 3h 34m
-* *Total Human Time:* 1d 3h 08m
 * *Total Tokens:* 31,160 input / 22,540 output
 
 {panel}
 ```
 
-Stages that were never reached (e.g., Human Review on a blocked ticket) show "—" for all columns. This makes it immediately clear where the workflow stopped.
+The Langfuse session link is generated from the ticket key (Langfuse groups traces by `session_id=ticket_key`). Stages that were never reached (e.g., Human Review on a blocked ticket) show "—" for all columns. This makes it immediately clear where the workflow stopped.
 
 For blocked or failed outcomes, the header shows `(x) Blocked` or `(x) Failed` with the `last_error` message included.
 
 #### 4. Weekly Status Report
 
-A new module `workflow/stats/weekly_report.py` that aggregates data across all checkpoints with activity in the reporting window.
+A new module `workflow/stats/weekly_report.py` that aggregates data across all checkpoints with activity in the reporting window, scoped per project.
 
-**Data collection:** Scans all LangGraph checkpoints in Redis using existing `list_checkpoints` + `get_checkpoint_state` helpers. For each checkpoint, includes it if any `stage_timestamps` entry or `updated_at` falls within the reporting window.
+**Data collection:** Scans LangGraph checkpoints in Redis using existing `list_checkpoints` + `get_checkpoint_state` helpers, filtered by project. For each checkpoint, includes it if any `stage_timestamps` entry or `updated_at` falls within the reporting window.
 
 **Report structure:**
 
 | Section | Content |
 |---------|---------|
-| Summary | Ticket counts by status, total tokens, avg cycle time |
-| Completed Tickets | Per-ticket row: key, title, duration, tokens, revisions |
+| Summary | Ticket counts by status, total tokens, total iterations |
+| Completed Tickets | Per-ticket row: key, title, duration, tokens, iterations |
 | In Progress | Per-ticket row: key, title, current stage, elapsed time |
 | Blocked | Per-ticket row: key, title, blocked stage, duration, error summary |
-| Bottleneck Analysis | Slowest machine stage avg, longest human wait avg, most revised stage, CI first-pass rate |
+| Iteration Analysis | Most revised stage, CI first-pass rate, avg iterations per completed ticket |
 | Token Consumption | Totals and percentage breakdown by stage |
 
 #### 5. Weekly Report Delivery
 
 Three output targets from a single report engine:
 
-**CLI (default):**
+**CLI (default, admin-only — requires Redis access):**
 ```bash
-forge weekly-report                                # stdout, last 7 days
-forge weekly-report --days 14                      # custom window
-forge weekly-report --output report.md             # file export
-forge weekly-report --format json --output r.json  # JSON for tooling
+forge weekly-report --project PROJ               # stdout, last 7 days, scoped to project
+forge weekly-report --project PROJ --days 14     # custom window
+forge weekly-report --project PROJ --output report.md   # file export
+forge weekly-report --format json --output r.json       # JSON for tooling
 ```
 
 **Email:**
@@ -196,7 +180,7 @@ forge weekly-report --email                        # configured recipients
 forge weekly-report --email --to "mgr@company.com" # override recipients
 ```
 
-- Recipients configured via `FORGE_REPORT_EMAIL_TO` env var or project settings
+- Recipients configured per-project via project-level configuration (e.g., Jira project properties or a team-managed config file) — not a static env var, so teams can manage their own subscriber lists
 - Email delivery via Gmail SMTP (`smtp.gmail.com`) or the Gmail API
 - HTML-formatted email matching the CLI report content
 
@@ -210,9 +194,8 @@ forge weekly-report --confluence --space TEAM --parent "Weekly Reports" # explic
 - Page title: `Forge Weekly Report — YYYY-MM-DD to YYYY-MM-DD`
 - Idempotent: updates the page if it already exists for the same window
 - Includes historical week-over-week trend charts:
-  - **Cycle time trend** — avg total machine time and human time per completed ticket, week over week
+  - **Iteration rate trend** — avg revision/iteration count per stage across completed tickets, week over week
   - **Token consumption trend** — total input/output tokens per week
-  - **Revision rate trend** — avg revision count per stage across completed tickets
   - **Throughput trend** — number of tickets completed, blocked, and in-progress per week
   - **CI fix rate trend** — percentage of tickets passing CI on first attempt
   - Charts rendered as Confluence chart macros (bar/line charts using the built-in Chart macro) sourced from a data table on the same page. Each weekly report appends its data row to the table, building the historical view incrementally.
@@ -226,27 +209,27 @@ Scheduling is external — any cron job or CI pipeline can invoke the CLI comman
 
 **Per-ticket summary — automatic, no user action required:**
 
-When a workflow completes (or is blocked/fails), the team sees a structured summary comment appear on the Jira ticket. Engineers and managers can review cycle times, identify which stages required revisions, and click through to the Langfuse trace for deep observability.
+When a workflow completes (or is blocked/fails), the team sees a structured summary comment appear on the Jira ticket. Engineers and managers can review iteration counts, identify which stages required corrections, and click through to the Langfuse session for deep observability.
 
-**Weekly report — on-demand or scheduled:**
+**Weekly report — admin CLI (on-demand or scheduled):**
 
 ```bash
-# Team lead runs it Monday morning
-$ forge weekly-report
+# Admin runs it Monday morning
+$ forge weekly-report --project PROJ
 
 == Forge Weekly Status Report ==
-Period: 2026-05-07 → 2026-05-14
+Project: PROJ  |  Period: 2026-05-07 → 2026-05-14
 
 SUMMARY
   Completed: 4 tickets  |  In Progress: 3  |  Blocked: 1
   Total tokens: 245,800 in / 178,200 out
-  Avg. cycle time (completed): 4h 12m
+  Avg. iterations (completed): 1.2 per ticket
 
 COMPLETED TICKETS
-  PROJ-101  Feature X         3h 42m   31k tokens   0 revisions
-  PROJ-108  Feature Y         5h 10m   48k tokens   2 revisions
-  PROJ-112  Bug Z             1h 05m   12k tokens   0 revisions
-  PROJ-115  Feature W         6h 50m   52k tokens   1 revision
+  PROJ-101  Feature X         3h 42m   31k tokens   0 iterations
+  PROJ-108  Feature Y         5h 10m   48k tokens   2 iterations
+  PROJ-112  Bug Z             1h 05m   12k tokens   0 iterations
+  PROJ-115  Feature W         6h 50m   52k tokens   1 iteration
 
 IN PROGRESS
   PROJ-120  Feature A         at: Implementation    elapsed: 2h 30m
@@ -257,11 +240,10 @@ BLOCKED
   PROJ-118  Feature D         at: CI Validation     blocked: 2d
   → CI fixes exhausted after 5 attempts (lint-check, type-check)
 
-BOTTLENECK ANALYSIS
-  Slowest machine stage (avg): Implementation — 2h 48m avg across 4 tickets
-  Longest human wait (avg): Spec Approval — 1d 2h avg
-  Most revised stage: Spec — 1.5 avg revisions
+ITERATION ANALYSIS
+  Most revised stage: Spec — 1.5 avg iterations
   CI fix rate: 3/4 tickets passed CI on first attempt
+  Avg. total iterations per ticket: 1.2
 
 TOKEN CONSUMPTION
   Total: 245,800 in / 178,200 out
@@ -269,7 +251,7 @@ TOKEN CONSUMPTION
 
 # Or auto-deliver every Monday
 $ crontab -e
-0 9 * * 1 forge weekly-report --email --confluence
+0 9 * * 1 forge weekly-report --project PROJ --email --confluence
 ```
 
 ## Alternatives Considered
@@ -297,10 +279,11 @@ $ crontab -e
 
 ### Dependencies
 
-- [ ] LLM response objects must expose `input_tokens` / `output_tokens` (already available via Anthropic API responses)
+- [ ] LLM response objects must expose `input_tokens` / `output_tokens` (available via Anthropic API responses and Vertex AI via LangChain `response_metadata`)
 - [ ] Redis checkpointer must support scanning all checkpoints (existing `list_checkpoints` helper)
 - [ ] Confluence REST API credentials for Phase 7 (`FORGE_CONFLUENCE_URL`, `FORGE_CONFLUENCE_TOKEN`)
 - [ ] Gmail SMTP credentials for Phase 6 (`FORGE_GMAIL_USER`, `FORGE_GMAIL_APP_PASSWORD`, `FORGE_REPORT_EMAIL_FROM`)
+- [ ] Per-project recipient configuration mechanism (Jira project properties or config file)
 
 ### Risks
 
