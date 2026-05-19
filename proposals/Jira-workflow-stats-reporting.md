@@ -6,7 +6,7 @@
 
 ## Summary
 
-When a Forge workflow reaches a terminal state — successful completion, blocked, or unrecoverable failure — the system should automatically post a development statistics summary as a Jira comment on the Feature ticket. The primary quality signal is iteration count: how many manual interventions and corrections were needed at each stage. Additionally, a weekly status report should aggregate statistics across all active and completed tickets per project to give stakeholders visibility into iteration rates, quality trends, and resource consumption. The weekly report is delivered via CLI (admin-only), email, or Confluence — not on individual Jira tickets.
+When a Forge workflow reaches a terminal state — successful completion, blocked, or unrecoverable failure — the system should automatically post a development statistics summary as a Jira comment on the Feature ticket. The primary quality signal is iteration count: how many manual interventions and corrections were needed at each stage. Additionally, a weekly status report should aggregate statistics across all active and completed tickets per project to give stakeholders visibility into iteration rates, quality trends, and resource consumption. The weekly report is delivered via admin CLI or emailed to a mailing list — not on individual Jira tickets.
 
 ## Motivation
 
@@ -33,7 +33,7 @@ Teams manually correlate Jira comment history and Langfuse traces to recreate ti
 Two complementary features:
 
 1. **Per-ticket summary** — a Jira comment posted automatically when the workflow ends, populated with information about iteration counts at each stage, stage durations, tokens used, links to PRs & CI attempts.
-2. **Weekly status report** — report aggregating information about all tickets per project which saw activity during the reporting period. Report available via admin CLI, emailed to subscribers, and/or saved to a Confluence page.
+2. **Weekly status report** — report aggregating information about all tickets per project which saw activity during the reporting period. Report available via admin CLI or emailed to a mailing list for self-service subscription.
 
 Both of these features pull data from LangGraph's checkpoint state, which is augmented with statistic fields that are recorded during execution of the workflow. 
 
@@ -102,16 +102,9 @@ A new module `workflow/stats/summary.py` with a `post_workflow_summary(state)` f
 2. Formats a Jira wiki markup comment
 3. Posts it to the Feature ticket via `JiraClient.add_comment()`
 
-**Trigger points and summary lifecycle:**
+**Trigger:** `aggregate_feature_status` — sets `workflow_outcome = "completed"`, calls `post_workflow_summary(state)`.
 
-- `escalate_to_blocked` — sets `workflow_outcome = "blocked"` or `"failed"`, calls `post_workflow_summary` with `interim=True`
-- `aggregate_feature_status` — sets `workflow_outcome = "completed"`, calls `post_workflow_summary` with `interim=False` (final summary)
-
-**Interim vs final summaries:** When a workflow is blocked or fails, an interim summary is posted immediately, showing all stats accumulated so far. This gives the team context about what happened and where it broke. If the workflow is later resumed via `forge:retry`, stats continue accumulating — they are never reset on retry. When the workflow eventually completes, a final summary is posted covering the entire lifecycle, including time spent blocked and all retry attempts.
-
-The interim summary uses a distinct visual style so it's clearly not the final report:
-- Interim: `{panel:title=Forge Workflow Summary (Interim — Blocked)|borderColor=#FF5630}`
-- Final: `{panel:title=Forge Workflow Summary|borderStyle=solid}`
+The summary is posted only on successful completion. Blocked/failed workflows already receive an error comment via `escalate_to_blocked` with actionable information for the retry decision — a stats summary would not add value at that point.
 
 **Comment format:**
 
@@ -180,36 +173,17 @@ forge weekly-report --email                        # configured recipients
 forge weekly-report --email --to "mgr@company.com" # override recipients
 ```
 
-- Recipients configured per-project via project-level configuration (e.g., Jira project properties or a team-managed config file) — not a static env var, so teams can manage their own subscriber lists
+- Report sent to a configured mailing list address — team members self-subscribe to receive reports and browse history in their inbox
 - Email delivery via Gmail SMTP (`smtp.gmail.com`) or the Gmail API
 - HTML-formatted email matching the CLI report content
 
-**Confluence:**
-```bash
-forge weekly-report --confluence                                    # defaults
-forge weekly-report --confluence --space TEAM --parent "Weekly Reports" # explicit
-```
-
-- Creates a new page per reporting window under a configured parent page
-- Page title: `Forge Weekly Report — YYYY-MM-DD to YYYY-MM-DD`
-- Idempotent: updates the page if it already exists for the same window
-- Includes historical week-over-week trend charts:
-  - **Iteration rate trend** — avg revision/iteration count per stage across completed tickets, week over week
-  - **Token consumption trend** — total input/output tokens per week
-  - **Throughput trend** — number of tickets completed, blocked, and in-progress per week
-  - **CI fix rate trend** — percentage of tickets passing CI on first attempt
-  - Charts rendered as Confluence chart macros (bar/line charts using the built-in Chart macro) sourced from a data table on the same page. Each weekly report appends its data row to the table, building the historical view incrementally.
-- New `integrations/confluence/client.py` using the Confluence REST API
-
-Flags can be combined: `forge weekly-report --email --confluence` sends email and updates Confluence in one run.
-
-Scheduling is external — any cron job or CI pipeline can invoke the CLI command on a weekly cadence.
+Scheduling is configured by the admin — a cron job or CI pipeline invokes the CLI command on a weekly cadence (e.g., `0 9 * * 1 forge weekly-report --project PROJ --email`).
 
 ### User Experience
 
 **Per-ticket summary — automatic, no user action required:**
 
-When a workflow completes (or is blocked/fails), the team sees a structured summary comment appear on the Jira ticket. Engineers and managers can review iteration counts, identify which stages required corrections, and click through to the Langfuse session for deep observability.
+When a workflow completes successfully, the team sees a structured summary comment appear on the Jira ticket. Engineers and managers can review iteration counts, identify which stages required corrections, and click through to the Langfuse session for deep observability.
 
 **Weekly report — admin CLI (on-demand or scheduled):**
 
@@ -249,9 +223,9 @@ TOKEN CONSUMPTION
   Total: 245,800 in / 178,200 out
   By stage: Implementation 62% | Spec 14% | PRD 10% | Plan 8% | Other 6%
 
-# Or auto-deliver every Monday
+# Admin sets up weekly cron to send to mailing list
 $ crontab -e
-0 9 * * 1 forge weekly-report --project PROJ --email --confluence
+0 9 * * 1 forge weekly-report --project PROJ --email
 ```
 
 ## Alternatives Considered
@@ -270,20 +244,18 @@ $ crontab -e
 
 1. **Phase 1: State schema + helpers** — Add `StatsState` mixin, implement `workflow/stats/helpers.py`, add defaults to initial state functions. (~0.5 day)
 2. **Phase 2: Node instrumentation** — Add `record_stage_start/end`, `record_tokens`, `increment_revision` calls to all generation, regeneration, implementation, CI, and review nodes. (~1 day)
-3. **Phase 3: Per-ticket summary** — Implement `workflow/stats/summary.py`, wire into `aggregate_feature_status` and `escalate_to_blocked`, format Jira comment. (~0.5 day)
+3. **Phase 3: Per-ticket summary** — Implement `workflow/stats/summary.py`, wire into `aggregate_feature_status`, format Jira comment. (~0.5 day)
 4. **Phase 4: Weekly report engine** — Implement `workflow/stats/weekly_report.py` with checkpoint scanning, aggregation, and report formatting. (~1 day)
 5. **Phase 5: CLI command** — Add `forge weekly-report` subcommand with `--days`, `--output`, `--format` flags. (~0.5 day)
-6. **Phase 6: Email delivery** — Implement `integrations/email/client.py`, add `--email`/`--to` flags, SMTP configuration. (~0.5 day)
-7. **Phase 7: Confluence delivery** — Implement `integrations/confluence/client.py`, add `--confluence`/`--space`/`--parent` flags. (~1 day)
-8. **Phase 8: Tests** — Unit tests for helpers, summary formatting, report aggregation. Integration tests for CLI command. (~1 day)
+6. **Phase 6: Email delivery** — Implement `integrations/email/client.py`, add `--email` flag, SMTP configuration, mailing list support. (~0.5 day)
+7. **Phase 7: Tests** — Unit tests for helpers, summary formatting, report aggregation. Integration tests for CLI command. (~1 day)
 
 ### Dependencies
 
 - [ ] LLM response objects must expose `input_tokens` / `output_tokens` (available via Anthropic API responses and Vertex AI via LangChain `response_metadata`)
 - [ ] Redis checkpointer must support scanning all checkpoints (existing `list_checkpoints` helper)
-- [ ] Confluence REST API credentials for Phase 7 (`FORGE_CONFLUENCE_URL`, `FORGE_CONFLUENCE_TOKEN`)
 - [ ] Gmail SMTP credentials for Phase 6 (`FORGE_GMAIL_USER`, `FORGE_GMAIL_APP_PASSWORD`, `FORGE_REPORT_EMAIL_FROM`)
-- [ ] Per-project recipient configuration mechanism (Jira project properties or config file)
+- [ ] Mailing list address per project for report delivery
 
 ### Risks
 
@@ -292,7 +264,6 @@ $ crontab -e
 | Token usage not consistently available from all LLM call paths (direct API vs agent vs container) | Med | Med | Audit all LLM invocation paths in Phase 2; use 0 as fallback for paths that don't expose usage |
 | Checkpoint scanning for weekly report is slow with many tickets | Low | Med | `list_checkpoints` already limits results; add date-based filtering to avoid scanning old checkpoints |
 | Stats fields increase checkpoint size in Redis | Low | Low | Fields are small (timestamps, integers); negligible compared to existing `messages` and `context` fields |
-| Confluence API rate limits on large report updates | Low | Low | Reports are small documents; single create/update call per week |
 
 ## Open Questions
 
