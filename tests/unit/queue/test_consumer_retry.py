@@ -38,6 +38,7 @@ def make_consumer() -> QueueConsumer:
     consumer._retry_queue.enqueue_for_retry = AsyncMock(return_value=True)
     consumer._retry_queue.get_due_messages = AsyncMock(return_value=[])
     consumer._retry_queue.remove_from_retry = AsyncMock()
+    consumer._retry_queue.remove_from_retry_without_counter_reset = AsyncMock()
     return consumer
 
 
@@ -227,7 +228,12 @@ class TestProcessRetryQueue:
         with patch("forge.queue.consumer.asyncio.sleep", new_callable=AsyncMock):
             await consumer._process_retry_queue()
 
-        consumer._retry_queue.remove_from_retry.assert_awaited_once_with(entry)
+        # On failure, the sorted-set entry is removed WITHOUT clearing the attempt
+        # counter so the counter keeps accumulating toward the DLQ threshold.
+        consumer._retry_queue.remove_from_retry_without_counter_reset.assert_awaited_once_with(
+            entry
+        )
+        consumer._retry_queue.remove_from_retry.assert_not_called()
         consumer._retry_queue.enqueue_for_retry.assert_awaited_once()
         enqueue_args = consumer._retry_queue.enqueue_for_retry.call_args[0]
         assert enqueue_args[0].event_id == "evt-001"
