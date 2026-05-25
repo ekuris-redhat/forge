@@ -210,8 +210,11 @@ class QueueConsumer:
                             f"Retry attempt {entry.attempt} failed for "
                             f"{entry.message.ticket_key}:{entry.message.event_id}: {e}"
                         )
-                        # Remove the old entry and re-enqueue (increments counter)
-                        await self._retry_queue.remove_from_retry(entry)
+                        # Remove only the sorted-set entry — do NOT delete the attempt
+                        # counter key.  enqueue_for_retry will INCR the existing key so
+                        # the counter keeps accumulating and the message can eventually
+                        # reach the dead-letter queue.
+                        await self._retry_queue.remove_from_retry_without_counter_reset(entry)
                         await self._retry_queue.enqueue_for_retry(entry.message, str(e))
             except asyncio.CancelledError:
                 break
@@ -230,9 +233,9 @@ class QueueConsumer:
             tasks.append(self._consume_stream(JIRA_STREAM, EventSource.JIRA))
         if EventSource.GITHUB in self._handlers:
             tasks.append(self._consume_stream(GITHUB_STREAM, EventSource.GITHUB))
-        tasks.append(self._process_retry_queue())
 
         if tasks:
+            tasks.append(self._process_retry_queue())
             logger.info(f"Consumer {self.consumer_name} starting...")
             await asyncio.gather(*tasks)
 

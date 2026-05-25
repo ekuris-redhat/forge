@@ -187,6 +187,9 @@ class RetryQueue:
     async def remove_from_retry(self, entry: RetryEntry) -> None:
         """Remove a message from the retry queue after successful processing.
 
+        Removes the sorted-set entry **and** clears the attempt counter so the
+        message starts fresh if it ever fails again.
+
         Args:
             entry: The retry entry to remove.
         """
@@ -196,6 +199,21 @@ class RetryQueue:
         # Clear attempt counter
         message_id = f"{entry.message.source}:{entry.message.ticket_key}:{entry.message.event_id}"
         await redis.delete(f"{RETRY_ATTEMPTS_KEY}:{message_id}")
+
+    async def remove_from_retry_without_counter_reset(self, entry: RetryEntry) -> None:
+        """Remove a message's sorted-set entry without clearing the attempt counter.
+
+        Use this in the failure path so that the attempt counter keeps
+        accumulating across re-enqueues.  If the counter were deleted here,
+        ``enqueue_for_retry`` would call ``INCR`` on a missing key and Redis
+        would reinitialise it to 1, preventing the message from ever reaching
+        the dead-letter queue.
+
+        Args:
+            entry: The retry entry to remove from the sorted set.
+        """
+        redis = await self._get_redis()
+        await redis.zrem(RETRY_QUEUE_KEY, json.dumps(entry.to_dict()))
 
     async def get_dead_letter_entries(
         self,
