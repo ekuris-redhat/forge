@@ -226,6 +226,16 @@ class Settings(BaseSettings):
         default=False,
         description="Enable LangChain verbose/debug logging in container",
     )
+    container_keep_on_failure: bool = Field(
+        default=False,
+        alias="forge_container_keep_on_failure",
+        description=(
+            "Keep containers after exit instead of removing them with --rm. "
+            "Useful for debugging: inspect logs with `podman logs <name>` and "
+            "filesystem with `podman export <name> | tar -x`. "
+            "Set FORGE_CONTAINER_KEEP_ON_FAILURE=true in .env."
+        ),
+    )
     agent_backend: str = Field(
         default="filesystem",
         description="Deep Agents backend type: filesystem, state, or store",

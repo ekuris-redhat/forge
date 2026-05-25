@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import re
 import signal
 import sys
 import uuid
@@ -20,7 +21,7 @@ from forge.integrations.github.client import GitHubClient
 from forge.integrations.jira.client import JiraClient
 from forge.models.events import EventSource
 from forge.models.workflow import TicketType
-from forge.orchestrator.checkpointer import get_checkpointer
+from forge.orchestrator.checkpointer import get_checkpointer, get_ticket_from_pr_index
 from forge.queue.consumer import QueueConsumer
 from forge.queue.models import QueueMessage
 from forge.skills.orchestrator import ensure_skills
@@ -30,6 +31,10 @@ from forge.workflow.router import WorkflowRouter
 from forge.workflow.utils.comment_classifier import CommentType, classify_comment
 
 logger = logging.getLogger(__name__)
+
+# Matches >option N anywhere in comment (case-insensitive, first match wins)
+# Supports both start-of-line usage (>option 2) and in-prose usage (let's go with >option 2)
+_OPTION_PATTERN = re.compile(r"(?mi)>option\s+(\d+)")
 
 
 class OrchestratorWorker:
@@ -68,7 +73,74 @@ class OrchestratorWorker:
         Args:
             message: The queue message to process.
         """
+        if not message.ticket_key:
+            message = await self._resolve_ticket_from_pr_index(message)
+            if not message.ticket_key:
+                logger.info(
+                    f"Dropping GitHub event {message.event_id}: "
+                    "no ticket key in message and PR URL not found in Redis index"
+                )
+                return
         await self._process_workflow(message)
+
+    async def _resolve_ticket_from_pr_index(self, message: QueueMessage) -> QueueMessage:
+        """Attempt to resolve ticket key from Redis PR index when not in message.
+
+        Extracts the PR URL from the event payload and looks it up in the
+        forge:pr_index Redis key populated at PR creation time.
+
+        Args:
+            message: Queue message with empty ticket_key.
+
+        Returns:
+            Message with ticket_key populated if found, otherwise unchanged.
+        """
+        payload = message.payload
+        pr_url = (
+            payload.get("pull_request", {}).get("html_url")
+            or payload.get("review", {}).get("html_url")
+        )
+
+        if not pr_url:
+            # Construct from repo + PR number for check_suite/check_run events
+            repo = payload.get("repository", {}).get("full_name", "")
+            pull_requests = (
+                payload.get("check_suite", {}).get("pull_requests")
+                or payload.get("check_run", {}).get("pull_requests")
+                or []
+            )
+            if repo and pull_requests:
+                pr_number = pull_requests[0].get("number")
+                if pr_number:
+                    pr_url = f"https://github.com/{repo}/pull/{pr_number}"
+
+        if not pr_url:
+            return message
+
+        try:
+            ticket_key = await get_ticket_from_pr_index(pr_url)
+            if ticket_key:
+                logger.info(
+                    f"Resolved ticket key {ticket_key} for GitHub event "
+                    f"{message.event_id} from PR index ({pr_url})"
+                )
+                return QueueMessage(
+                    message_id=message.message_id,
+                    event_id=message.event_id,
+                    source=message.source,
+                    event_type=message.event_type,
+                    ticket_key=ticket_key,
+                    payload=message.payload,
+                    timestamp=message.timestamp,
+                    retry_count=message.retry_count,
+                )
+        except Exception:
+            logger.warning(
+                f"PR index lookup failed for {pr_url}",
+                exc_info=True,
+            )
+
+        return message
 
     async def _process_workflow(self, message: QueueMessage) -> None:
         """Process a message through the workflow.
@@ -303,7 +375,10 @@ class OrchestratorWorker:
         # GitHub fires check_suite webhooks for created/in_progress/completed — evaluating
         # on the earlier actions would see a partial set of check runs and could
         # prematurely declare success. Other event types (push, pull_request) always wake up.
-        if current_node == "wait_for_ci_gate" and message.source == EventSource.GITHUB:
+        if (
+            current_node in ("wait_for_ci_gate", "ci_evaluator")
+            and message.source == EventSource.GITHUB
+        ):
             event = message.event_type
             is_check_event = "check_suite" in event or "check_run" in event
             if is_check_event:
@@ -446,6 +521,42 @@ class OrchestratorWorker:
                 comment_body = self._extract_text_from_adf(comment_body)
 
             if comment_body.strip():
+                # >option N detection for rca_option_gate (runs before general classification)
+                if current_node == "rca_option_gate":
+                    option_match = _OPTION_PATTERN.search(comment_body)
+                    if option_match:
+                        n = int(option_match.group(1))
+                        rca_options = current_state.get("rca_options", [])
+                        if 1 <= n <= len(rca_options):
+                            logger.info(f"Detected >option {n} for {message.ticket_key}")
+                            return {
+                                **current_state,
+                                "selected_fix_option": n,
+                                "selected_fix_approach": rca_options[n - 1],
+                                "is_paused": False,
+                                "revision_requested": False,
+                                "feedback_comment": None,
+                                "context": {
+                                    **current_state.get("context", {}),
+                                    "resume_event": message.event_type,
+                                    "payload": payload,
+                                },
+                            }
+                        else:
+                            max_n = len(rca_options)
+                            logger.info(
+                                f">option {n} out of range (max {max_n}) for {message.ticket_key}"
+                            )
+                            jira = JiraClient()
+                            try:
+                                await jira.add_comment(
+                                    message.ticket_key,
+                                    f"Please reply with `` `>option N` `` where N is between 1 and {max_n}.",
+                                )
+                            finally:
+                                await jira.close()
+                            return current_state
+
                 comment_type = classify_comment(comment_body)
 
                 if comment_type == CommentType.QUESTION:
