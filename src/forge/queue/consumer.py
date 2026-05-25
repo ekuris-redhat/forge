@@ -201,18 +201,6 @@ class QueueConsumer:
                 for entry in entries:
                     try:
                         await self._process_message(entry.message)
-                        await self._retry_queue.remove_from_retry(entry)
-                        stream = (
-                            JIRA_STREAM
-                            if entry.message.source == EventSource.JIRA
-                            else GITHUB_STREAM
-                        )
-                        redis_client = await self._get_redis()
-                        await redis_client.xack(stream, CONSUMER_GROUP, entry.message.message_id)
-                        logger.info(
-                            f"Retry succeeded for {entry.message.ticket_key}:"
-                            f"{entry.message.event_id} (attempt {entry.attempt})"
-                        )
                     except Exception as e:
                         logger.warning(
                             f"Retry attempt {entry.attempt} failed for "
@@ -224,6 +212,30 @@ class QueueConsumer:
                         # reach the dead-letter queue.
                         await self._retry_queue.remove_from_retry_without_counter_reset(entry)
                         await self._retry_queue.enqueue_for_retry(entry.message, str(e))
+                        continue
+
+                    # Message processing succeeded — clean up retry state and
+                    # acknowledge the original stream entry (best-effort).
+                    await self._retry_queue.remove_from_retry(entry)
+                    logger.info(
+                        f"Retry succeeded for {entry.message.ticket_key}:"
+                        f"{entry.message.event_id} (attempt {entry.attempt})"
+                    )
+                    stream = (
+                        JIRA_STREAM if entry.message.source == EventSource.JIRA else GITHUB_STREAM
+                    )
+                    try:
+                        redis_client = await self._get_redis()
+                        await redis_client.xack(stream, CONSUMER_GROUP, entry.message.message_id)
+                    except Exception as xack_err:
+                        # xack is best-effort: the message was already successfully
+                        # processed and removed from the retry queue.  A failure here
+                        # only means the PEL entry lingers; it will not be reprocessed
+                        # because the retry-queue entry is gone.
+                        logger.warning(
+                            f"xack failed for {entry.message.event_id} after successful "
+                            f"retry (PEL entry may linger): {xack_err}"
+                        )
             except asyncio.CancelledError:
                 break
             except Exception as e:
