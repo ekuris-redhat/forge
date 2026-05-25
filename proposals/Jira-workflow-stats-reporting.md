@@ -171,7 +171,13 @@ forge weekly-report --project PROJ --output report.md   # file export
 forge weekly-report --format json --output r.json       # JSON for tooling
 ```
 
-Scheduling is configured by the admin — a cron job or CI pipeline invokes the CLI command on a weekly cadence.
+**Email delivery via Jira:**
+
+Each project gets a single long-lived "Forge Weekly Status Report" ticket (Task type, labeled `forge:weekly-report`). The CLI finds or creates this ticket automatically on first run. Each weekly report is posted as a new comment on that ticket, and the Jira notification API (`POST /issue/{key}/notify`) sends the report to stakeholders in the project's Administrator, Scrum Master, and Project Lead roles.
+
+No static configuration per project is needed — the report ticket is auto-created, and recipients are resolved dynamically from Jira project roles. All past reports are preserved as comments on the ticket, providing built-in history.
+
+The CLI is run on-demand by the admin.
 
 ### User Experience
 
@@ -187,7 +193,9 @@ When a workflow completes successfully, the team sees a structured summary comme
 
 Post this as a Jira comment on any ticket to get the current stats snapshot regardless of workflow status.
 
-**Weekly report — admin CLI (on-demand or scheduled):**
+**Weekly report — admin CLI (on-demand):**
+
+The first run auto-creates a "Forge Weekly Status Report" ticket in the project. Stakeholders are notified via Jira's built-in email. All past reports are browsable as comments on that ticket.
 
 ```bash
 $ forge weekly-report --project PROJ
@@ -243,13 +251,14 @@ TOKEN CONSUMPTION
 2. **Phase 2: Node instrumentation** — Add `record_stage_start/end`, `record_tokens`, `increment_revision` calls to all generation, regeneration, implementation, CI, and review nodes. (~1 day)
 3. **Phase 3: Per-ticket summary** — Implement `workflow/stats/summary.py`, wire into `aggregate_feature_status`, format Jira comment. (~0.5 day)
 4. **Phase 4: Weekly report engine** — Implement `workflow/stats/weekly_report.py` with checkpoint scanning, aggregation, and report formatting. (~1 day)
-5. **Phase 5: CLI command** — Add `forge weekly-report` subcommand with `--days`, `--output`, `--format` flags. (~0.5 day)
+5. **Phase 5: CLI command + Jira delivery** — Add `forge weekly-report` subcommand with `--days`, `--output`, `--format` flags. Implement find-or-create logic for the per-project report ticket (`forge:weekly-report` label), post report as comment, and send notification to project roles (Administrator, Scrum Master, Project Lead) via Jira notification API. (~1 day)
 6. **Phase 6: Tests** — Unit tests for helpers, summary formatting, report aggregation. Integration tests for CLI command. (~1 day)
 
 ### Dependencies
 
 - [ ] LLM response objects must expose `input_tokens` / `output_tokens` (available via Anthropic API responses and Vertex AI via LangChain `response_metadata`)
 - [ ] Redis checkpointer must support scanning all checkpoints (existing `list_checkpoints` helper)
+- [ ] Jira notification API (`POST /issue/{key}/notify`) and project role API (`/project/{key}/role`) access for weekly report email delivery
 
 ### Risks
 
