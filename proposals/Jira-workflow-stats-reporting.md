@@ -6,7 +6,7 @@
 
 ## Summary
 
-When a Forge workflow reaches a terminal state — successful completion, blocked, or unrecoverable failure — the system should automatically post a development statistics summary as a Jira comment on the Feature ticket. The primary quality signal is iteration count: how many manual interventions and corrections were needed at each stage. When a workflow is blocked due to escalation to human, the full stats summary is posted so the team can assess the work Forge completed before hitting the block. If token consumption also exceeds a configurable threshold, a cost alert is included. Users can request stats on demand for any ticket via `/forge stats` (Jira comment command). Additionally, a weekly status report aggregates statistics across all active and completed tickets per project, delivered via admin CLI.
+When a Forge workflow reaches a terminal state — successful completion, blocked, or unrecoverable failure — the system should automatically post a development statistics summary as a Jira comment on the Feature ticket. The primary quality signal is iteration count: how many manual interventions and corrections were needed at each stage. When a workflow is blocked due to escalation to human, the full stats summary is posted so the team can assess the work Forge completed before hitting the block. If token consumption also exceeds a configurable threshold, a cost alert is included. Users can request stats on demand for any ticket via `/forge stats` (Jira comment) or `forge-watch stats PROJ-123` (CLI). A per-ticket email with aggregate stats is sent to the ticket's reporter and assignee on workflow completion. Additionally, a weekly status report aggregates statistics across all active and completed tickets per project, delivered via admin CLI.
 
 ## Motivation
 
@@ -30,11 +30,12 @@ Teams manually correlate Jira comment history and Langfuse traces to recreate ti
 
 ### Overview
 
-Three complementary features:
+Four complementary features:
 
 1. **Per-ticket summary** — a Jira comment posted automatically when the workflow completes successfully, populated with information about iteration counts at each stage, stage durations, tokens used, links to PRs & CI attempts. When a workflow is blocked due to escalation to human, the full stats summary is always posted. If token usage also exceeds a configurable threshold (`FORGE_COST_ALERT_THRESHOLD`), a cost alert section is included.
-2. **On-demand stats** — users can request current stats for any feature/bug ticket via `/forge stats` (Jira comment command). Returns the same summary format as the per-ticket summary, reflecting the current state of the workflow regardless of completion status.
-3. **Weekly status report** — aggregated view across all tickets per project with activity during the reporting period, delivered via admin CLI command.
+2. **On-demand stats** — users can request current stats for any feature/bug ticket via `/forge stats` (Jira comment command) or `forge-watch stats PROJ-123` (CLI). Returns the same summary format as the per-ticket summary, reflecting the current state of the workflow regardless of completion status.
+3. **Per-ticket email notification** — when a workflow completes, an email with the aggregate stats is sent to the Jira ticket's reporter and assignee.
+4. **Weekly status report** — aggregated view across all tickets per project with activity during the reporting period, delivered via admin CLI command.
 
 All of these features pull data from LangGraph's checkpoint state, which is augmented with statistic fields that are recorded during execution of the workflow.
 
@@ -110,7 +111,7 @@ A new module `workflow/stats/summary.py` with a `post_workflow_summary(state)` f
 
 **On-demand stats (`/forge stats` command):**
 
-Users can post `/forge stats` as a comment on any Jira ticket to get the current stats summary, regardless of workflow status. The response is posted as a Jira comment on the ticket, using the same summary format and reflecting the latest checkpoint state.
+Users can post `/forge stats` as a comment on any Jira ticket to get the current stats summary, regardless of workflow status. The same data is available via CLI: `forge-watch stats PROJ-123`. Both return the same summary format, reflecting the latest checkpoint state.
 
 **Comment format:**
 
@@ -171,31 +172,31 @@ forge weekly-report --project PROJ --output report.md   # file export
 forge weekly-report --format json --output r.json       # JSON for tooling
 ```
 
-**Email delivery via Jira:**
+Scheduling is configured by the admin — a cron job or CI pipeline invokes the CLI command on a weekly cadence.
 
-Each project gets a single long-lived "Forge Weekly Status Report" ticket (Task type, labeled `forge:weekly-report`). The CLI finds or creates this ticket automatically on first run. Each weekly report is posted as a new comment on that ticket, and the Jira notification API (`POST /issue/{key}/notify`) sends the report to stakeholders in the project's Administrator, Scrum Master, and Project Lead roles.
+**Per-ticket email — automatic on completion:**
 
-No static configuration per project is needed — the report ticket is auto-created, and recipients are resolved dynamically from Jira project roles. All past reports are preserved as comments on the ticket, providing built-in history.
-
-The CLI is run on-demand by the admin.
+When a workflow completes (or is blocked due to escalation), an email with the aggregate stats summary is sent to the Jira ticket's reporter and assignee. Email delivery via Gmail SMTP (`smtp.gmail.com`) or the Gmail API, HTML-formatted.
 
 ### User Experience
 
 **Per-ticket summary — automatic, no user action required:**
 
-When a workflow completes successfully, the team sees a structured summary comment appear on the Jira ticket. When a workflow is blocked due to escalation to human, the full stats summary is posted — if the cost threshold is also exceeded, a cost alert is included. Jira's built-in notification system handles email delivery to watchers, reporter, and assignee automatically when the comment is posted.
+When a workflow completes successfully, the team sees a structured summary comment appear on the Jira ticket. The ticket's reporter and assignee receive an email with the same stats. When a workflow is blocked due to escalation to human, the full stats summary is posted and emailed — if the cost threshold is also exceeded, a cost alert is included.
 
 **On-demand stats — any time, any ticket:**
 
-```
+```bash
+# Jira comment:
 /forge stats
+
+# CLI:
+$ forge-watch stats PROJ-123
 ```
 
-Post this as a Jira comment on any ticket to get the current stats snapshot regardless of workflow status.
+Both return the current stats snapshot for the ticket regardless of workflow status.
 
-**Weekly report — admin CLI (on-demand):**
-
-The first run auto-creates a "Forge Weekly Status Report" ticket in the project. Stakeholders are notified via Jira's built-in email. All past reports are browsable as comments on that ticket.
+**Weekly report — admin CLI (on-demand or scheduled):**
 
 ```bash
 $ forge weekly-report --project PROJ
@@ -251,14 +252,16 @@ TOKEN CONSUMPTION
 2. **Phase 2: Node instrumentation** — Add `record_stage_start/end`, `record_tokens`, `increment_revision` calls to all generation, regeneration, implementation, CI, and review nodes. (~1 day)
 3. **Phase 3: Per-ticket summary** — Implement `workflow/stats/summary.py`, wire into `aggregate_feature_status`, format Jira comment. (~0.5 day)
 4. **Phase 4: Weekly report engine** — Implement `workflow/stats/weekly_report.py` with checkpoint scanning, aggregation, and report formatting. (~1 day)
-5. **Phase 5: CLI command + Jira delivery** — Add `forge weekly-report` subcommand with `--days`, `--output`, `--format` flags. Implement find-or-create logic for the per-project report ticket (`forge:weekly-report` label), post report as comment, and send notification to project roles (Administrator, Scrum Master, Project Lead) via Jira notification API. (~1 day)
-6. **Phase 6: Tests** — Unit tests for helpers, summary formatting, report aggregation. Integration tests for CLI command. (~1 day)
+5. **Phase 5: CLI command** — Add `forge weekly-report` subcommand with `--days`, `--output`, `--format` flags. (~0.5 day)
+6. **Phase 6: Email delivery** — Implement `integrations/email/client.py`, wire per-ticket email on workflow completion and blocked-due-to-escalation, SMTP configuration, resolve recipients from Jira ticket reporter/assignee. (~0.5 day)
+7. **Phase 7: Tests** — Unit tests for helpers, summary formatting, report aggregation. Integration tests for CLI command. (~1 day)
 
 ### Dependencies
 
 - [ ] LLM response objects must expose `input_tokens` / `output_tokens` (available via Anthropic API responses and Vertex AI via LangChain `response_metadata`)
 - [ ] Redis checkpointer must support scanning all checkpoints (existing `list_checkpoints` helper)
-- [ ] Jira notification API (`POST /issue/{key}/notify`) and project role API (`/project/{key}/role`) access for weekly report email delivery
+- [ ] Gmail SMTP credentials for Phase 6 (`FORGE_GMAIL_USER`, `FORGE_GMAIL_APP_PASSWORD`, `FORGE_REPORT_EMAIL_FROM`)
+- [ ] Jira API access to resolve ticket reporter and assignee email addresses for per-ticket notifications
 
 ### Risks
 
