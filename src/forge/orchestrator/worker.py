@@ -110,8 +110,10 @@ class OrchestratorWorker:
             or payload.get("check_run", {}).get("pull_requests")
             or []
         )
-        pr_number = payload.get("pull_request", {}).get("number") or (
-            suite_prs[0].get("number") if suite_prs else None
+        pr_number = (
+            payload.get("pull_request", {}).get("number")
+            or payload.get("issue", {}).get("number")
+            or (suite_prs[0].get("number") if suite_prs else None)
         )
 
         pr_url = (
