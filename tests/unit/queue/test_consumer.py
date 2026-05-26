@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from forge.models.events import EventSource
-from forge.queue.consumer import CONSUMER_GROUP, MAX_CONCURRENT_TASKS, QueueConsumer
+from forge.queue.consumer import CONSUMER_GROUP, QueueConsumer
 from forge.queue.models import QueueMessage
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ def _make_message(
     )
 
 
-def _make_consumer(redis_mock: MagicMock, max_tasks: int = MAX_CONCURRENT_TASKS) -> QueueConsumer:
+def _make_consumer(redis_mock: MagicMock, max_tasks: int = 20) -> QueueConsumer:
     """Return a QueueConsumer wired to a mock Redis client."""
     consumer = QueueConsumer(consumer_name="test-worker", redis_client=redis_mock)
     consumer._semaphore = asyncio.Semaphore(max_tasks)

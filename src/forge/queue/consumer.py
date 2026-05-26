@@ -8,6 +8,7 @@ from typing import Any
 
 import redis.asyncio as redis
 
+from forge.config import get_settings
 from forge.integrations.jira import JiraClient
 from forge.models.events import EventSource
 from forge.orchestrator.checkpointer import get_redis_client
@@ -18,10 +19,6 @@ logger = logging.getLogger(__name__)
 
 # Consumer group name
 CONSUMER_GROUP = "forge-workers"
-
-# Maximum number of in-flight message processing tasks at any time.
-# Prevents resource exhaustion during message bursts.
-MAX_CONCURRENT_TASKS = 20
 
 # Handler type for message processing
 MessageHandler = Callable[[QueueMessage], Coroutine[Any, Any, None]]
@@ -53,7 +50,7 @@ class QueueConsumer:
         self._handlers: dict[EventSource, MessageHandler] = {}
         self._running = False
         self._ticket_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-        self._semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+        self._semaphore = asyncio.Semaphore(get_settings().queue_max_concurrent_tasks)
         self._active_tasks: set[asyncio.Task[None]] = set()
 
     async def _get_redis(self) -> redis.Redis:
