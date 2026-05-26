@@ -65,12 +65,12 @@ When a container exits with a non-zero code and the logs are unhelpful (e.g. onl
 
 **1. Set in `.env`:**
 ```bash
-FORGE_CONTAINER_KEEP_ON_FAILURE=true
+FORGE_CONTAINER_KEEP=true
 ```
 
 **2. Trigger the failing workflow.** When a container fails, the worker logs will print the container name and ready-to-run commands:
 ```
-Container kept for debugging (FORGE_CONTAINER_KEEP_ON_FAILURE=true): forge-AISOS-678-12345
+Container kept for debugging (FORGE_CONTAINER_KEEP=true): forge-AISOS-678-12345
   Inspect logs:      podman logs forge-AISOS-678-12345
   Enter filesystem:  podman export forge-AISOS-678-12345 | tar -xC /tmp/forge-AISOS-678-12345
   Remove when done:  podman rm forge-AISOS-678-12345
@@ -88,7 +88,7 @@ podman rm forge-AISOS-678-12345
 podman rm $(podman ps -a --filter name=forge- -q)
 ```
 
-**Remember:** Set `FORGE_CONTAINER_KEEP_ON_FAILURE=false` (or remove it) before running in production — accumulated stopped containers consume disk space.
+**Remember:** Set `FORGE_CONTAINER_KEEP=false` (or remove it) before running in production — accumulated stopped containers consume disk space.
 
 ## Code Style
 

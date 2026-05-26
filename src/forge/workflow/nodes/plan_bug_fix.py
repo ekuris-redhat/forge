@@ -264,7 +264,7 @@ async def decompose_plan(state: BugState) -> BugState:
     selected_fix_approach = state.get("selected_fix_approach") or {}
     repos = list(
         dict.fromkeys(
-            r.rstrip(".,;:!?'\")]>*_~`")  # strip Jira/markdown formatting chars
+            re.sub(r"[^a-zA-Z0-9/._-]", "", r).rstrip(".")
             for r in re.findall(r"repo:(\S+)", plan_content)
         )
     )

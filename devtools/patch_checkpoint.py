@@ -29,14 +29,15 @@ async def patch(ticket_key: str, patches: dict) -> None:
     # (using the wrong graph silently drops fields not in that state schema)
     config = {"configurable": {"thread_id": ticket_key}}
 
-    # Peek at the raw checkpoint to detect ticket_type before compiling
+    # aget() returns the Checkpoint dict directly (not a CheckpointTuple).
+    # Access via dict keys, matching the pattern in worker._find_workflow_by_state.
     detected_type = TicketType.FEATURE
     try:
         raw = await checkpointer.aget(config)
-        if raw and raw.checkpoint:
-            channel_values = raw.checkpoint.get("channel_values", {})
+        if raw and isinstance(raw, dict):
+            channel_values = raw.get("channel_values", {})
             saved_type = channel_values.get("ticket_type", "")
-            if str(saved_type).lower() in ("bug", "Bug"):
+            if str(saved_type).lower() == "bug":
                 detected_type = TicketType.BUG
     except Exception:
         pass

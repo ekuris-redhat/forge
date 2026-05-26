@@ -366,6 +366,7 @@ class OrchestratorWorker:
         is_retry = False
         is_question = False
         is_ci_webhook = False
+        pr_merged = False
         feedback = None
 
         current_node = current_state.get("current_node", "")
@@ -536,6 +537,7 @@ class OrchestratorWorker:
                                 "selected_fix_option": n,
                                 "selected_fix_approach": rca_options[n - 1],
                                 "is_paused": False,
+                                "is_question": False,
                                 "revision_requested": False,
                                 "feedback_comment": None,
                                 "context": {
@@ -709,6 +711,7 @@ class OrchestratorWorker:
             and current_node == "human_review_gate"
         ):
             is_approved = True
+            pr_merged = True
             logger.info(f"Detected PR merge for {message.ticket_key}")
 
         # Build updated state — do NOT set is_paused=False here.
@@ -764,6 +767,8 @@ class OrchestratorWorker:
             updated_state["revision_requested"] = False
             updated_state["feedback_comment"] = None
             updated_state["last_error"] = None
+            if pr_merged:
+                updated_state["pr_merged"] = True
         elif is_question:
             # Unpause so answer_question node runs, it will re-pause after answering
             updated_state["is_paused"] = False
