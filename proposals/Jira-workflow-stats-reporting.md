@@ -177,14 +177,18 @@ Scheduling is configured by the admin — a cron job or CI pipeline invokes the 
 
 **Per-ticket summary — automatic, no user action required:**
 
-When a workflow completes successfully, the team sees a structured summary comment appear on the Jira ticket. When a workflow is blocked due to escalation to human, the full stats summary is posted — if the cost threshold is also exceeded, a cost alert is included. Jira's built-in notification system handles email delivery to watchers, reporter, and assignee automatically when the comment is posted.
+When a workflow completes successfully, the team sees a structured summary comment appear on the Jira ticket. When a workflow is blocked due to escalation to human, the full stats summary is posted — if the token usage threshold is also exceeded, a cost alert is included. Jira's built-in notification system handles email delivery to watchers, reporter, and assignee automatically when the comment is posted.
 
 **On-demand stats — any time, any ticket:**
 
 ```
 /forge stats
+
+# CLI:
+$ forge stats PROJ-123
 ```
 
+Both return the current stats snapshot for the ticket regardless of workflow status.
 Post this as a Jira comment on any ticket to get the current stats snapshot regardless of workflow status.
 
 **Weekly report — admin CLI (on-demand or scheduled):**
