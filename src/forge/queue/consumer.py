@@ -36,6 +36,7 @@ class QueueConsumer:
         consumer_name: str,
         redis_client: redis.Redis | None = None,
         jira_client: JiraClient | None = None,
+        max_concurrent_tasks: int | None = None,
     ):
         """Initialize the queue consumer.
 
@@ -43,6 +44,8 @@ class QueueConsumer:
             consumer_name: Unique name for this consumer instance.
             redis_client: Optional Redis client. Creates new if not provided.
             jira_client: Optional Jira client for freshness checks.
+            max_concurrent_tasks: Maximum concurrent in-flight tasks. Defaults
+                to ``settings.queue_max_concurrent_tasks`` when not provided.
         """
         self.consumer_name = consumer_name
         self._redis = redis_client
@@ -50,7 +53,12 @@ class QueueConsumer:
         self._handlers: dict[EventSource, MessageHandler] = {}
         self._running = False
         self._ticket_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-        self._semaphore = asyncio.Semaphore(get_settings().queue_max_concurrent_tasks)
+        concurrency = (
+            max_concurrent_tasks
+            if max_concurrent_tasks is not None
+            else get_settings().queue_max_concurrent_tasks
+        )
+        self._semaphore = asyncio.Semaphore(concurrency)
         self._active_tasks: set[asyncio.Task[None]] = set()
 
     async def _get_redis(self) -> redis.Redis:

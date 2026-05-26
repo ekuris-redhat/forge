@@ -39,8 +39,11 @@ def _make_message(
 
 def _make_consumer(redis_mock: MagicMock, max_tasks: int = 20) -> QueueConsumer:
     """Return a QueueConsumer wired to a mock Redis client."""
-    consumer = QueueConsumer(consumer_name="test-worker", redis_client=redis_mock)
-    consumer._semaphore = asyncio.Semaphore(max_tasks)
+    consumer = QueueConsumer(
+        consumer_name="test-worker",
+        redis_client=redis_mock,
+        max_concurrent_tasks=max_tasks,
+    )
     return consumer
 
 
