@@ -218,20 +218,20 @@ class ContainerRunner:
     def _build_container_name(
         self,
         ticket_key: str | None = None,
-        repo_name: str | None = None,
+        _repo_name: str | None = None,
     ) -> str:
         """Build container name for identification.
 
-        Format: forge-{ticket}-{repo}-{pid} e.g., forge-AISOS-189-installer-12345
+        Format: forge-{ticket}-{uid} e.g., forge-AISOS-189-a1b2c3
+        Uses a unique suffix to avoid name collisions when multiple
+        containers run for the same ticket (e.g., RCA → reflection → RCA).
         """
+        import uuid
+
         name_parts = ["forge"]
         if ticket_key:
             name_parts.append(ticket_key)
-        if repo_name:
-            # Extract just the repo name from "owner/repo" format
-            short_repo = repo_name.split("/")[-1] if "/" in repo_name else repo_name
-            name_parts.append(short_repo)
-        name_parts.append(str(os.getpid()))
+        name_parts.append(uuid.uuid4().hex[:6])
         return "-".join(name_parts)
 
     def _build_podman_command(
