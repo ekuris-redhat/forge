@@ -490,7 +490,7 @@ def build_bug_graph() -> StateGraph:
             END: END,
         },
     )
-    graph.add_edge("regenerate_plan", "plan_bug_fix")
+    graph.add_edge("regenerate_plan", "plan_approval_gate")
     # decompose_plan sets current_node in state; route accordingly
     graph.add_conditional_edges(
         "decompose_plan",
