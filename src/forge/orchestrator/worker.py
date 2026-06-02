@@ -541,9 +541,7 @@ class OrchestratorWorker:
         # Fallback: check current labels on the ticket when changelog-based
         # detection missed the approval (e.g. user changed labels in two steps).
         if not is_approved and not is_rejected and not is_retry:
-            current_labels = (
-                payload.get("issue", {}).get("fields", {}).get("labels", [])
-            )
+            current_labels = payload.get("issue", {}).get("fields", {}).get("labels", [])
             current_labels_lower = [lbl.lower() for lbl in current_labels]
             gate_to_approved_label = {
                 "prd_approval_gate": "forge:prd-approved",
@@ -555,9 +553,7 @@ class OrchestratorWorker:
             if expected_label and expected_label in current_labels_lower:
                 is_approved = True
                 stage = current_node.replace("_approval_gate", "")
-                logger.info(
-                    f"Detected {stage} approval via current label: {expected_label}"
-                )
+                logger.info(f"Detected {stage} approval via current label: {expected_label}")
 
         # Check for rejection comment (contains feedback)
         # Determine if comment is on Epic/Task (child) vs Feature (parent)
@@ -865,7 +861,9 @@ class OrchestratorWorker:
         else:
             # Nodes that wait for specific external events should not auto-proceed.
             _signal_required_nodes = (
-                "ci_evaluator", "attempt_ci_fix", "human_review_gate",
+                "ci_evaluator",
+                "attempt_ci_fix",
+                "human_review_gate",
                 "wait_for_ci_gate",
             )
             if (
