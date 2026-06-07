@@ -610,10 +610,15 @@ class OrchestratorWorker:
                     is_question = True
                     feedback = comment_body
                     logger.info(f"Detected question comment: {feedback[:100]}...")
-                else:
-                    # Treat as feedback for rejection
+                elif comment_type == CommentType.FEEDBACK:
                     is_rejected = True
-                    feedback = comment_body
+                    feedback = re.sub(r"^\s*!\s*", "", comment_body)
+                    logger.info(f"Detected revision comment: {feedback[:100]}...")
+                else:
+                    logger.info(
+                        f"Informational comment on {message.ticket_key}, "
+                        f"ignoring: {comment_body[:100]}..."
+                    )
 
                 # Determine workflow phase from current_node for feedback/questions
                 # (skip for approvals since they don't have feedback)

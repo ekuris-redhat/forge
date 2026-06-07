@@ -100,9 +100,9 @@ class TestQuestionDetection:
     async def test_normal_feedback_still_works(
         self, worker: OrchestratorWorker, base_message: QueueMessage, base_state: dict
     ):
-        """Normal feedback comments still trigger revision_requested."""
+        """Feedback comments with ! prefix trigger revision_requested."""
         message = self._make_message_with_comment(
-            base_message, "Please add more detail to the security section"
+            base_message, "!Please add more detail to the security section"
         )
 
         result = await worker._handle_resume_event(message, base_state)
