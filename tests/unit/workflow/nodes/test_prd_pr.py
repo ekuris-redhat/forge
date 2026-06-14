@@ -80,6 +80,7 @@ class TestCreatePrdProposalPr:
         assert result["prd_pr_url"] == "https://github.com/org/proposals/pull/7"
         assert result["prd_pr_repo"] == "org/proposals"
         assert result["prd_pr_branch"] == "forge/prd/test-123"
+        assert result["prd_pr_file_path"] == "proposals/TEST-123-my-feature.md"
 
         mock_gh.create_branch.assert_called_once_with("org", "proposals", "forge/prd/test-123")
         mock_gh.create_pull_request.assert_called_once()
@@ -95,22 +96,13 @@ class TestUpdatePrdProposalPr:
 
         mock_gh = MagicMock()
         mock_gh.get_file_contents = AsyncMock(
-            side_effect=[
-                # First call: list proposals directory
-                [{"name": "TEST-123-my-feature.md", "path": "proposals/TEST-123-my-feature.md"}],
-                # Second call: get specific file metadata
-                {"sha": "oldsha", "path": "proposals/TEST-123-my-feature.md"},
-            ]
+            return_value={"sha": "oldsha", "path": "proposals/TEST-123-my-feature.md"}
         )
         mock_gh.create_or_update_file = AsyncMock(
             return_value={"content": {"sha": "newsha"}}
         )
         mock_gh.create_issue_comment = AsyncMock()
         mock_gh.close = AsyncMock()
-
-        mock_settings = MagicMock()
-        mock_settings.prd_proposals_repo = "org/proposals"
-        mock_settings.prd_proposals_path = "proposals"
 
         state = create_initial_feature_state(
             ticket_key="TEST-123",
@@ -119,21 +111,21 @@ class TestUpdatePrdProposalPr:
             prd_pr_repo="org/proposals",
             prd_pr_number=7,
             prd_pr_url="https://github.com/org/proposals/pull/7",
+            prd_pr_file_path="proposals/TEST-123-my-feature.md",
         )
 
-        with (
-            patch("forge.workflow.nodes.prd_generation.GitHubClient", return_value=mock_gh),
-            patch("forge.workflow.nodes.prd_generation.get_settings", return_value=mock_settings),
-        ):
+        with patch("forge.workflow.nodes.prd_generation.GitHubClient", return_value=mock_gh):
             await _update_prd_proposal_pr(
                 ticket_key="TEST-123",
                 prd_content="# Revised PRD",
                 state=state,
             )
 
-        assert mock_gh.get_file_contents.call_count == 2
+        mock_gh.get_file_contents.assert_called_once_with(
+            "org", "proposals", "proposals/TEST-123-my-feature.md", "forge/prd/test-123"
+        )
         mock_gh.create_or_update_file.assert_called_once()
-        # Verify SHA was passed for update
         call_kwargs = mock_gh.create_or_update_file.call_args[1]
         assert call_kwargs["sha"] == "oldsha"
+        assert call_kwargs["path"] == "proposals/TEST-123-my-feature.md"
         mock_gh.create_issue_comment.assert_called_once()

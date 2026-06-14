@@ -49,6 +49,7 @@ class FeatureState(
     prd_pr_number: int | None
     prd_pr_repo: str | None
     prd_pr_branch: str | None
+    prd_pr_file_path: str | None
 
 
 def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState:
@@ -113,6 +114,7 @@ def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState
         "prd_pr_number": None,
         "prd_pr_repo": None,
         "prd_pr_branch": None,
+        "prd_pr_file_path": None,
     }
 
     # Merge with kwargs, letting kwargs override defaults

@@ -97,6 +97,7 @@ async def _create_prd_proposal_pr(
             "prd_pr_number": pr_number,
             "prd_pr_repo": proposals_repo,
             "prd_pr_branch": branch,
+            "prd_pr_file_path": file_path,
         }
     finally:
         await gh.close()
@@ -109,30 +110,22 @@ async def _update_prd_proposal_pr(
     state: dict[str, Any],
 ) -> None:
     """Push updated PRD content to the existing proposal PR branch."""
-    settings = get_settings()
     owner, repo = state["prd_pr_repo"].split("/", 1)
     branch = state["prd_pr_branch"]
     pr_number = state["prd_pr_number"]
-    proposals_path = settings.prd_proposals_path
+    file_path = state["prd_pr_file_path"]
 
     gh = GitHubClient()
     try:
-        file_meta = None
-        existing = await gh.get_file_contents(owner, repo, proposals_path, branch)
-        if isinstance(existing, list):
-            for entry in existing:
-                if entry.get("name", "").startswith(f"{ticket_key}-"):
-                    file_meta = await gh.get_file_contents(owner, repo, entry["path"], branch)
-                    break
-
+        file_meta = await gh.get_file_contents(owner, repo, file_path, branch)
         if not file_meta:
-            logger.warning(f"Could not find PRD file for {ticket_key} on branch {branch}")
+            logger.warning(f"Could not find PRD file {file_path} on branch {branch}")
             return
 
         await gh.create_or_update_file(
             owner=owner,
             repo=repo,
-            path=file_meta["path"],
+            path=file_path,
             content=prd_content,
             message=f"Revise PRD for {ticket_key} based on feedback",
             branch=branch,

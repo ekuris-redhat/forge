@@ -14,6 +14,7 @@ class TestPrdPrStateFields:
         assert state["prd_pr_number"] is None
         assert state["prd_pr_repo"] is None
         assert state["prd_pr_branch"] is None
+        assert state["prd_pr_file_path"] is None
 
     def test_prd_pr_fields_can_be_set(self):
         state = create_initial_feature_state(
@@ -23,11 +24,13 @@ class TestPrdPrStateFields:
             prd_pr_number=5,
             prd_pr_repo="org/proposals",
             prd_pr_branch="forge/prd/test-123",
+            prd_pr_file_path="proposals/TEST-123-my-feature.md",
         )
         assert state["prd_pr_url"] == "https://github.com/org/proposals/pull/5"
         assert state["prd_pr_number"] == 5
         assert state["prd_pr_repo"] == "org/proposals"
         assert state["prd_pr_branch"] == "forge/prd/test-123"
+        assert state["prd_pr_file_path"] == "proposals/TEST-123-my-feature.md"
 
     def test_prd_pr_fields_separate_from_implementation_pr(self):
         state = create_initial_feature_state(

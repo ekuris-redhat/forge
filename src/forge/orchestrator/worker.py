@@ -21,7 +21,7 @@ from forge.config import get_settings
 from forge.integrations.github.client import GitHubClient
 from forge.integrations.jira.client import JiraClient
 from forge.models.events import EventSource
-from forge.models.workflow import TicketType
+from forge.models.workflow import ForgeLabel, TicketType
 from forge.orchestrator.checkpointer import get_checkpointer, get_ticket_from_pr_index
 from forge.queue.consumer import QueueConsumer
 from forge.queue.models import QueueMessage
@@ -771,8 +771,6 @@ class OrchestratorWorker:
                 is_approved = True
                 logger.info(f"PRD PR merged for {message.ticket_key}")
                 # Sync Jira label
-                from forge.models.workflow import ForgeLabel
-
                 jira = JiraClient()
                 try:
                     await jira.set_workflow_label(message.ticket_key, ForgeLabel.PRD_APPROVED)
