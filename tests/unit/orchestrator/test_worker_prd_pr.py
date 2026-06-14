@@ -248,3 +248,57 @@ class TestHandlePrdPrComment:
         assert result["is_paused"] is False
         assert result.get("is_question") is True
         assert "REST" in result["feedback_comment"]
+
+
+class TestJiraCommentIgnoredInPrMode:
+    @pytest.mark.asyncio
+    async def test_jira_comment_ignored_when_prd_pr_exists(self, worker):
+        """Jira comments should not trigger feedback when PRD review is on GitHub PR."""
+        msg = QueueMessage(
+            message_id="msg-jira-1",
+            event_id="evt-jira-1",
+            source=EventSource.JIRA,
+            event_type="issue_comment_created",
+            ticket_key="TEST-123",
+            payload={
+                "comment": {
+                    "body": "This is a Jira comment that should be ignored",
+                },
+                "changelog": {"items": []},
+                "issue": {"fields": {"labels": ["forge:managed", "forge:prd-pending"]}},
+            },
+        )
+        state = _prd_gate_state()
+
+        result = await worker._handle_resume_event(msg, state)
+
+        # Should remain paused — Jira comment ignored in PR mode
+        assert result.get("is_paused", True) is True
+        assert result.get("revision_requested") is not True
+
+    @pytest.mark.asyncio
+    async def test_jira_comment_processed_when_no_prd_pr(self, worker):
+        """Jira comments should still work in normal Jira-only mode."""
+        msg = QueueMessage(
+            message_id="msg-jira-2",
+            event_id="evt-jira-2",
+            source=EventSource.JIRA,
+            event_type="issue_comment_created",
+            ticket_key="TEST-123",
+            payload={
+                "comment": {
+                    "body": "Please expand the scope section",
+                },
+                "changelog": {"items": []},
+                "issue": {"fields": {"labels": ["forge:managed", "forge:prd-pending"]}},
+            },
+        )
+        # No prd_pr_number — Jira-only mode
+        state = _prd_gate_state(prd_pr_number=None, prd_pr_repo=None)
+
+        result = await worker._handle_resume_event(msg, state)
+
+        # Should process the comment as feedback
+        assert result["is_paused"] is False
+        assert result["revision_requested"] is True
+        assert "scope section" in result["feedback_comment"]

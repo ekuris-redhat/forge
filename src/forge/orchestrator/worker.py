@@ -39,6 +39,8 @@ def _is_workflow_errored(state: dict) -> bool:
     return not state.get("is_paused") and state.get("last_error") is not None
 
 
+_PRD_GATE_NODES = ("prd_approval_gate", "generate_prd", "regenerate_prd")
+
 # Matches >option N anywhere in comment (case-insensitive, first match wins)
 # Supports both start-of-line usage (>option 2) and in-prose usage (let's go with >option 2)
 _OPTION_PATTERN = re.compile(r"(?mi)>option\s+(\d+)")
@@ -575,8 +577,16 @@ class OrchestratorWorker:
         # Check for rejection comment (contains feedback)
         # Determine if comment is on Epic/Task (child) vs Feature (parent)
         # based on current workflow phase
+        #
+        # Skip Jira comment feedback when PRD review happens on a GitHub PR —
+        # feedback should come from the PR, not Jira.
         comment_ticket_key = None
         comment_ticket_type = None  # "epic" or "task"
+        if comment and current_state.get("prd_pr_number") and current_node in _PRD_GATE_NODES:
+            logger.info(
+                f"Ignoring Jira comment for {message.ticket_key} — PRD review is on GitHub PR"
+            )
+            comment = {}
         if comment:
             comment_body = comment.get("body", "")
             # Extract text from ADF if needed
@@ -709,7 +719,6 @@ class OrchestratorWorker:
 
         # GitHub events targeting the PRD proposals PR — handled at prd_approval_gate.
         # Merge = approval. Review with feedback = revision. Comment = feedback/question.
-        _PRD_GATE_NODES = ("prd_approval_gate", "generate_prd", "regenerate_prd")
         if self._is_prd_pr_event(message, current_state) and current_node in _PRD_GATE_NODES:
             event = message.event_type
 
