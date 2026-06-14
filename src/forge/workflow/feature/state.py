@@ -44,6 +44,12 @@ class FeatureState(
     generation_context: dict[str, Any]  # Stored context from generation
     is_question: bool  # Current comment is a question (not feedback)
 
+    # PRD PR tracking (enhancement proposal flow)
+    prd_pr_url: str | None
+    prd_pr_number: int | None
+    prd_pr_repo: str | None
+    prd_pr_branch: str | None
+
 
 def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState:
     """Create initial state for a new Feature workflow run."""
@@ -103,6 +109,10 @@ def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState
         "qa_history": [],
         "generation_context": {},
         "is_question": False,
+        "prd_pr_url": None,
+        "prd_pr_number": None,
+        "prd_pr_repo": None,
+        "prd_pr_branch": None,
     }
 
     # Merge with kwargs, letting kwargs override defaults
