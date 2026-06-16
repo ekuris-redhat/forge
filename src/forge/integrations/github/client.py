@@ -254,6 +254,31 @@ class GitHubClient:
             response.raise_for_status()
             return response.json()
 
+    async def get_review_comments(
+        self, owner: str, repo: str, pr_number: int, review_id: int
+    ) -> list[dict[str, Any]]:
+        """Get inline comments from a specific PR review.
+
+        Scoped to a single review submission, avoiding stale comments
+        from prior review rounds.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            pr_number: Pull request number.
+            review_id: The review ID from the webhook payload.
+
+        Returns:
+            List of comment dicts with path, line, and body.
+        """
+        client = await self._get_client()
+        response = await client.get(
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews/{review_id}/comments",
+            params={"per_page": 100},
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def create_issue_comment(
         self, owner: str, repo: str, issue_number: int, body: str
     ) -> dict[str, Any]:

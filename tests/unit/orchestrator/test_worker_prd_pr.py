@@ -143,13 +143,13 @@ class TestHandlePrdPrReview:
         msg = _make_message("pull_request_review:submitted", {
             "repository": {"full_name": "org/proposals"},
             "pull_request": {"number": 7},
-            "review": {"state": "changes_requested", "body": "Please add more detail"},
+            "review": {"id": 101, "state": "changes_requested", "body": "Please add more detail"},
         })
         state = _prd_gate_state()
 
         with patch("forge.orchestrator.worker.GitHubClient") as MockGH:
             mock_gh = MagicMock()
-            mock_gh.get_pull_request_review_comments = AsyncMock(return_value=[])
+            mock_gh.get_review_comments = AsyncMock(return_value=[])
             mock_gh.close = AsyncMock()
             MockGH.return_value = mock_gh
 
@@ -158,6 +158,7 @@ class TestHandlePrdPrReview:
         assert result["is_paused"] is False
         assert result["revision_requested"] is True
         assert "more detail" in result["feedback_comment"]
+        mock_gh.get_review_comments.assert_called_once_with("org", "proposals", 7, 101)
 
     @pytest.mark.asyncio
     async def test_approved_review_is_ignored(self, worker):
