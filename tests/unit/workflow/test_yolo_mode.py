@@ -177,3 +177,54 @@ class TestYoloLabelAddedMidWorkflow:
         # forge:yolo was already present — is_yolo should not re-trigger
         # yolo_mode stays True (copied from state), is_paused is False (prd-approved fired)
         assert result["yolo_mode"] is True  # preserved from input state
+
+
+class TestYoloGateRouting:
+    """Each approval gate routing function auto-approves when yolo_mode=True."""
+
+    def _feature_state(self, current_node: str, **extra) -> dict:
+        from forge.workflow.feature.state import create_initial_feature_state
+        state = create_initial_feature_state("TEST-1")
+        state["current_node"] = current_node
+        state["is_paused"] = True
+        state["yolo_mode"] = True
+        state.update(extra)
+        return state
+
+    def test_prd_route_auto_approves_in_yolo_mode(self):
+        from forge.workflow.gates.prd_approval import route_prd_approval
+        state = self._feature_state("prd_approval_gate", prd_content="# PRD")
+        assert route_prd_approval(state) == "generate_spec"
+
+    def test_spec_route_auto_approves_in_yolo_mode(self):
+        from forge.workflow.gates.spec_approval import route_spec_approval
+        state = self._feature_state("spec_approval_gate", spec_content="# Spec")
+        assert route_spec_approval(state) == "decompose_epics"
+
+    def test_plan_route_auto_approves_in_yolo_mode(self):
+        from forge.workflow.gates.plan_approval import route_plan_approval
+        state = self._feature_state("plan_approval_gate", epic_keys=["EPIC-1"])
+        assert route_plan_approval(state) == "generate_tasks"
+
+    def test_task_route_auto_approves_in_yolo_mode(self):
+        from forge.workflow.gates.task_approval import route_task_approval
+        state = self._feature_state("task_approval_gate", task_keys=["TASK-1"])
+        assert route_task_approval(state) == "task_router"
+
+    def test_yolo_false_still_pauses_at_prd_gate(self):
+        from langgraph.graph import END
+        from forge.workflow.gates.prd_approval import route_prd_approval
+        from forge.workflow.feature.state import create_initial_feature_state
+        state = create_initial_feature_state("TEST-1")
+        state["current_node"] = "prd_approval_gate"
+        state["is_paused"] = True
+        state["yolo_mode"] = False
+        state["prd_content"] = "# PRD"
+        assert route_prd_approval(state) == END
+
+    def test_yolo_does_not_override_question_routing(self):
+        from forge.workflow.gates.prd_approval import route_prd_approval
+        state = self._feature_state("prd_approval_gate", prd_content="# PRD")
+        state["is_question"] = True
+        state["feedback_comment"] = "?Why REST?"
+        assert route_prd_approval(state) == "answer_question"
