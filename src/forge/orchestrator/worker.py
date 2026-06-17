@@ -610,10 +610,15 @@ class OrchestratorWorker:
                     is_question = True
                     feedback = comment_body
                     logger.info(f"Detected question comment: {feedback[:100]}...")
-                else:
-                    # Treat as feedback for rejection
+                elif comment_type == CommentType.FEEDBACK:
                     is_rejected = True
-                    feedback = comment_body
+                    feedback = re.sub(r"^\s*!\s*", "", comment_body)
+                    logger.info(f"Detected revision comment: {feedback[:100]}...")
+                else:
+                    logger.info(
+                        f"Informational comment on {message.ticket_key}, "
+                        f"ignoring: {comment_body[:100]}..."
+                    )
 
                 # Determine workflow phase from current_node for feedback/questions
                 # (skip for approvals since they don't have feedback)
@@ -787,19 +792,43 @@ class OrchestratorWorker:
                 )
                 return current_state
 
+            # At approval gates with no error, retry means "regenerate" not "advance".
+            # Set revision_requested=True so route_*_approval routes to regeneration,
+            # not to the approved path (which fires when is_paused=False and no revision).
+            approval_gates = {
+                "prd_approval_gate",
+                "spec_approval_gate",
+                "plan_approval_gate",
+                "task_approval_gate",
+                "plan_approval_gate_bug",
+            }
             prev_error = current_state.get("last_error")
-            logger.info(
-                f"Retry requested for {message.ticket_key} at {current_node} "
-                f"(clearing error: {prev_error[:100] if prev_error else 'none'})"
-            )
-            updated_state["is_paused"] = False
-            updated_state["is_blocked"] = False
-            updated_state["last_error"] = None
-            updated_state["revision_requested"] = False
-            updated_state["feedback_comment"] = None
-            updated_state["retry_count"] = 0
-            updated_state["ci_fix_attempts"] = 0
-            # Keep current_node — workflow resumes from the node that failed
+            is_paused_at_gate = current_state.get("is_paused") and current_node in approval_gates
+            if is_paused_at_gate and not prev_error:
+                logger.info(
+                    f"Retry at approval gate {current_node} — triggering regeneration "
+                    f"via revision request"
+                )
+                updated_state["is_paused"] = False
+                updated_state["is_blocked"] = False
+                updated_state["last_error"] = None
+                updated_state["revision_requested"] = True
+                updated_state["feedback_comment"] = "Regeneration requested via retry."
+                updated_state["retry_count"] = 0
+                # current_node remains the gate so the graph can correctly route out of it
+            else:
+                logger.info(
+                    f"Retry requested for {message.ticket_key} at {current_node} "
+                    f"(clearing error: {prev_error[:100] if prev_error else 'none'})"
+                )
+                updated_state["is_paused"] = False
+                updated_state["is_blocked"] = False
+                updated_state["last_error"] = None
+                updated_state["revision_requested"] = False
+                updated_state["feedback_comment"] = None
+                updated_state["retry_count"] = 0
+                updated_state["ci_fix_attempts"] = 0
+                # Keep current_node — workflow resumes from the node that failed
         elif is_ci_webhook:
             # GitHub CI event — unpause the gate and let ci_evaluator check the results
             updated_state["is_paused"] = False

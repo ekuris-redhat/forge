@@ -112,6 +112,15 @@ podman rm $(podman ps -a --filter name=forge- -q)
 | `forge:blocked` | Workflow blocked, needs intervention |
 | `forge:retry` | Trigger retry of failed step |
 
+## Jira Comment Syntax
+
+| Prefix | Effect |
+|--------|--------|
+| `!` | Revision request — triggers regeneration with feedback |
+| `?` or `@forge ask` | Question — triggers Q&A answer |
+| `>option N` | RCA option selection (RCA Option Gate only) |
+| _(no prefix)_ | Informational — workflow ignores it |
+
 ## GitHub PR Comment Commands
 
 | Command | Where | Effect |

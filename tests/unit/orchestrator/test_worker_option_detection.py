@@ -125,8 +125,8 @@ class TestOptionNDetection:
 
     @pytest.mark.asyncio
     async def test_no_option_pattern_falls_through_to_revision(self, worker):
-        """Comment with no >option → revision_requested=True (existing behavior)."""
-        message = _make_option_message("I think the analysis missed the real root cause.")
+        """Comment with ! prefix and no >option → revision_requested=True."""
+        message = _make_option_message("!I think the analysis missed the real root cause.")
         state = _make_rca_gate_state()
 
         result = await worker._handle_resume_event(message, state)
