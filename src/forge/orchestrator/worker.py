@@ -21,7 +21,7 @@ from forge.config import get_settings
 from forge.integrations.github.client import GitHubClient
 from forge.integrations.jira.client import JiraClient
 from forge.models.events import EventSource
-from forge.models.workflow import TicketType
+from forge.models.workflow import ForgeLabel, TicketType
 from forge.orchestrator.checkpointer import get_checkpointer, get_ticket_from_pr_index
 from forge.queue.consumer import QueueConsumer
 from forge.queue.models import QueueMessage
@@ -1175,13 +1175,15 @@ class OrchestratorWorker:
         Returns:
             Initial state dictionary.
         """
-        # Extract ticket type from payload
+        # Extract ticket type and labels from payload
         ticket_type = "Unknown"  # Require explicit type, don't default to Feature
+        labels: list[str] = []
         if message.source == EventSource.JIRA:
             issue_data = message.payload.get("issue", {})
             fields = issue_data.get("fields", {})
             issue_type = fields.get("issuetype", {})
             ticket_type = issue_type.get("name", "Unknown")
+            labels = fields.get("labels", [])
 
         # Validate ticket type - only Features and Bugs can start workflows directly
         valid_top_level_types = ("Feature", "Bug", "Story")
@@ -1190,6 +1192,8 @@ class OrchestratorWorker:
                 f"Ticket {message.ticket_key} has type '{ticket_type}' which cannot "
                 f"start a workflow directly. Valid types: {valid_top_level_types}"
             )
+
+        yolo_mode = ForgeLabel.YOLO in labels
 
         return {
             "ticket_key": message.ticket_key,
@@ -1203,6 +1207,7 @@ class OrchestratorWorker:
             "current_node": "entry",
             "is_paused": False,
             "retry_count": message.retry_count,
+            "yolo_mode": yolo_mode,
         }
 
     async def start(self) -> None:

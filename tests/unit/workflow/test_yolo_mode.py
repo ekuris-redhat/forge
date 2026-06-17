@@ -31,3 +31,52 @@ class TestYoloModeDefaultsToFalse:
     def test_bug_state_yolo_mode_can_be_set_true(self):
         state = create_initial_bug_state("BUG-1", yolo_mode=True)
         assert state["yolo_mode"] is True
+
+
+class TestBuildInitialStateYoloMode:
+    """Tests for yolo_mode initialization from Jira payload."""
+
+    def _make_worker(self):
+        from unittest.mock import MagicMock
+        from forge.orchestrator.worker import OrchestratorWorker
+        worker = OrchestratorWorker.__new__(OrchestratorWorker)
+        worker.settings = MagicMock()
+        worker.router = MagicMock()
+        return worker
+
+    def _make_message(self, labels: list):
+        from unittest.mock import MagicMock
+        from forge.models.events import EventSource
+        msg = MagicMock()
+        msg.ticket_key = "TEST-1"
+        msg.source = EventSource.JIRA
+        msg.event_type = "jira:issue_updated"
+        msg.event_id = "evt-1"
+        msg.retry_count = 0
+        msg.payload = {
+            "issue": {
+                "fields": {
+                    "issuetype": {"name": "Feature"},
+                    "labels": labels,
+                }
+            }
+        }
+        return msg
+
+    def test_yolo_mode_true_when_label_present(self):
+        worker = self._make_worker()
+        msg = self._make_message(["forge:managed", "forge:yolo"])
+        state = worker._build_initial_state(msg)
+        assert state["yolo_mode"] is True
+
+    def test_yolo_mode_false_when_label_absent(self):
+        worker = self._make_worker()
+        msg = self._make_message(["forge:managed"])
+        state = worker._build_initial_state(msg)
+        assert state["yolo_mode"] is False
+
+    def test_yolo_mode_false_when_no_labels(self):
+        worker = self._make_worker()
+        msg = self._make_message([])
+        state = worker._build_initial_state(msg)
+        assert state["yolo_mode"] is False
