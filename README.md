@@ -376,6 +376,8 @@ tests/                   # Unit and integration tests
 
 - **API server**: `http://localhost:8000/metrics`
 - **Worker**: `http://localhost:8001/metrics`
+- **Prometheus UI**: `http://localhost:9092`
+- **Grafana dashboards**: `http://localhost:3010` when the compose `grafana` service is running
 
 Key metrics:
 - `forge_workflows_started_total` - Workflows started by type
