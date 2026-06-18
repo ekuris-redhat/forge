@@ -5,8 +5,7 @@ resolve_trace_fields(), and passes the resolved tags/metadata to
 _run_agent().
 """
 
-from typing import Any
-from unittest.mock import ANY, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -75,6 +74,31 @@ class TestRunTaskTraceResolution:
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["tags"] == ["Bug", "PROJ"]
         assert call_kwargs["metadata"] == {"ticket_key": "PROJ-42"}
+
+    @pytest.mark.asyncio
+    async def test_uses_trace_context_ticket_key_for_session_when_context_omits_it(
+        self, agent: ForgeAgent
+    ) -> None:
+        with (
+            patch.object(agent, "_run_agent", new_callable=AsyncMock) as mock_run,
+            patch(
+                "forge.integrations.agents.agent.resolve_trace_fields",
+                return_value=([], {}),
+            ),
+            patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
+        ):
+            mock_run.return_value = "result"
+            await agent.run_task(
+                task="test-task",
+                prompt="test",
+                context={"task_count": 2},
+                trace_context={"ticket_key": "PROJ-42"},
+            )
+
+        call_kwargs = mock_run.call_args.kwargs
+        assert call_kwargs["session_id"] == "PROJ-42"
+        assert call_kwargs["ticket_key"] == "PROJ-42"
+        assert "PROJ-42" not in call_kwargs["system_prompt"]
 
     @pytest.mark.asyncio
     async def test_empty_tags_passed_as_none(self, agent: ForgeAgent) -> None:

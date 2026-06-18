@@ -556,6 +556,39 @@ Then set `LANGFUSE_HOST=http://localhost:3000` in `.env`.
 - CI fix analysis and implementation calls
 - All calls have the ticket key, task type, and token counts attached
 
+### Trace tags and metadata
+
+You can attach workflow context to every Langfuse trace as tags or metadata, making it easy to filter traces by ticket type, CI status, event source, and so on.
+
+Configure the fields you want via two comma-separated env vars:
+
+```bash
+# Fields to attach as searchable Langfuse tags
+LANGFUSE_TRACE_TAGS=ticket_key,ticket_type,workflow_step
+
+# Fields to attach as Langfuse trace metadata
+LANGFUSE_TRACE_METADATA=ticket_key,ticket_type,repo,pr_number,ci_status,event_type,event_source,retry_count,system_prompt_length,llm_model
+```
+
+Available field names for both settings:
+
+| Field | Description |
+|-------|-------------|
+| `ticket_key` | Jira ticket key (e.g. `PROJ-123`) |
+| `ticket_type` | Ticket type (`Feature`, `Bug`, etc.) |
+| `project_id` | Jira project ID derived from the ticket key |
+| `workflow_step` | Name of the workflow node that triggered the call |
+| `repo` | GitHub repository (`owner/repo`) |
+| `pr_number` | Pull request number |
+| `ci_status` | Last known CI status |
+| `event_type` | Webhook event type that started the workflow |
+| `event_source` | Source system (e.g. `jira`, `github`) |
+| `retry_count` | Number of retries so far |
+| `system_prompt_length` | Length of the system prompt in characters (metadata only) |
+| `llm_model` | Model used for the call |
+
+Invalid or unknown field names are ignored and logged at `WARNING` level on startup.
+
 ### Disabling tracing
 
 ```bash

@@ -471,6 +471,10 @@ async def _generate_pr_body_with_agent(
             prompt=prompt,
             context={
                 "ticket_key": ticket_key,
+                "task_count": len(implemented_tasks),
+            },
+            trace_context={
+                "ticket_key": ticket_key,
                 "ticket_type": state.get("ticket_type", ""),
                 "current_node": state.get("current_node", ""),
                 "repo": current_repo,
@@ -479,7 +483,6 @@ async def _generate_pr_body_with_agent(
                 "event_type": state.get("event_type", ""),
                 "event_source": state.get("context", {}).get("source", ""),
                 "retry_count": state.get("retry_count", 0),
-                "task_count": len(implemented_tasks),
             },
             include_tools=False,  # No tools needed for text generation
         )

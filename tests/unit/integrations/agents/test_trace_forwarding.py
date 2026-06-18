@@ -5,7 +5,7 @@ pass trace context through to run_task().
 """
 
 from typing import Any
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -93,16 +93,27 @@ class TestGeneratePrdTraceForwarding:
             mock_run.return_value = "# PRD\n\nContent"
             await agent.generate_prd("Build auth system", context=context)
 
+        # Prompt context contains only task-relevant fields
         call_ctx = mock_run.call_args.kwargs["context"]
         assert call_ctx["ticket_key"] == "PROJ-42"
-        assert call_ctx["ticket_type"] == "Feature"
-        assert call_ctx["current_node"] == "generate_prd"
-        assert call_ctx["event_type"] == "issue_updated"
-        assert call_ctx["event_source"] == "jira"
-        assert call_ctx["retry_count"] == 1
         assert call_ctx["project_key"] == "PROJ"
-        # Non-trace keys should not be forwarded
+        assert "ticket_type" not in call_ctx
         assert "summary" not in call_ctx
+
+        # Trace fields forwarded to trace_context, not the prompt
+        call_trace = mock_run.call_args.kwargs["trace_context"]
+        assert call_trace["ticket_type"] == "Feature"
+        assert call_trace["current_node"] == "generate_prd"
+        assert call_trace["event_type"] == "issue_updated"
+        assert call_trace["event_source"] == "jira"
+        assert call_trace["retry_count"] == 1
+
+        rendered_prompt = mock_run.call_args.kwargs["prompt"]
+        assert "ticket_type" not in rendered_prompt
+        assert "current_node" not in rendered_prompt
+        assert "event_type" not in rendered_prompt
+        assert "event_source" not in rendered_prompt
+        assert "retry_count" not in rendered_prompt
 
     @pytest.mark.asyncio
     async def test_handles_none_context(self) -> None:
@@ -112,7 +123,7 @@ class TestGeneratePrdTraceForwarding:
             await agent.generate_prd("Build something", context=None)
 
         call_ctx = mock_run.call_args.kwargs["context"]
-        assert call_ctx == {"project_key": ""}
+        assert call_ctx == {"ticket_key": "", "project_key": ""}
 
     @pytest.mark.asyncio
     async def test_project_key_defaults_to_empty(self) -> None:
@@ -145,9 +156,17 @@ class TestGenerateSpecTraceForwarding:
 
         call_ctx = mock_run.call_args.kwargs["context"]
         assert call_ctx["ticket_key"] == "PROJ-42"
-        assert call_ctx["ticket_type"] == "Feature"
-        assert call_ctx["current_node"] == "generate_spec"
         assert call_ctx["project_key"] == "PROJ"
+        assert "ticket_type" not in call_ctx
+
+        call_trace = mock_run.call_args.kwargs["trace_context"]
+        assert call_trace["ticket_type"] == "Feature"
+        assert call_trace["current_node"] == "generate_spec"
+
+        rendered_prompt = mock_run.call_args.kwargs["prompt"]
+        assert "ticket_type" not in rendered_prompt
+        assert "current_node" not in rendered_prompt
+        assert "event_type" not in rendered_prompt
 
 
 class TestGenerateEpicsTraceForwarding:
@@ -171,15 +190,19 @@ class TestGenerateEpicsTraceForwarding:
             mock_run.return_value = "---\nEPIC: Test\nREPO: acme/backend\nPLAN:\n1. Do it\n---"
             await agent.generate_epics("Spec content", context=context)
 
+        # Prompt context contains only task-relevant fields
         call_ctx = mock_run.call_args.kwargs["context"]
         assert call_ctx["ticket_key"] == "PROJ-42"
-        assert call_ctx["ticket_type"] == "Feature"
-        assert call_ctx["current_node"] == "decompose_epics"
         assert call_ctx["project_key"] == "PROJ"
         assert call_ctx["feature_summary"] == "Auth system"
         assert call_ctx["available_repos"] == ["acme/backend", "acme/frontend"]
-        # Non-forwarded keys should not leak
+        assert "ticket_type" not in call_ctx
         assert "summary" not in call_ctx
+
+        # Trace fields forwarded to trace_context only
+        call_trace = mock_run.call_args.kwargs["trace_context"]
+        assert call_trace["ticket_type"] == "Feature"
+        assert call_trace["current_node"] == "decompose_epics"
 
 
 class TestRegenerateWithFeedbackTraceForwarding:
@@ -205,14 +228,19 @@ class TestRegenerateWithFeedbackTraceForwarding:
                 context=context,
             )
 
+        # Prompt context contains only the minimal fields needed for the task
         call_ctx = mock_run.call_args.kwargs["context"]
-        assert call_ctx["ticket_type"] == "Feature"
-        assert call_ctx["current_node"] == "regenerate_prd"
-        assert call_ctx["event_type"] == "issue_updated"
-        assert call_ctx["event_source"] == "jira"
-        assert call_ctx["retry_count"] == 2
         assert call_ctx["is_revision"] is True
         assert call_ctx["ticket_key"] == "PROJ-42"
+        assert "ticket_type" not in call_ctx
+
+        # Trace fields forwarded to trace_context only
+        call_trace = mock_run.call_args.kwargs["trace_context"]
+        assert call_trace["ticket_type"] == "Feature"
+        assert call_trace["current_node"] == "regenerate_prd"
+        assert call_trace["event_type"] == "issue_updated"
+        assert call_trace["event_source"] == "jira"
+        assert call_trace["retry_count"] == 2
 
     @pytest.mark.asyncio
     async def test_handles_none_context(self) -> None:
@@ -290,16 +318,20 @@ class TestAnswerQuestionTraceForwarding:
                 context=context,
             )
 
+        # Prompt context contains only task-relevant fields
         call_ctx = mock_run.call_args.kwargs["context"]
         assert call_ctx["ticket_key"] == "PROJ-42"
-        assert call_ctx["ticket_type"] == "Feature"
-        assert call_ctx["current_node"] == "answer_question"
-        assert call_ctx["event_type"] == "issue_updated"
-        assert call_ctx["event_source"] == "jira"
-        assert call_ctx["retry_count"] == 0
         assert call_ctx["artifact_type"] == "prd"
-        # generation_context is not a trace field, should not be forwarded
+        assert "ticket_type" not in call_ctx
         assert "generation_context" not in call_ctx
+
+        # Trace fields forwarded to trace_context only
+        call_trace = mock_run.call_args.kwargs["trace_context"]
+        assert call_trace["ticket_type"] == "Feature"
+        assert call_trace["current_node"] == "answer_question"
+        assert call_trace["event_type"] == "issue_updated"
+        assert call_trace["event_source"] == "jira"
+        assert call_trace["retry_count"] == 0
 
     @pytest.mark.asyncio
     async def test_artifact_type_defaults_to_document(self) -> None:

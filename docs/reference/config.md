@@ -102,6 +102,8 @@ Use these to skip the Jira project property requirement during local development
 | `LANGFUSE_PUBLIC_KEY` | Langfuse public key |
 | `LANGFUSE_SECRET_KEY` | Langfuse secret key |
 | `LANGFUSE_HOST` | Langfuse host (defaults to cloud; set for self-hosted) |
+| `LANGFUSE_TRACE_TAGS` | Comma-separated list of trace attributes to attach as Langfuse tags. Available values: `ticket_key`, `ticket_type`, `project_id`, `workflow_step`, `repo`, `pr_number`, `ci_status`, `event_source`, `event_type`, `llm_model`. Default: empty (no tags). |
+| `LANGFUSE_TRACE_METADATA` | Comma-separated list of trace attributes to attach as Langfuse metadata. Available values: same as tags plus `retry_count`, `system_prompt_length`. Default: empty (no metadata). |
 
 ### MCP Servers
 
