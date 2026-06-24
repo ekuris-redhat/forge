@@ -352,6 +352,23 @@ class Settings(BaseSettings):
         description="Enable Prometheus metrics endpoint in worker",
     )
 
+    # Weekly Report Notification Configuration
+    weekly_report_notify: str = Field(
+        default="",
+        alias="forge_weekly_report_notify",
+        description=(
+            "Recipients to notify when a weekly report is generated. "
+            "Accepted values: "
+            "(1) A comma-separated list of Jira account IDs "
+            "(e.g. 'abc123,def456') — the listed users are mentioned in a "
+            "comment posted to the report ticket; "
+            "(2) The special value 'project-leads' — recipients are read from "
+            "the per-project Jira property 'forge.weekly-report.notify' instead. "
+            "When empty (default) no notification comment is posted. "
+            "Set via FORGE_WEEKLY_REPORT_NOTIFY environment variable."
+        ),
+    )
+
     # Stats Cost Alert Configuration
     stats_cost_alert_enabled: bool = Field(
         default=True,

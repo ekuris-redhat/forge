@@ -690,6 +690,7 @@ async def cmd_weekly_report(args: argparse.Namespace) -> int:
     output_path: str | None = args.output
     fmt: str = args.format
     create_ticket: bool = getattr(args, "create_ticket", False)
+    notify: bool = getattr(args, "notify", False)
 
     try:
         report = await collect_weekly_data(project, days=days)
@@ -731,6 +732,7 @@ async def cmd_weekly_report(args: argparse.Namespace) -> int:
         print(content)
 
     # Optionally create or update a Jira ticket with the report content.
+    ticket_key: str | None = None
     if create_ticket:
         from forge.workflow.stats.report_ticket import ensure_report_ticket
 
@@ -747,6 +749,41 @@ async def cmd_weekly_report(args: argparse.Namespace) -> int:
         except Exception as e:
             print(f"Error creating/updating report ticket: {e}", file=sys.stderr)
             return 1
+
+    # Optionally send Jira notification mentions to project stakeholders.
+    if notify:
+        if not create_ticket or ticket_key is None:
+            print(
+                "Warning: --notify requires --create-ticket to have a report ticket to comment on.",
+                file=sys.stderr,
+            )
+            return 1
+
+        from forge.workflow.stats.notifications import (
+            get_notification_recipients,
+            notify_report_ready,
+        )
+
+        try:
+            recipients = await get_notification_recipients(project)
+        except Exception as e:
+            print(f"Error retrieving notification recipients: {e}", file=sys.stderr)
+            return 1
+
+        if not recipients:
+            print(
+                f"No notification recipients configured for project {project!r}. "
+                "Set FORGE_WEEKLY_REPORT_NOTIFY or the forge.weekly-report.notify "
+                "project property to enable notifications.",
+                file=sys.stderr,
+            )
+        else:
+            try:
+                await notify_report_ready(ticket_key, recipients)
+                print(f"Notification sent to {len(recipients)} recipient(s).")
+            except Exception as e:
+                print(f"Error sending notification: {e}", file=sys.stderr)
+                return 1
 
     return 0
 
@@ -1045,6 +1082,18 @@ Examples:
             "'Forge Weekly Report - {PROJECT} - Week of {date}'. "
             "Running the command twice is idempotent — the existing ticket "
             "is updated rather than duplicated."
+        ),
+    )
+    weekly_report_parser.add_argument(
+        "--notify",
+        action="store_true",
+        default=False,
+        help=(
+            "Post a notification comment on the report ticket mentioning configured "
+            "stakeholders. Requires --create-ticket. Recipients are read from the "
+            "FORGE_WEEKLY_REPORT_NOTIFY env var (comma-separated Jira account IDs "
+            "or 'project-leads') or from the per-project Jira property "
+            "'forge.weekly-report.notify'."
         ),
     )
 
