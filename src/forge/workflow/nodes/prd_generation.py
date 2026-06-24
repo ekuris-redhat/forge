@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -12,10 +13,22 @@ from forge.integrations.jira.client import JiraClient
 from forge.models.workflow import ForgeLabel
 from forge.orchestrator.checkpointer import set_pr_ticket_index
 from forge.workflow.feature.state import FeatureState as WorkflowState
+from forge.workflow.stats import STAGE_PRD
+from forge.workflow.stats_utils import (
+    increment_revision,
+    record_stage_end,
+    record_stage_start,
+    record_tokens,
+)
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import post_status_comment
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    return max(1, len(text) // 4)
 
 
 def _slugify(text: str, max_length: int = 60) -> str:
@@ -167,6 +180,10 @@ async def generate_prd(state: WorkflowState) -> WorkflowState:
     ticket_key = state["ticket_key"]
     logger.info(f"Generating PRD for {ticket_key}")
 
+    # Record stage start and begin timing
+    state = {**state, **record_stage_start(state, STAGE_PRD)}
+    node_start = time.monotonic()
+
     jira = JiraClient()
     agent = ForgeAgent()
     prd_content = None
@@ -185,8 +202,11 @@ async def generate_prd(state: WorkflowState) -> WorkflowState:
 
         if not raw_requirements.strip():
             logger.warning(f"No description found for {ticket_key}")
+            machine_time = time.monotonic() - node_start
+            end_stats = record_stage_end(state, STAGE_PRD, machine_time)
             return {
                 **state,
+                **end_stats,
                 "last_error": "No requirements found in issue description",
                 "current_node": "generate_prd",
             }
@@ -205,6 +225,11 @@ async def generate_prd(state: WorkflowState) -> WorkflowState:
 
         # Generate PRD using Claude - primary operation
         prd_content = await agent.generate_prd(raw_requirements, context)
+
+        # Record token usage (estimated from content length)
+        input_tokens = _estimate_tokens(raw_requirements)
+        output_tokens = _estimate_tokens(prd_content)
+        state = {**state, **record_tokens(state, STAGE_PRD, input_tokens, output_tokens)}
 
         # Publish PRD - either as GitHub PR or Jira update
         # Per-project opt-in: check forge.prd_proposals_repo project property
@@ -244,10 +269,15 @@ async def generate_prd(state: WorkflowState) -> WorkflowState:
             "generated_at": datetime.now(UTC).isoformat(),
         }
 
+        # Record stage end with elapsed wall-clock time
+        machine_time = time.monotonic() - node_start
+        end_stats = record_stage_end(state, STAGE_PRD, machine_time)
+
         # If publish failed, set a warning but still advance (content exists)
         result = update_state_timestamp(
             {
                 **state,
+                **end_stats,
                 "prd_content": prd_content,
                 "generation_context": generation_context,
                 "current_node": "prd_approval_gate",
@@ -264,8 +294,11 @@ async def generate_prd(state: WorkflowState) -> WorkflowState:
 
         await notify_error(state, str(e), "generate_prd")
         # If we have partial content, save it even on failure
+        machine_time = time.monotonic() - node_start
+        end_stats = record_stage_end(state, STAGE_PRD, machine_time)
         result_state = {
             **state,
+            **end_stats,
             "last_error": str(e),
             "current_node": "generate_prd",
             "retry_count": state.get("retry_count", 0) + 1,
@@ -301,6 +334,11 @@ async def regenerate_prd_with_feedback(state: WorkflowState) -> WorkflowState:
 
     logger.info(f"Regenerating PRD for {ticket_key} with feedback")
 
+    # Record stage re-entry: start timer, increment revision count
+    state = {**state, **record_stage_start(state, STAGE_PRD)}
+    state = {**state, **increment_revision(state, STAGE_PRD)}
+    node_start = time.monotonic()
+
     jira = JiraClient()
     agent = ForgeAgent()
 
@@ -319,6 +357,11 @@ async def regenerate_prd_with_feedback(state: WorkflowState) -> WorkflowState:
                 "retry_count": state.get("retry_count", 0),
             },
         )
+
+        # Record token usage (estimated from content length)
+        input_tokens = _estimate_tokens(original_prd) + _estimate_tokens(feedback)
+        output_tokens = _estimate_tokens(new_prd)
+        state = {**state, **record_tokens(state, STAGE_PRD, input_tokens, output_tokens)}
 
         # Publish revised PRD
         if state.get("prd_pr_number"):
@@ -341,9 +384,14 @@ async def regenerate_prd_with_feedback(state: WorkflowState) -> WorkflowState:
 
         logger.info(f"PRD regenerated for {ticket_key} ({len(new_prd)} chars)")
 
+        # Record stage end with elapsed wall-clock time
+        machine_time = time.monotonic() - node_start
+        end_stats = record_stage_end(state, STAGE_PRD, machine_time)
+
         return update_state_timestamp(
             {
                 **state,
+                **end_stats,
                 "prd_content": new_prd,
                 "feedback_comment": None,
                 "revision_requested": False,
@@ -357,8 +405,11 @@ async def regenerate_prd_with_feedback(state: WorkflowState) -> WorkflowState:
         from forge.workflow.nodes.error_handler import notify_error
 
         await notify_error(state, str(e), "regenerate_prd")
+        machine_time = time.monotonic() - node_start
+        end_stats = record_stage_end(state, STAGE_PRD, machine_time)
         return {
             **state,
+            **end_stats,
             "last_error": str(e),
             "current_node": "regenerate_prd",
             "retry_count": state.get("retry_count", 0) + 1,

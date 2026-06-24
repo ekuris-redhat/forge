@@ -1,6 +1,7 @@
 """Specification generation node for LangGraph workflow."""
 
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -9,11 +10,23 @@ from forge.integrations.agents import ForgeAgent
 from forge.integrations.jira.client import JiraClient
 from forge.models.workflow import ForgeLabel
 from forge.workflow.feature.state import FeatureState as WorkflowState
+from forge.workflow.stats import STAGE_SPEC
+from forge.workflow.stats_utils import (
+    increment_revision,
+    record_stage_end,
+    record_stage_start,
+    record_tokens,
+)
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import post_status_comment
 from forge.workflow.utils.qa_summary import post_qa_summary_if_needed
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    return max(1, len(text) // 4)
 
 
 async def generate_spec(state: WorkflowState) -> WorkflowState:
@@ -35,6 +48,10 @@ async def generate_spec(state: WorkflowState) -> WorkflowState:
     prd_content = state.get("prd_content", "")
 
     logger.info(f"Generating specification for {ticket_key}")
+
+    # Record stage start and begin timing
+    state = {**state, **record_stage_start(state, STAGE_SPEC)}
+    node_start = time.monotonic()
 
     # Post Q&A summary for PRD if any
     qa_history = state.get("qa_history", [])
@@ -60,8 +77,11 @@ async def generate_spec(state: WorkflowState) -> WorkflowState:
 
         if not prd_content.strip():
             logger.warning(f"No PRD content found for {ticket_key}")
+            machine_time = time.monotonic() - node_start
+            end_stats = record_stage_end(state, STAGE_SPEC, machine_time)
             return {
                 **state,
+                **end_stats,
                 "last_error": "No PRD content available for spec generation",
                 "current_node": "generate_spec",
             }
@@ -78,6 +98,11 @@ async def generate_spec(state: WorkflowState) -> WorkflowState:
 
         # Generate specification using Claude - primary operation
         spec_content = await agent.generate_spec(prd_content, context)
+
+        # Record token usage (estimated from content length)
+        input_tokens = _estimate_tokens(prd_content)
+        output_tokens = _estimate_tokens(spec_content)
+        state = {**state, **record_tokens(state, STAGE_SPEC, input_tokens, output_tokens)}
 
         # Store spec in Jira - secondary operation
         try:
@@ -120,9 +145,14 @@ async def generate_spec(state: WorkflowState) -> WorkflowState:
             "generated_at": datetime.now(UTC).isoformat(),
         }
 
+        # Record stage end with elapsed wall-clock time
+        machine_time = time.monotonic() - node_start
+        end_stats = record_stage_end(state, STAGE_SPEC, machine_time)
+
         return update_state_timestamp(
             {
                 **state,
+                **end_stats,
                 "spec_content": spec_content,
                 "generation_context": generation_context,
                 "current_node": "spec_approval_gate",
@@ -136,8 +166,11 @@ async def generate_spec(state: WorkflowState) -> WorkflowState:
 
         await notify_error(state, str(e), "generate_spec")
         # If we have partial content, save it even on failure
+        machine_time = time.monotonic() - node_start
+        end_stats = record_stage_end(state, STAGE_SPEC, machine_time)
         result_state = {
             **state,
+            **end_stats,
             "last_error": str(e),
             "current_node": "generate_spec",
             "retry_count": state.get("retry_count", 0) + 1,
@@ -169,6 +202,11 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
 
     logger.info(f"Regenerating spec for {ticket_key} with feedback")
 
+    # Record stage re-entry: start timer, increment revision count
+    state = {**state, **record_stage_start(state, STAGE_SPEC)}
+    state = {**state, **increment_revision(state, STAGE_SPEC)}
+    node_start = time.monotonic()
+
     jira = JiraClient()
     agent = ForgeAgent()
 
@@ -187,6 +225,11 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
                 "retry_count": state.get("retry_count", 0),
             },
         )
+
+        # Record token usage (estimated from content length)
+        input_tokens = _estimate_tokens(original_spec) + _estimate_tokens(feedback)
+        output_tokens = _estimate_tokens(new_spec)
+        state = {**state, **record_tokens(state, STAGE_SPEC, input_tokens, output_tokens)}
 
         # Store updated spec in Jira (comment or custom field based on config)
         settings = get_settings()
@@ -225,9 +268,14 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
 
         logger.info(f"Spec regenerated for {ticket_key} ({len(new_spec)} chars)")
 
+        # Record stage end with elapsed wall-clock time
+        machine_time = time.monotonic() - node_start
+        end_stats = record_stage_end(state, STAGE_SPEC, machine_time)
+
         return update_state_timestamp(
             {
                 **state,
+                **end_stats,
                 "spec_content": new_spec,
                 "feedback_comment": None,
                 "revision_requested": False,
@@ -241,8 +289,11 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
         from forge.workflow.nodes.error_handler import notify_error
 
         await notify_error(state, str(e), "regenerate_spec")
+        machine_time = time.monotonic() - node_start
+        end_stats = record_stage_end(state, STAGE_SPEC, machine_time)
         return {
             **state,
+            **end_stats,
             "last_error": str(e),
             "current_node": "regenerate_spec",
             "retry_count": state.get("retry_count", 0) + 1,
