@@ -615,6 +615,65 @@ async def cmd_project_setup(args: argparse.Namespace) -> int:
         await jira.close()
 
 
+async def cmd_stats(args: argparse.Namespace) -> int:
+    """Display workflow statistics for a ticket."""
+    import json as json_module
+
+    from forge.orchestrator.checkpointer import get_checkpoint_state
+    from forge.workflow.stats.formatter import format_stats_summary
+
+    ticket = args.ticket
+
+    try:
+        state = await get_checkpoint_state(ticket)
+    except Exception as e:
+        print(f"Error retrieving workflow data for {ticket}: {e}", file=sys.stderr)
+        return 1
+
+    if state is None:
+        print(f"No workflow data found for {ticket}")
+        return 1
+
+    # stats_stages key must be present (even empty dict is valid data)
+    if "stats_stages" not in state:
+        print(f"No workflow data found for {ticket}")
+        return 1
+
+    # Derive outcome from state (same logic as worker._handle_stats_command)
+    if state.get("stats_outcome"):
+        outcome = state["stats_outcome"]
+        outcome_detail = state.get("stats_outcome_reason")
+    elif state.get("is_blocked"):
+        outcome = "Blocked"
+        outcome_detail = state.get("feedback_comment")
+    elif state.get("last_error"):
+        outcome = "Failed"
+        outcome_detail = state.get("last_error")
+    else:
+        outcome = "In Progress"
+        outcome_detail = None
+
+    if args.json:
+        stats_stages = state.get("stats_stages") or {}
+        pr_urls = state.get("stats_pr_urls") or []
+        ci_cycles = state.get("stats_ci_cycles") or 0
+        output = {
+            "ticket": ticket,
+            "outcome": outcome,
+            "outcome_detail": outcome_detail,
+            "ci_cycles": ci_cycles,
+            "pr_urls": pr_urls,
+            "stages": stats_stages,
+        }
+        print(json_module.dumps(output, indent=2))
+    else:
+        # Use the Jira formatter for content, then display as plain text
+        summary = format_stats_summary(state, outcome, outcome_detail)
+        print(summary)
+
+    return 0
+
+
 async def cmd_health(_args: argparse.Namespace) -> int:
     """Check system health."""
     from forge.orchestrator.checkpointer import get_redis_client
@@ -852,6 +911,18 @@ def main() -> int:
         ),
     )
 
+    # stats command
+    stats_parser = subparsers.add_parser(
+        "stats",
+        help="Display workflow statistics for a ticket",
+    )
+    stats_parser.add_argument("ticket", help="Jira ticket key (e.g., AISOS-123)")
+    stats_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output stats as JSON",
+    )
+
     # project-setup command
     setup_parser = subparsers.add_parser(
         "project-setup",
@@ -952,6 +1023,7 @@ Examples:
         "list": cmd_list,
         "retry": cmd_retry,
         "logs": cmd_logs,
+        "stats": cmd_stats,
         "project-setup": cmd_project_setup,
     }
 
