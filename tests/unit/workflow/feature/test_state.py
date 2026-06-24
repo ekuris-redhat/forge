@@ -139,11 +139,18 @@ class TestFeatureStateStatsIntegration:
 
     def test_feature_state_inherits_stats_state(self):
         """FeatureState includes StatsState in its inheritance chain."""
+        from typing import get_type_hints
+
         from forge.workflow.feature.state import FeatureState
         from forge.workflow.stats import StatsState
 
-        # TypedDict flattens to dict in __mro__; use __orig_bases__ instead.
-        assert StatsState in FeatureState.__orig_bases__
+        # TypedDict flattens to dict in __mro__; __orig_bases__ is not available
+        # in Python 3.11. Verify inheritance by checking that all StatsState
+        # fields are present in FeatureState's type hints.
+        stats_hints = get_type_hints(StatsState)
+        feature_hints = get_type_hints(FeatureState)
+        for field in stats_hints:
+            assert field in feature_hints, f"FeatureState missing StatsState field: {field!r}"
 
     def test_feature_state_has_stats_fields(self):
         """FeatureState type hints include all StatsState fields."""
@@ -179,11 +186,18 @@ class TestBugStateStatsIntegration:
 
     def test_bug_state_inherits_stats_state(self):
         """BugState includes StatsState in its inheritance chain."""
+        from typing import get_type_hints
+
         from forge.workflow.bug.state import BugState
         from forge.workflow.stats import StatsState
 
-        # TypedDict flattens to dict in __mro__; use __orig_bases__ instead.
-        assert StatsState in BugState.__orig_bases__
+        # TypedDict flattens to dict in __mro__; __orig_bases__ is not available
+        # in Python 3.11. Verify inheritance by checking that all StatsState
+        # fields are present in BugState's type hints.
+        stats_hints = get_type_hints(StatsState)
+        bug_hints = get_type_hints(BugState)
+        for field in stats_hints:
+            assert field in bug_hints, f"BugState missing StatsState field: {field!r}"
 
     def test_bug_state_has_stats_fields(self):
         """BugState type hints include all StatsState fields."""
