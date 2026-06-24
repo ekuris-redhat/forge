@@ -674,6 +674,62 @@ async def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+async def cmd_weekly_report(args: argparse.Namespace) -> int:
+    """Generate and output the weekly aggregated report for a Jira project."""
+    from forge.workflow.stats.weekly_formatter import (
+        format_weekly_report_cli,
+        format_weekly_report_json,
+        format_weekly_report_markdown,
+    )
+    from forge.workflow.stats.weekly_report import collect_weekly_data
+
+    project: str = args.project
+    days: int = args.days
+    output_path: str | None = args.output
+    fmt: str = args.format
+
+    try:
+        report = await collect_weekly_data(project, days=days)
+    except Exception as e:
+        print(f"Error collecting weekly data for project {project!r}: {e}", file=sys.stderr)
+        return 1
+
+    # Fail gracefully when there is no data
+    total_tickets = (
+        len(report.completed_tickets)
+        + len(report.in_progress_tickets)
+        + len(report.blocked_tickets)
+    )
+    if total_tickets == 0:
+        print(
+            f"No workflow data found for project {project!r} in the last {days} day(s).",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Select formatter
+    if fmt == "json":
+        content = format_weekly_report_json(report)
+    elif fmt == "markdown":
+        content = format_weekly_report_markdown(report)
+    else:
+        content = format_weekly_report_cli(report)
+
+    # Write output
+    if output_path:
+        try:
+            with open(output_path, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            print(f"Report written to {output_path}")
+        except OSError as e:
+            print(f"Error writing to {output_path!r}: {e}", file=sys.stderr)
+            return 1
+    else:
+        print(content)
+
+    return 0
+
+
 async def cmd_health(_args: argparse.Namespace) -> int:
     """Check system health."""
     from forge.orchestrator.checkpointer import get_redis_client
@@ -911,6 +967,54 @@ def main() -> int:
         ),
     )
 
+    # weekly-report command
+    weekly_report_parser = subparsers.add_parser(
+        "weekly-report",
+        help="Generate a weekly aggregated report for a Jira project",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="""Generate a weekly aggregated report of workflow activity for a Jira project.
+
+Examples:
+  # Output report to stdout in text format
+  forge weekly-report --project PROJ
+
+  # Adjust the reporting window to 14 days
+  forge weekly-report --project PROJ --days 14
+
+  # Write report to a Markdown file
+  forge weekly-report --project PROJ --output report.md --format markdown
+
+  # Output JSON for scripting
+  forge weekly-report --project PROJ --format json
+""",
+    )
+    weekly_report_parser.add_argument(
+        "--project",
+        required=True,
+        metavar="PROJECT_KEY",
+        help="Jira project key to scope the report (e.g., PROJ)",
+    )
+    weekly_report_parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        metavar="N",
+        help="Reporting window in days (default: 7)",
+    )
+    weekly_report_parser.add_argument(
+        "--output",
+        metavar="FILE",
+        default=None,
+        help="File path to write the report to (stdout if omitted)",
+    )
+    weekly_report_parser.add_argument(
+        "--format",
+        choices=["text", "markdown", "json"],
+        default="text",
+        metavar="FORMAT",
+        help="Output format: text (default), markdown, or json",
+    )
+
     # stats command
     stats_parser = subparsers.add_parser(
         "stats",
@@ -1024,6 +1128,7 @@ Examples:
         "retry": cmd_retry,
         "logs": cmd_logs,
         "stats": cmd_stats,
+        "weekly-report": cmd_weekly_report,
         "project-setup": cmd_project_setup,
     }
 
