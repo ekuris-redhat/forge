@@ -16,17 +16,17 @@ Usage::
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+from forge.integrations.jira.client import JiraClient
 from forge.orchestrator.checkpointer import get_redis_client
-from forge.workflow.stats import (
-    ALL_BUG_STAGES,
-    ALL_FEATURE_STAGES,
-    STAGE_CI,
-)
+
+#: Sentinel key used to group tickets that could not be linked to any Feature.
+UNASSIGNED_FEATURE_KEY = "Unassigned"
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,45 @@ class BottleneckAnalysis:
 
 
 @dataclass
+class FeatureRollup:
+    """Aggregated statistics for all tickets linked to a single Feature.
+
+    Tickets may be linked to the Feature directly (when their parent is the
+    Feature itself) or indirectly (when their parent is an Epic whose parent
+    is the Feature).
+
+    Attributes:
+        feature_key: The Jira key of the parent Feature (e.g. ``"AISOS-10"``),
+            or the ``UNASSIGNED_FEATURE_KEY`` sentinel for tickets that could
+            not be resolved to any Feature.
+        feature_summary: The summary/title of the Feature issue, or an empty
+            string when the Feature could not be fetched (e.g. network error).
+        linked_tickets: All :class:`TicketSummary` objects grouped under this
+            Feature.
+        total_input_tokens: Sum of prompt tokens across all linked tickets.
+        total_output_tokens: Sum of completion tokens across all linked tickets.
+        total_duration: Sum of ``duration_seconds`` across all linked tickets
+            that have timing data.  ``None`` when no ticket has timing data.
+        tickets_completed: Number of linked tickets with status ``"completed"``.
+        tickets_in_progress: Number of linked tickets with status
+            ``"in_progress"``.
+        completion_percentage: Fraction of linked tickets that are completed,
+            expressed as a value in ``[0.0, 100.0]``.  ``0.0`` when there are
+            no linked tickets.
+    """
+
+    feature_key: str
+    feature_summary: str = ""
+    linked_tickets: list[TicketSummary] = field(default_factory=list)
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_duration: float | None = None
+    tickets_completed: int = 0
+    tickets_in_progress: int = 0
+    completion_percentage: float = 0.0
+
+
+@dataclass
 class WeeklyReportData:
     """Aggregated weekly report data across all matching workflow checkpoints.
 
@@ -138,6 +177,7 @@ class WeeklyReportData:
     avg_cycle_time: float | None = None
     bottlenecks: BottleneckAnalysis = field(default_factory=BottleneckAnalysis)
     all_tickets: list[TicketSummary] = field(default_factory=list)
+    feature_rollups: dict[str, FeatureRollup] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -314,17 +354,11 @@ def _calculate_bottlenecks(tickets: list[TicketSummary]) -> BottleneckAnalysis:
             stage_duration_totals[stage_name] = (
                 stage_duration_totals.get(stage_name, 0.0) + duration
             )
-            stage_duration_counts[stage_name] = (
-                stage_duration_counts.get(stage_name, 0) + 1
-            )
+            stage_duration_counts[stage_name] = stage_duration_counts.get(stage_name, 0) + 1
 
         for stage_name, rev_count in ticket.revision_counts.items():
-            stage_revision_totals[stage_name] = (
-                stage_revision_totals.get(stage_name, 0) + rev_count
-            )
-            stage_revision_counts[stage_name] = (
-                stage_revision_counts.get(stage_name, 0) + 1
-            )
+            stage_revision_totals[stage_name] = stage_revision_totals.get(stage_name, 0) + rev_count
+            stage_revision_counts[stage_name] = stage_revision_counts.get(stage_name, 0) + 1
 
     # Compute averages
     avg_stage_durations: dict[str, float] = {
@@ -452,6 +486,150 @@ def _avg_cycle_time(tickets: list[TicketSummary]) -> float | None:
 
 
 # ---------------------------------------------------------------------------
+# Feature rollup helpers
+# ---------------------------------------------------------------------------
+
+
+async def _resolve_feature_key(
+    ticket: TicketSummary,
+    jira: JiraClient,
+) -> str | None:
+    """Resolve the parent Feature key for a ticket by traversing the hierarchy.
+
+    The lookup strategy is:
+
+    1. Fetch the Jira issue for *ticket.ticket_key*.
+    2. If its ``issue_type`` is ``"Feature"``, return its own key (the ticket
+       *is* the Feature).
+    3. If it has a parent, fetch the parent.
+    4. If the parent ``issue_type`` is ``"Feature"``, return the parent key
+       (ticket is directly under a Feature).
+    5. If the parent is an ``"Epic"``, fetch *its* parent and return that key
+       when the grandparent is a ``"Feature"``.
+    6. Return ``None`` when no Feature ancestor is found within two hops, or
+       when any Jira API call fails.
+
+    Args:
+        ticket: The ticket whose Feature ancestry should be resolved.
+        jira: An open :class:`JiraClient` to use for API calls.
+
+    Returns:
+        The Jira key of the nearest Feature ancestor, or ``None`` when
+        resolution fails or no Feature is found.
+    """
+    with contextlib.suppress(Exception):
+        issue = await jira.get_issue(ticket.ticket_key)
+
+        # The ticket itself is a Feature (unusual but possible)
+        if issue.issue_type == "Feature":
+            return issue.key
+
+        if not issue.parent_key:
+            return None
+
+        parent = await jira.get_issue(issue.parent_key)
+
+        if parent.issue_type == "Feature":
+            return parent.key
+
+        # Parent is an Epic — climb one more level to find the Feature
+        if parent.issue_type == "Epic" and parent.parent_key:
+            grandparent = await jira.get_issue(parent.parent_key)
+            if grandparent.issue_type == "Feature":
+                return grandparent.key
+
+    return None
+
+
+def _build_feature_rollup(
+    feature_key: str,
+    feature_summary: str,
+    tickets: list[TicketSummary],
+) -> FeatureRollup:
+    """Build a :class:`FeatureRollup` from a pre-grouped list of tickets.
+
+    Args:
+        feature_key: The Feature key (or ``UNASSIGNED_FEATURE_KEY``).
+        feature_summary: Human-readable summary of the Feature issue.
+        tickets: All tickets that belong to this Feature.
+
+    Returns:
+        A fully populated :class:`FeatureRollup`.
+    """
+    total_in = sum(t.input_tokens for t in tickets)
+    total_out = sum(t.output_tokens for t in tickets)
+
+    durations = [t.duration_seconds for t in tickets if t.duration_seconds is not None]
+    total_duration: float | None = sum(durations) if durations else None
+
+    tickets_completed = sum(1 for t in tickets if t.status == "completed")
+    tickets_in_progress = sum(1 for t in tickets if t.status == "in_progress")
+
+    completion_pct = (tickets_completed / len(tickets) * 100.0) if tickets else 0.0
+
+    return FeatureRollup(
+        feature_key=feature_key,
+        feature_summary=feature_summary,
+        linked_tickets=list(tickets),
+        total_input_tokens=total_in,
+        total_output_tokens=total_out,
+        total_duration=total_duration,
+        tickets_completed=tickets_completed,
+        tickets_in_progress=tickets_in_progress,
+        completion_percentage=completion_pct,
+    )
+
+
+async def _group_by_feature(
+    tickets: list[TicketSummary],
+    jira: JiraClient,
+) -> dict[str, FeatureRollup]:
+    """Group tickets by their parent Feature and return per-Feature rollups.
+
+    For each ticket:
+
+    * If the ticket can be resolved to a Feature via the Jira hierarchy,
+      it is placed in that Feature's rollup.
+    * Otherwise it is placed under the ``UNASSIGNED_FEATURE_KEY`` sentinel.
+
+    Feature summaries are fetched from Jira for each resolved Feature key.
+    The ``UNASSIGNED_FEATURE_KEY`` group always has an empty ``feature_summary``.
+
+    Args:
+        tickets: The ticket summaries to group.
+        jira: An open :class:`JiraClient` used for hierarchy resolution.
+
+    Returns:
+        A dict mapping Feature key (or ``UNASSIGNED_FEATURE_KEY``) to a
+        :class:`FeatureRollup`.  Returns an empty dict when *tickets* is empty.
+    """
+    if not tickets:
+        return {}
+
+    # Map each ticket to its resolved feature key (or None → Unassigned)
+    groups: dict[str, list[TicketSummary]] = {}
+    feature_summaries: dict[str, str] = {}
+
+    for ticket in tickets:
+        feature_key = await _resolve_feature_key(ticket, jira)
+        bucket = feature_key if feature_key is not None else UNASSIGNED_FEATURE_KEY
+        groups.setdefault(bucket, []).append(ticket)
+
+        # Fetch the Feature summary once per unique key
+        if feature_key is not None and feature_key not in feature_summaries:
+            with contextlib.suppress(Exception):
+                feature_issue = await jira.get_issue(feature_key)
+                feature_summaries[feature_key] = feature_issue.summary
+
+    result: dict[str, FeatureRollup] = {}
+    for bucket_key, bucket_tickets in groups.items():
+        summary = feature_summaries.get(bucket_key, "")
+        result[bucket_key] = _build_feature_rollup(bucket_key, summary, bucket_tickets)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -459,6 +637,8 @@ def _avg_cycle_time(tickets: list[TicketSummary]) -> float | None:
 async def collect_weekly_data(
     project: str,
     days: int = 7,
+    *,
+    jira_client: JiraClient | None = None,
 ) -> WeeklyReportData:
     """Collect and aggregate workflow statistics for a project over a time window.
 
@@ -471,6 +651,10 @@ async def collect_weekly_data(
         project: The Jira project key to filter checkpoints (e.g. ``"AISOS"``).
             The scan pattern is ``langgraph:checkpoint:{project}-*``.
         days: Number of days to look back from *now* (default: 7).
+        jira_client: Optional :class:`JiraClient` instance to use for Feature
+            hierarchy resolution.  When ``None`` a new client is created and
+            closed automatically.  Pass an explicit client in tests to avoid
+            real HTTP calls.
 
     Returns:
         A fully populated :class:`WeeklyReportData`.  If no matching
@@ -497,16 +681,12 @@ async def collect_weekly_data(
         scanned_keys: list[str] = []
 
         while True:
-            cursor, keys = await redis_client.scan(
-                cursor=cursor, match=pattern, count=100
-            )
+            cursor, keys = await redis_client.scan(cursor=cursor, match=pattern, count=100)
             scanned_keys.extend(keys)
             if cursor == 0:
                 break
 
-        logger.debug(
-            "Found %d checkpoint keys for project=%s", len(scanned_keys), project
-        )
+        logger.debug("Found %d checkpoint keys for project=%s", len(scanned_keys), project)
 
         for key in scanned_keys:
             try:
@@ -530,14 +710,10 @@ async def collect_weekly_data(
             except (json.JSONDecodeError, ValueError, TypeError) as exc:
                 logger.warning("Could not parse checkpoint at key %s: %s", key, exc)
             except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Unexpected error reading checkpoint at key %s: %s", key, exc
-                )
+                logger.warning("Unexpected error reading checkpoint at key %s: %s", key, exc)
 
     except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "Failed to scan Redis for project=%s: %s", project, exc
-        )
+        logger.error("Failed to scan Redis for project=%s: %s", project, exc)
 
     # --- Categorise tickets ---
     completed = [t for t in all_tickets if t.status == "completed"]
@@ -553,6 +729,19 @@ async def collect_weekly_data(
     # --- Bottleneck analysis ---
     bottlenecks = _calculate_bottlenecks(all_tickets)
 
+    # --- Per-Feature rollup ---
+    _owns_jira_client = jira_client is None
+    if _owns_jira_client:
+        jira_client = JiraClient()
+    try:
+        feature_rollups = await _group_by_feature(all_tickets, jira_client)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to build feature rollups: %s", exc)
+        feature_rollups = {}
+    finally:
+        if _owns_jira_client:
+            await jira_client.close()  # type: ignore[union-attr]
+
     report = WeeklyReportData(
         project=project,
         period_days=days,
@@ -567,11 +756,11 @@ async def collect_weekly_data(
         avg_cycle_time=avg_ct,
         bottlenecks=bottlenecks,
         all_tickets=all_tickets,
+        feature_rollups=feature_rollups,
     )
 
     logger.info(
-        "Weekly report for project=%s: completed=%d, in_progress=%d, blocked=%d, "
-        "total_tokens=%d",
+        "Weekly report for project=%s: completed=%d, in_progress=%d, blocked=%d, total_tokens=%d",
         project,
         len(completed),
         len(in_progress),
@@ -584,7 +773,9 @@ async def collect_weekly_data(
 
 __all__ = [
     "BottleneckAnalysis",
+    "FeatureRollup",
     "TicketSummary",
+    "UNASSIGNED_FEATURE_KEY",
     "WeeklyReportData",
     "collect_weekly_data",
 ]
