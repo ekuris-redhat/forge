@@ -676,6 +676,8 @@ async def cmd_stats(args: argparse.Namespace) -> int:
 
 async def cmd_weekly_report(args: argparse.Namespace) -> int:
     """Generate and output the weekly aggregated report for a Jira project."""
+    import datetime
+
     from forge.workflow.stats.weekly_formatter import (
         format_weekly_report_cli,
         format_weekly_report_json,
@@ -687,6 +689,7 @@ async def cmd_weekly_report(args: argparse.Namespace) -> int:
     days: int = args.days
     output_path: str | None = args.output
     fmt: str = args.format
+    create_ticket: bool = getattr(args, "create_ticket", False)
 
     try:
         report = await collect_weekly_data(project, days=days)
@@ -726,6 +729,24 @@ async def cmd_weekly_report(args: argparse.Namespace) -> int:
             return 1
     else:
         print(content)
+
+    # Optionally create or update a Jira ticket with the report content.
+    if create_ticket:
+        from forge.workflow.stats.report_ticket import ensure_report_ticket
+
+        # Derive the week_start date from the reporting window end (today) minus days.
+        week_start = datetime.date.today() - datetime.timedelta(days=days - 1)
+
+        # Always use the markdown formatter for the Jira ticket description so the
+        # content is human-readable regardless of the --format flag chosen for stdout.
+        report_markdown = format_weekly_report_markdown(report)
+
+        try:
+            ticket_key = await ensure_report_ticket(project, week_start, report_markdown)
+            print(f"Report ticket: {ticket_key}")
+        except Exception as e:
+            print(f"Error creating/updating report ticket: {e}", file=sys.stderr)
+            return 1
 
     return 0
 
@@ -1013,6 +1034,18 @@ Examples:
         default="text",
         metavar="FORMAT",
         help="Output format: text (default), markdown, or json",
+    )
+    weekly_report_parser.add_argument(
+        "--create-ticket",
+        action="store_true",
+        default=False,
+        help=(
+            "Create or update a Jira ticket storing the weekly report. "
+            "The ticket summary follows the format: "
+            "'Forge Weekly Report - {PROJECT} - Week of {date}'. "
+            "Running the command twice is idempotent — the existing ticket "
+            "is updated rather than duplicated."
+        ),
     )
 
     # stats command
