@@ -342,6 +342,24 @@ class Settings(BaseSettings):
         description="Enable Prometheus metrics endpoint in worker",
     )
 
+    # Stats Cost Alert Configuration
+    stats_cost_alert_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable cost alerting in workflow stats summaries. "
+            "When enabled and aggregate token usage exceeds stats_cost_alert_threshold_tokens, "
+            "the stats summary will include a cost alert."
+        ),
+    )
+    stats_cost_alert_threshold_tokens: int = Field(
+        default=1_000_000,
+        description=(
+            "Total token count threshold (input + output across all stages) that triggers "
+            "a cost alert in the workflow stats summary. Only active when "
+            "stats_cost_alert_enabled is True. Default: 1,000,000 tokens."
+        ),
+    )
+
     # OpenTelemetry Configuration
     otlp_endpoint: str = Field(
         default="",
