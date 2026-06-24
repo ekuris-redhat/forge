@@ -9,6 +9,7 @@ from forge.workflow.base import (
 )
 from forge.workflow.registry import create_default_router
 from forge.workflow.router import WorkflowRouter
+from forge.workflow.stats import StageStats, StatsState
 
 __all__ = [
     "BaseState",
@@ -16,6 +17,8 @@ __all__ = [
     "CIIntegrationState",
     "PRIntegrationState",
     "ReviewIntegrationState",
+    "StageStats",
+    "StatsState",
     "WorkflowRouter",
     "create_default_router",
 ]

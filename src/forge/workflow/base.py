@@ -1,4 +1,16 @@
-"""Base workflow classes and state definitions."""
+"""Base workflow classes and state definitions.
+
+Mixin TypedDicts
+----------------
+Compose workflow states from the following mixins:
+
+* :class:`PRIntegrationState`   — for workflows that open pull requests.
+* :class:`CIIntegrationState`   — for workflows that run CI checks.
+* :class:`ReviewIntegrationState` — for workflows with review stages.
+* :class:`~forge.workflow.stats.StatsState` — for workflows that record
+  execution statistics (iteration counts, token usage, timing, outcome).
+  Defined in :mod:`forge.workflow.stats`.
+"""
 
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -8,6 +20,17 @@ from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 
 from forge.models.workflow import TicketType
+from forge.workflow.stats import StageStats, StatsState
+
+__all__ = [
+    "BaseState",
+    "BaseWorkflow",
+    "CIIntegrationState",
+    "PRIntegrationState",
+    "ReviewIntegrationState",
+    "StageStats",
+    "StatsState",
+]
 
 
 class BaseState(TypedDict, total=False):
