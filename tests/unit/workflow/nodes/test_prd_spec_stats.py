@@ -8,7 +8,6 @@ from forge.models.workflow import TicketType
 from forge.workflow.feature.state import create_initial_feature_state
 from forge.workflow.stats import STAGE_PRD, STAGE_SPEC
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

@@ -138,9 +138,7 @@ async def post_terminal_stats(state: FeatureState | BugState) -> dict:
             outcome_detail=outcome_detail,
         )
         if posted:
-            logger.info(
-                "post_terminal_stats: stats comment posted for ticket=%s", ticket_key
-            )
+            logger.info("post_terminal_stats: stats comment posted for ticket=%s", ticket_key)
         else:
             logger.warning(
                 "post_terminal_stats: post_stats_comment returned False for ticket=%s",

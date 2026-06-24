@@ -1,9 +1,6 @@
 """Tests for stats cost alert threshold configuration settings."""
 
-import pytest
-
 from forge.config import Settings
-
 
 REQUIRED_SETTINGS = dict(
     jira_base_url="https://test.atlassian.net",

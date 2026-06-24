@@ -17,7 +17,6 @@ from forge.workflow.stats.notifications import (
     notify_report_ready,
 )
 
-
 # ---------------------------------------------------------------------------
 # Tests for _format_mention
 # ---------------------------------------------------------------------------
@@ -450,9 +449,9 @@ class TestNotifyReportReady:
                 "forge.workflow.stats.notifications.get_settings",
                 return_value=MagicMock(jira_base_url="https://example.atlassian.net"),
             ),
+            pytest.raises(Exception, match="API error"),
         ):
-            with pytest.raises(Exception, match="API error"):
-                await notify_report_ready("PROJ-42", ["user1"])
+            await notify_report_ready("PROJ-42", ["user1"])
 
         mock_jira.close.assert_awaited_once()
 
@@ -554,9 +553,7 @@ class TestCLINotifyFlag:
             period_days=7,
             report_start="2024-01-01T00:00:00+00:00",
             report_end="2024-01-08T00:00:00+00:00",
-            completed_tickets=[
-                TicketSummary(ticket_key="PROJ-1", status="completed")
-            ],
+            completed_tickets=[TicketSummary(ticket_key="PROJ-1", status="completed")],
         )
 
         with patch(
@@ -583,9 +580,7 @@ class TestCLINotifyFlag:
             period_days=7,
             report_start="2024-01-01T00:00:00+00:00",
             report_end="2024-01-08T00:00:00+00:00",
-            completed_tickets=[
-                TicketSummary(ticket_key="PROJ-1", status="completed")
-            ],
+            completed_tickets=[TicketSummary(ticket_key="PROJ-1", status="completed")],
         )
 
         with (
@@ -629,9 +624,7 @@ class TestCLINotifyFlag:
             period_days=7,
             report_start="2024-01-01T00:00:00+00:00",
             report_end="2024-01-08T00:00:00+00:00",
-            completed_tickets=[
-                TicketSummary(ticket_key="PROJ-1", status="completed")
-            ],
+            completed_tickets=[TicketSummary(ticket_key="PROJ-1", status="completed")],
         )
 
         with (

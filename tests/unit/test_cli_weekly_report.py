@@ -17,7 +17,6 @@ from forge.workflow.stats.weekly_report import (
     WeeklyReportData,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -86,9 +85,7 @@ class TestArgParsing:
         wr_parser.add_argument("--project", required=True)
         wr_parser.add_argument("--days", type=int, default=7)
         wr_parser.add_argument("--output", default=None)
-        wr_parser.add_argument(
-            "--format", choices=["text", "markdown", "json"], default="text"
-        )
+        wr_parser.add_argument("--format", choices=["text", "markdown", "json"], default="text")
         return parser
 
     def test_project_is_required(self):
@@ -124,9 +121,7 @@ class TestArgParsing:
     def test_output_path_captured(self):
         """--output path is captured correctly."""
         parser = self._build_parser()
-        args = parser.parse_args(
-            ["weekly-report", "--project", "PROJ", "--output", "report.md"]
-        )
+        args = parser.parse_args(["weekly-report", "--project", "PROJ", "--output", "report.md"])
         assert args.output == "report.md"
 
     def test_format_defaults_to_text(self):
@@ -138,17 +133,13 @@ class TestArgParsing:
     def test_format_markdown(self):
         """--format markdown is accepted."""
         parser = self._build_parser()
-        args = parser.parse_args(
-            ["weekly-report", "--project", "PROJ", "--format", "markdown"]
-        )
+        args = parser.parse_args(["weekly-report", "--project", "PROJ", "--format", "markdown"])
         assert args.format == "markdown"
 
     def test_format_json(self):
         """--format json is accepted."""
         parser = self._build_parser()
-        args = parser.parse_args(
-            ["weekly-report", "--project", "PROJ", "--format", "json"]
-        )
+        args = parser.parse_args(["weekly-report", "--project", "PROJ", "--format", "json"])
         assert args.format == "json"
 
     def test_invalid_format_raises(self):
@@ -322,9 +313,7 @@ class TestFileOutput:
         """Report is written to the specified file path."""
         report = _make_report()
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
             tmp_path = tmp.name
 
         try:
@@ -348,9 +337,7 @@ class TestFileOutput:
         """Written file contains the project key."""
         report = _make_report(project="FILEPROJ")
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
             tmp_path = tmp.name
 
         try:
@@ -372,9 +359,7 @@ class TestFileOutput:
         """stdout only contains confirmation message when --output is set."""
         report = _make_report()
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
             tmp_path = tmp.name
 
         try:
@@ -398,9 +383,7 @@ class TestFileOutput:
         """Markdown report is correctly written when format=markdown."""
         report = _make_report()
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
             tmp_path = tmp.name
 
         try:
@@ -510,9 +493,9 @@ class TestHandlerRegistration:
 
     def test_weekly_report_in_handlers(self):
         """cmd_weekly_report is importable and matches the CLI handler signature."""
-        from forge.cli import cmd_weekly_report as handler
-
         # Should be an async function
         import asyncio
+
+        from forge.cli import cmd_weekly_report as handler
 
         assert asyncio.iscoroutinefunction(handler)
