@@ -1,10 +1,57 @@
 """Statistics tracking data structures for workflow execution.
 
 This module defines the TypedDicts used to capture per-stage metrics and
-overall workflow outcome data, as required by SC-001.
+overall workflow outcome data, as required by SC-001. It also exports
+canonical stage-name constants used by recording and formatting code to
+ensure consistency across the codebase.
 """
 
 from typing import TypedDict
+
+# ---------------------------------------------------------------------------
+# Workflow stage constants
+# ---------------------------------------------------------------------------
+# These string constants are the canonical identifiers for each named stage
+# that is tracked in workflow statistics. Use these constants everywhere
+# instead of bare strings so that typos are caught at import time.
+
+# Feature workflow stages
+STAGE_PRD = "prd"
+STAGE_SPEC = "spec"
+STAGE_EPICS = "epics"
+STAGE_TASKS = "tasks"
+STAGE_IMPLEMENTATION = "implementation"
+STAGE_CI = "ci"
+STAGE_REVIEW = "review"
+
+# Bug workflow stages
+STAGE_TRIAGE = "triage"
+STAGE_RCA = "rca"
+STAGE_PLANNING = "planning"
+
+# Ordered stage lists used by formatting code to display stages in the
+# canonical sequence defined by the specification.
+
+#: Stages for the Feature workflow, in display order.
+ALL_FEATURE_STAGES: list[str] = [
+    STAGE_PRD,
+    STAGE_SPEC,
+    STAGE_EPICS,
+    STAGE_TASKS,
+    STAGE_IMPLEMENTATION,
+    STAGE_CI,
+    STAGE_REVIEW,
+]
+
+#: Stages for the Bug workflow, in display order.
+ALL_BUG_STAGES: list[str] = [
+    STAGE_TRIAGE,
+    STAGE_RCA,
+    STAGE_PLANNING,
+    STAGE_IMPLEMENTATION,
+    STAGE_CI,
+    STAGE_REVIEW,
+]
 
 
 class StageStats(TypedDict, total=False):

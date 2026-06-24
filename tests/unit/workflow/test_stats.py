@@ -1,4 +1,4 @@
-"""Unit tests for StageStats and StatsState TypedDicts."""
+"""Unit tests for StageStats, StatsState TypedDicts, and stage constants."""
 
 from typing import get_type_hints
 
@@ -215,3 +215,191 @@ class TestStatsStateExportedFromPackage:
     def test_stats_state_importable_from_base(self):
         """StatsState is importable via forge.workflow.base (re-exported)."""
         from forge.workflow.base import StatsState  # noqa: F401
+
+
+class TestStageConstants:
+    """Tests for workflow stage name constants and ordered stage lists."""
+
+    # ------------------------------------------------------------------
+    # Individual constant values
+    # ------------------------------------------------------------------
+
+    def test_stage_prd_value(self):
+        from forge.workflow.stats import STAGE_PRD
+
+        assert STAGE_PRD == "prd"
+
+    def test_stage_spec_value(self):
+        from forge.workflow.stats import STAGE_SPEC
+
+        assert STAGE_SPEC == "spec"
+
+    def test_stage_epics_value(self):
+        from forge.workflow.stats import STAGE_EPICS
+
+        assert STAGE_EPICS == "epics"
+
+    def test_stage_tasks_value(self):
+        from forge.workflow.stats import STAGE_TASKS
+
+        assert STAGE_TASKS == "tasks"
+
+    def test_stage_implementation_value(self):
+        from forge.workflow.stats import STAGE_IMPLEMENTATION
+
+        assert STAGE_IMPLEMENTATION == "implementation"
+
+    def test_stage_ci_value(self):
+        from forge.workflow.stats import STAGE_CI
+
+        assert STAGE_CI == "ci"
+
+    def test_stage_review_value(self):
+        from forge.workflow.stats import STAGE_REVIEW
+
+        assert STAGE_REVIEW == "review"
+
+    def test_stage_rca_value(self):
+        from forge.workflow.stats import STAGE_RCA
+
+        assert STAGE_RCA == "rca"
+
+    def test_stage_triage_value(self):
+        from forge.workflow.stats import STAGE_TRIAGE
+
+        assert STAGE_TRIAGE == "triage"
+
+    def test_stage_planning_value(self):
+        from forge.workflow.stats import STAGE_PLANNING
+
+        assert STAGE_PLANNING == "planning"
+
+    # ------------------------------------------------------------------
+    # ALL_FEATURE_STAGES list
+    # ------------------------------------------------------------------
+
+    def test_all_feature_stages_is_list(self):
+        """ALL_FEATURE_STAGES is a list of strings."""
+        from forge.workflow.stats import ALL_FEATURE_STAGES
+
+        assert isinstance(ALL_FEATURE_STAGES, list)
+        assert all(isinstance(s, str) for s in ALL_FEATURE_STAGES)
+
+    def test_all_feature_stages_length(self):
+        """ALL_FEATURE_STAGES contains exactly 7 stages."""
+        from forge.workflow.stats import ALL_FEATURE_STAGES
+
+        assert len(ALL_FEATURE_STAGES) == 7
+
+    def test_all_feature_stages_order(self):
+        """ALL_FEATURE_STAGES lists stages in the canonical display order."""
+        from forge.workflow.stats import (
+            ALL_FEATURE_STAGES,
+            STAGE_CI,
+            STAGE_EPICS,
+            STAGE_IMPLEMENTATION,
+            STAGE_PRD,
+            STAGE_REVIEW,
+            STAGE_SPEC,
+            STAGE_TASKS,
+        )
+
+        assert ALL_FEATURE_STAGES == [
+            STAGE_PRD,
+            STAGE_SPEC,
+            STAGE_EPICS,
+            STAGE_TASKS,
+            STAGE_IMPLEMENTATION,
+            STAGE_CI,
+            STAGE_REVIEW,
+        ]
+
+    def test_all_feature_stages_completeness(self):
+        """ALL_FEATURE_STAGES contains every expected Feature stage."""
+        from forge.workflow.stats import (
+            ALL_FEATURE_STAGES,
+            STAGE_CI,
+            STAGE_EPICS,
+            STAGE_IMPLEMENTATION,
+            STAGE_PRD,
+            STAGE_REVIEW,
+            STAGE_SPEC,
+            STAGE_TASKS,
+        )
+
+        expected = {STAGE_PRD, STAGE_SPEC, STAGE_EPICS, STAGE_TASKS, STAGE_IMPLEMENTATION, STAGE_CI, STAGE_REVIEW}
+        assert set(ALL_FEATURE_STAGES) == expected
+
+    # ------------------------------------------------------------------
+    # ALL_BUG_STAGES list
+    # ------------------------------------------------------------------
+
+    def test_all_bug_stages_is_list(self):
+        """ALL_BUG_STAGES is a list of strings."""
+        from forge.workflow.stats import ALL_BUG_STAGES
+
+        assert isinstance(ALL_BUG_STAGES, list)
+        assert all(isinstance(s, str) for s in ALL_BUG_STAGES)
+
+    def test_all_bug_stages_length(self):
+        """ALL_BUG_STAGES contains exactly 6 stages."""
+        from forge.workflow.stats import ALL_BUG_STAGES
+
+        assert len(ALL_BUG_STAGES) == 6
+
+    def test_all_bug_stages_order(self):
+        """ALL_BUG_STAGES lists stages in the canonical display order."""
+        from forge.workflow.stats import (
+            ALL_BUG_STAGES,
+            STAGE_CI,
+            STAGE_IMPLEMENTATION,
+            STAGE_PLANNING,
+            STAGE_RCA,
+            STAGE_REVIEW,
+            STAGE_TRIAGE,
+        )
+
+        assert ALL_BUG_STAGES == [
+            STAGE_TRIAGE,
+            STAGE_RCA,
+            STAGE_PLANNING,
+            STAGE_IMPLEMENTATION,
+            STAGE_CI,
+            STAGE_REVIEW,
+        ]
+
+    def test_all_bug_stages_completeness(self):
+        """ALL_BUG_STAGES contains every expected Bug stage."""
+        from forge.workflow.stats import (
+            ALL_BUG_STAGES,
+            STAGE_CI,
+            STAGE_IMPLEMENTATION,
+            STAGE_PLANNING,
+            STAGE_RCA,
+            STAGE_REVIEW,
+            STAGE_TRIAGE,
+        )
+
+        expected = {STAGE_TRIAGE, STAGE_RCA, STAGE_PLANNING, STAGE_IMPLEMENTATION, STAGE_CI, STAGE_REVIEW}
+        assert set(ALL_BUG_STAGES) == expected
+
+    # ------------------------------------------------------------------
+    # Export verification
+    # ------------------------------------------------------------------
+
+    def test_constants_importable_from_stats_module(self):
+        """All stage constants and lists are importable from forge.workflow.stats."""
+        from forge.workflow.stats import (  # noqa: F401
+            ALL_BUG_STAGES,
+            ALL_FEATURE_STAGES,
+            STAGE_CI,
+            STAGE_EPICS,
+            STAGE_IMPLEMENTATION,
+            STAGE_PLANNING,
+            STAGE_PRD,
+            STAGE_RCA,
+            STAGE_REVIEW,
+            STAGE_SPEC,
+            STAGE_TASKS,
+            STAGE_TRIAGE,
+        )
