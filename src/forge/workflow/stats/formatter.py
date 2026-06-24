@@ -126,10 +126,34 @@ def _build_outcome_str(outcome: str, outcome_detail: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _build_cost_alert(total_tokens: int, threshold: int) -> list[str]:
+    """Return Jira wiki markup lines for a cost alert section.
+
+    The alert is displayed as a visually prominent panel when the aggregate
+    token usage exceeds *threshold*.
+
+    Args:
+        total_tokens: Actual aggregate token count (input + output).
+        threshold: Configured token threshold that was exceeded.
+
+    Returns:
+        A list of Jira wiki markup lines (without a trailing newline).
+    """
+    return [
+        "",
+        "{panel:title=⚠️ COST ALERT|borderColor=#FF0000|titleBGColor=#FF0000|titleColor=#FFFFFF|bgColor=#FFF0F0}",
+        "Token usage has exceeded the configured threshold.",
+        f"*Threshold:* {_fmt_tokens(threshold)} tokens",
+        f"*Actual usage:* {_fmt_tokens(total_tokens)} tokens",
+        "{panel}",
+    ]
+
+
 def format_stats_summary(
     stats: StatsState,
     outcome: str,
     outcome_detail: str | None = None,
+    token_threshold: int | None = None,
 ) -> str:
     """Format a StatsState snapshot into a Jira wiki markup comment.
 
@@ -140,6 +164,8 @@ def format_stats_summary(
     * A PR links section (omitted when no PRs were created).
     * A CI cycles line.
     * A final outcome field.
+    * An optional cost alert panel when total token usage exceeds
+      *token_threshold* (omitted when threshold is ``None`` or not exceeded).
 
     Args:
         stats: The workflow statistics state to format.
@@ -147,6 +173,10 @@ def format_stats_summary(
             ``"failed"`` (matched case-insensitively).
         outcome_detail: Optional elaboration on the outcome (e.g. the blocking
             reason or error message).  Truncated to 200 characters if longer.
+        token_threshold: Optional token count threshold.  When the aggregate
+            token usage (input + output across all stages) exceeds this value,
+            a prominent "⚠️ COST ALERT" section is appended to the summary.
+            Pass ``None`` (the default) to disable cost alerting.
 
     Returns:
         A Jira wiki markup string ready to post as a ticket comment.
@@ -193,5 +223,15 @@ def format_stats_summary(
     lines.append("")
     outcome_str = _build_outcome_str(outcome, outcome_detail)
     lines.append(f"*Outcome:* {outcome_str}")
+
+    # ------------------------------------------------------------------
+    # Cost alert (only when threshold is configured and exceeded)
+    # ------------------------------------------------------------------
+    if token_threshold is not None:
+        total_tokens = sum(
+            s.get("input_tokens", 0) + s.get("output_tokens", 0) for s in stages.values()
+        )
+        if total_tokens > token_threshold:
+            lines.extend(_build_cost_alert(total_tokens, token_threshold))
 
     return "\n".join(lines)

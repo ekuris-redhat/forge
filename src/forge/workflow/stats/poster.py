@@ -272,7 +272,13 @@ async def _post_with_retry(
         ``True`` if the comment was posted successfully, ``False`` after all
         attempts are exhausted.
     """
-    comment_body = format_stats_summary(stats, outcome, outcome_detail)
+    settings = get_settings()
+    token_threshold: int | None = (
+        settings.stats_cost_alert_threshold_tokens if settings.stats_cost_alert_enabled else None
+    )
+    comment_body = format_stats_summary(
+        stats, outcome, outcome_detail, token_threshold=token_threshold
+    )
 
     # Append the idempotency marker so readers can verify which run produced
     # this comment without querying Redis.

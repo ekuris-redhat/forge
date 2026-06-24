@@ -442,3 +442,133 @@ class TestFormatStatsSummaryMissingFields:
         stats = _minimal_stats(stats_ci_cycles=None)
         result = format_stats_summary(stats, "completed")
         assert "*CI Cycles:* 0" in result
+
+
+# ---------------------------------------------------------------------------
+# Cost alert section
+# ---------------------------------------------------------------------------
+
+
+def _stats_with_tokens(input_tokens: int, output_tokens: int) -> dict:
+    """Return a stats dict with a single stage carrying the given token counts."""
+    stage = _make_stage(
+        stage_name="prd",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+    return _minimal_stats(stats_stages={"prd": stage})
+
+
+class TestCostAlert:
+    """Tests for the cost alert section in format_stats_summary."""
+
+    # ------------------------------------------------------------------
+    # Threshold exceeded — alert should appear
+    # ------------------------------------------------------------------
+
+    def test_alert_appears_when_tokens_exceed_threshold(self):
+        stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        assert "COST ALERT" in result
+
+    def test_alert_includes_threshold_value(self):
+        stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        assert "1,000,000" in result
+
+    def test_alert_includes_actual_usage(self):
+        # total = 600_000 + 500_000 = 1_100_000
+        stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        assert "1,100,000" in result
+
+    def test_alert_panel_markup_present(self):
+        stats = _stats_with_tokens(input_tokens=800_000, output_tokens=300_000)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        assert "{panel:" in result
+        assert "{panel}" in result
+
+    def test_alert_appears_after_outcome(self):
+        """Cost alert should be appended after the outcome line."""
+        stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        outcome_pos = result.index("*Outcome:*")
+        alert_pos = result.index("COST ALERT")
+        assert alert_pos > outcome_pos
+
+    def test_alert_with_multiple_stages(self):
+        """Total is summed across all stages when checking threshold."""
+        stages = {
+            "prd": _make_stage(input_tokens=400_000, output_tokens=200_000),
+            "spec": _make_stage(input_tokens=300_000, output_tokens=200_000),
+        }
+        stats = _minimal_stats(stats_stages=stages)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        # total = 400k + 200k + 300k + 200k = 1_100_000 > 1_000_000
+        assert "COST ALERT" in result
+
+    def test_alert_exactly_one_over_threshold(self):
+        """Alert triggers when total tokens are strictly greater than threshold."""
+        stats = _stats_with_tokens(input_tokens=1_000_000, output_tokens=1)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        assert "COST ALERT" in result
+
+    # ------------------------------------------------------------------
+    # Threshold not exceeded — no alert
+    # ------------------------------------------------------------------
+
+    def test_no_alert_when_tokens_equal_threshold(self):
+        """No alert when total tokens exactly equal the threshold."""
+        stats = _stats_with_tokens(input_tokens=500_000, output_tokens=500_000)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        assert "COST ALERT" not in result
+
+    def test_no_alert_when_tokens_under_threshold(self):
+        stats = _stats_with_tokens(input_tokens=100_000, output_tokens=200_000)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        assert "COST ALERT" not in result
+
+    def test_no_alert_when_no_stages_ran(self):
+        """Zero tokens should never trigger a cost alert."""
+        result = format_stats_summary(
+            _minimal_stats(),
+            "completed",
+            token_threshold=0,
+        )
+        # 0 > 0 is False so no alert
+        assert "COST ALERT" not in result
+
+    # ------------------------------------------------------------------
+    # Threshold not configured — no alert
+    # ------------------------------------------------------------------
+
+    def test_no_alert_when_threshold_is_none(self):
+        """No alert section when threshold is None (default)."""
+        stats = _stats_with_tokens(input_tokens=5_000_000, output_tokens=5_000_000)
+        result = format_stats_summary(stats, "completed")
+        assert "COST ALERT" not in result
+
+    def test_no_alert_when_threshold_is_none_explicit(self):
+        """Explicitly passing None disables cost alerting."""
+        stats = _stats_with_tokens(input_tokens=5_000_000, output_tokens=5_000_000)
+        result = format_stats_summary(stats, "completed", token_threshold=None)
+        assert "COST ALERT" not in result
+
+    # ------------------------------------------------------------------
+    # Alert content details
+    # ------------------------------------------------------------------
+
+    def test_alert_label_in_panel_title(self):
+        stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        assert "⚠️ COST ALERT" in result
+
+    def test_alert_threshold_label_present(self):
+        stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        assert "*Threshold:*" in result
+
+    def test_alert_actual_usage_label_present(self):
+        stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
+        result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
+        assert "*Actual usage:*" in result

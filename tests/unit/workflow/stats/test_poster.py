@@ -304,9 +304,12 @@ class TestTimeoutHandling:
         mock_jira.add_comment = slow_add_comment
         mock_jira.close = AsyncMock()
 
-        with patch("forge.workflow.stats.poster.JiraClient", return_value=mock_jira), patch(
-            "forge.workflow.stats.poster._OPERATION_TIMEOUT_SECONDS",
-            0.05,  # Use a very short timeout for the test
+        with (
+            patch("forge.workflow.stats.poster.JiraClient", return_value=mock_jira),
+            patch(
+                "forge.workflow.stats.poster._OPERATION_TIMEOUT_SECONDS",
+                0.05,  # Use a very short timeout for the test
+            ),
         ):
             result = await post_stats_comment(TICKET_KEY, _minimal_stats(), OUTCOME)
 
@@ -323,9 +326,12 @@ class TestTimeoutHandling:
         mock_jira.add_comment = slow_add_comment
         mock_jira.close = AsyncMock()
 
-        with patch("forge.workflow.stats.poster.JiraClient", return_value=mock_jira), patch(
-            "forge.workflow.stats.poster._OPERATION_TIMEOUT_SECONDS",
-            0.05,
+        with (
+            patch("forge.workflow.stats.poster.JiraClient", return_value=mock_jira),
+            patch(
+                "forge.workflow.stats.poster._OPERATION_TIMEOUT_SECONDS",
+                0.05,
+            ),
         ):
             # Should not raise TimeoutError
             result = await post_stats_comment(TICKET_KEY, _minimal_stats(), OUTCOME)
@@ -378,12 +384,15 @@ class TestCommentContent:
         stats = _minimal_stats(stats_ci_cycles=1)
         detail = "some detail"
 
-        with patch("forge.workflow.stats.poster.JiraClient", return_value=mock_jira), patch(
-            "forge.workflow.stats.poster.format_stats_summary",
-            wraps=__import__(
-                "forge.workflow.stats.formatter", fromlist=["format_stats_summary"]
-            ).format_stats_summary,
-        ) as mock_fmt:
+        with (
+            patch("forge.workflow.stats.poster.JiraClient", return_value=mock_jira),
+            patch(
+                "forge.workflow.stats.poster.format_stats_summary",
+                wraps=__import__(
+                    "forge.workflow.stats.formatter", fromlist=["format_stats_summary"]
+                ).format_stats_summary,
+            ) as mock_fmt,
+        ):
             await post_stats_comment(TICKET_KEY, stats, "blocked", detail)
 
-        mock_fmt.assert_called_once_with(stats, "blocked", detail)
+        mock_fmt.assert_called_once_with(stats, "blocked", detail, token_threshold=1_000_000)
