@@ -29,6 +29,7 @@ from forge.skills.orchestrator import ensure_skills
 from forge.skills.utils import extract_project_key
 from forge.workflow.registry import create_default_router
 from forge.workflow.router import WorkflowRouter
+from forge.workflow.stats.formatter import format_stats_summary
 from forge.workflow.utils.comment_classifier import CommentType, classify_comment
 from forge.workflow.utils.jira_status import post_status_comment
 
@@ -617,6 +618,13 @@ class OrchestratorWorker:
                 comment_body = self._extract_text_from_adf(comment_body)
 
             if comment_body.strip():
+                # /forge stats command — post workflow statistics and return state unchanged.
+                # This is a read-only command that works regardless of workflow state.
+                if comment_body.strip().lower().startswith("/forge stats"):
+                    logger.info(f"Detected /forge stats command for {message.ticket_key}")
+                    await self._handle_stats_command(message.ticket_key, current_state)
+                    return current_state
+
                 # >option N detection for rca_option_gate (runs before general classification)
                 if current_node == "rca_option_gate":
                     option_match = _OPTION_PATTERN.search(comment_body)
@@ -1089,6 +1097,63 @@ class OrchestratorWorker:
                 return current_state
 
         return updated_state
+
+    async def _handle_stats_command(
+        self,
+        ticket_key: str,
+        current_state: dict[str, Any],
+    ) -> None:
+        """Handle a /forge stats Jira comment command.
+
+        Retrieves workflow statistics from the current checkpoint state,
+        formats them into a Jira wiki markup comment, and posts the comment
+        to the originating Jira ticket.  The command is read-only — it never
+        modifies workflow state.
+
+        Args:
+            ticket_key: Jira ticket key to post the stats comment on.
+            current_state: Current workflow state from the checkpoint.
+        """
+        stats_stages = current_state.get("stats_stages")
+        if not stats_stages and stats_stages != {}:
+            # No stats data found at all (missing key, not just empty dict)
+            logger.info(f"No workflow stats data found for {ticket_key}")
+            try:
+                jira = JiraClient()
+                try:
+                    await jira.add_comment(ticket_key, "No workflow data found.")
+                finally:
+                    await jira.close()
+            except Exception as e:
+                logger.warning(f"Failed to post 'no data' stats comment to {ticket_key}: {e}")
+            return
+
+        # Determine current outcome from state for the on-demand stats view.
+        # Use pre-set stats_outcome if available; otherwise derive from state flags.
+        outcome = current_state.get("stats_outcome") or (
+            "Blocked"
+            if current_state.get("is_blocked")
+            else ("Failed" if current_state.get("last_error") else "In Progress")
+        )
+        outcome_detail = current_state.get("stats_outcome_reason") or current_state.get(
+            "last_error"
+        )
+
+        try:
+            comment_body = format_stats_summary(current_state, outcome, outcome_detail)
+        except Exception as e:
+            logger.warning(f"Failed to format stats for {ticket_key}: {e}")
+            comment_body = "Unable to format workflow statistics."
+
+        try:
+            jira = JiraClient()
+            try:
+                await jira.add_comment(ticket_key, comment_body)
+                logger.info(f"Posted on-demand stats comment to {ticket_key}")
+            finally:
+                await jira.close()
+        except Exception as e:
+            logger.warning(f"Failed to post stats comment to {ticket_key}: {e}")
 
     async def _post_resume_ack_comment(
         self,
