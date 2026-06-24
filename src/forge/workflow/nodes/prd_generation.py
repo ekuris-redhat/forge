@@ -1,7 +1,6 @@
 """PRD generation node for LangGraph workflow."""
 
 import logging
-import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -18,13 +17,9 @@ from forge.workflow.utils.jira_status import post_status_comment
 logger = logging.getLogger(__name__)
 
 
-def _slugify(text: str, max_length: int = 60) -> str:
-    """Convert text to URL-safe slug."""
-    slug = text.lower().strip()
-    slug = re.sub(r"[^\w\s-]", "", slug)
-    slug = re.sub(r"[\s_]+", "-", slug)
-    slug = re.sub(r"-+", "-", slug).strip("-")
-    return slug[:max_length]
+def _normalize_proposals_path(path: str) -> str:
+    """Normalize a proposals base path for GitHub content paths."""
+    return path.strip("/")
 
 
 async def _resolve_prd_proposals_repo(project_key: str, jira: JiraClient) -> str | None:
@@ -51,17 +46,35 @@ async def _resolve_prd_proposals_repo(project_key: str, jira: JiraClient) -> str
     return None
 
 
+async def _resolve_proposals_path(project_key: str, jira: JiraClient) -> str:
+    """Resolve the base directory for enhancement folders in the proposals repo.
+
+    Checks the Jira project property first (forge.prd_proposals_path),
+    then falls back to the global config.
+
+    Returns:
+        Path string (empty string means repo root).
+    """
+    proposals_path = await jira.get_proposals_path(project_key)
+    if proposals_path is not None:
+        return proposals_path
+
+    settings = get_settings()
+    return _normalize_proposals_path(settings.prd_proposals_path)
+
+
 async def _create_prd_proposal_pr(
     ticket_key: str,
     prd_content: str,
     summary: str,
     proposals_repo: str,
+    proposals_path: str = "",
 ) -> dict[str, Any]:
     """Create a PR with the PRD in the enhancement proposals repo."""
-    settings = get_settings()
     owner, repo = proposals_repo.split("/", 1)
     branch = f"forge/prd/{ticket_key.lower()}"
-    file_path = f"{settings.prd_proposals_path}/{ticket_key}-{_slugify(summary)}.md"
+    proposals_path = _normalize_proposals_path(proposals_path)
+    file_path = "/".join(filter(None, [proposals_path, ticket_key, "prd.md"]))
 
     gh = GitHubClient()
     jira = JiraClient()
@@ -213,11 +226,13 @@ async def generate_prd(state: WorkflowState) -> WorkflowState:
         prd_pr_result = None
         try:
             if proposals_repo:
+                proposals_path = await _resolve_proposals_path(issue.project_key, jira)
                 prd_pr_result = await _create_prd_proposal_pr(
                     ticket_key=ticket_key,
                     prd_content=prd_content,
                     summary=issue.summary,
                     proposals_repo=proposals_repo,
+                    proposals_path=proposals_path,
                 )
             else:
                 if settings.jira_store_in_comments:
