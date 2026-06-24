@@ -132,3 +132,83 @@ class TestQAStateFields:
         assert state["qa_history"] == []
         assert state["generation_context"] == {}
         assert state["is_question"] is False
+
+
+class TestFeatureStateStatsIntegration:
+    """Tests for StatsState mixin integration in FeatureState."""
+
+    def test_feature_state_inherits_stats_state(self):
+        """FeatureState includes StatsState in its inheritance chain."""
+        from forge.workflow.feature.state import FeatureState
+        from forge.workflow.stats import StatsState
+
+        # TypedDict flattens to dict in __mro__; use __orig_bases__ instead.
+        assert StatsState in FeatureState.__orig_bases__
+
+    def test_feature_state_has_stats_fields(self):
+        """FeatureState type hints include all StatsState fields."""
+        from typing import get_type_hints
+
+        from forge.workflow.feature.state import FeatureState
+
+        hints = get_type_hints(FeatureState)
+
+        assert "stats_stages" in hints
+        assert "stats_pr_urls" in hints
+        assert "stats_ci_cycles" in hints
+        assert "stats_outcome" in hints
+        assert "stats_outcome_reason" in hints
+        assert "stats_comment_posted" in hints
+
+    def test_create_initial_feature_state_stats_defaults(self):
+        """create_initial_feature_state() initialises all stats fields with correct defaults."""
+        from forge.workflow.feature.state import create_initial_feature_state
+
+        state = create_initial_feature_state("TEST-123")
+
+        assert state["stats_stages"] == {}
+        assert state["stats_pr_urls"] == []
+        assert state["stats_ci_cycles"] == 0
+        assert state["stats_outcome"] is None
+        assert state["stats_outcome_reason"] is None
+        assert state["stats_comment_posted"] is False
+
+
+class TestBugStateStatsIntegration:
+    """Tests for StatsState mixin integration in BugState."""
+
+    def test_bug_state_inherits_stats_state(self):
+        """BugState includes StatsState in its inheritance chain."""
+        from forge.workflow.bug.state import BugState
+        from forge.workflow.stats import StatsState
+
+        # TypedDict flattens to dict in __mro__; use __orig_bases__ instead.
+        assert StatsState in BugState.__orig_bases__
+
+    def test_bug_state_has_stats_fields(self):
+        """BugState type hints include all StatsState fields."""
+        from typing import get_type_hints
+
+        from forge.workflow.bug.state import BugState
+
+        hints = get_type_hints(BugState)
+
+        assert "stats_stages" in hints
+        assert "stats_pr_urls" in hints
+        assert "stats_ci_cycles" in hints
+        assert "stats_outcome" in hints
+        assert "stats_outcome_reason" in hints
+        assert "stats_comment_posted" in hints
+
+    def test_create_initial_bug_state_stats_defaults(self):
+        """create_initial_bug_state() initialises all stats fields with correct defaults."""
+        from forge.workflow.bug.state import create_initial_bug_state
+
+        state = create_initial_bug_state("BUG-456")
+
+        assert state["stats_stages"] == {}
+        assert state["stats_pr_urls"] == []
+        assert state["stats_ci_cycles"] == 0
+        assert state["stats_outcome"] is None
+        assert state["stats_outcome_reason"] is None
+        assert state["stats_comment_posted"] is False

@@ -10,11 +10,17 @@ from forge.workflow.base import (
     CIIntegrationState,
     PRIntegrationState,
     ReviewIntegrationState,
+    StatsState,
 )
 
 
 class FeatureState(
-    BaseState, PRIntegrationState, CIIntegrationState, ReviewIntegrationState, total=False
+    BaseState,
+    PRIntegrationState,
+    CIIntegrationState,
+    ReviewIntegrationState,
+    StatsState,
+    total=False,
 ):
     """State specific to Feature workflow."""
 
@@ -122,6 +128,13 @@ def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState
         "prd_pr_branch": None,
         "prd_pr_file_path": None,
         "yolo_mode": False,
+        # Stats fields
+        "stats_stages": {},
+        "stats_pr_urls": [],
+        "stats_ci_cycles": 0,
+        "stats_outcome": None,
+        "stats_outcome_reason": None,
+        "stats_comment_posted": False,
     }
 
     # Merge with kwargs, letting kwargs override defaults
