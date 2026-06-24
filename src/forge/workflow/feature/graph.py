@@ -53,6 +53,7 @@ from forge.workflow.nodes.implement_review import (
 )
 from forge.workflow.nodes.qa_handler import answer_question
 from forge.workflow.nodes.rebase import rebase_pr
+from forge.workflow.nodes.stats_posting import post_terminal_stats
 from forge.workflow.nodes.task_generation import regenerate_all_tasks, update_single_task
 from forge.workflow.utils import resolve_shared_resume_node
 
@@ -138,17 +139,18 @@ def route_by_ticket_type(state: FeatureState) -> str:
 def _route_after_generation(state: FeatureState) -> str:
     """Route based on PRD generation success.
 
-    If generation failed (has error and no PRD content), don't advance to approval gate.
+    If generation failed (has error and no PRD content), route to stats posting
+    before ending the workflow.
 
     Returns:
-        "prd_approval_gate" on success, END on failure.
+        "prd_approval_gate" on success, "post_terminal_stats" on unrecoverable failure.
     """
     last_error = state.get("last_error")
     prd_content = state.get("prd_content", "")
 
     if last_error and not prd_content:
-        logger.error(f"PRD generation failed, workflow paused: {last_error}")
-        return END
+        logger.error(f"PRD generation failed, workflow ending: {last_error}")
+        return "post_terminal_stats"
 
     return "prd_approval_gate"
 
@@ -156,17 +158,18 @@ def _route_after_generation(state: FeatureState) -> str:
 def _route_after_spec_generation(state: FeatureState) -> str:
     """Route based on spec generation success.
 
-    If generation failed (has error and no spec content), don't advance to approval gate.
+    If generation failed (has error and no spec content), route to stats posting
+    before ending the workflow.
 
     Returns:
-        "spec_approval_gate" on success, END on failure.
+        "spec_approval_gate" on success, "post_terminal_stats" on unrecoverable failure.
     """
     last_error = state.get("last_error")
     spec_content = state.get("spec_content", "")
 
     if last_error and not spec_content:
-        logger.error(f"Spec generation failed, workflow paused: {last_error}")
-        return END
+        logger.error(f"Spec generation failed, workflow ending: {last_error}")
+        return "post_terminal_stats"
 
     return "spec_approval_gate"
 
@@ -174,17 +177,18 @@ def _route_after_spec_generation(state: FeatureState) -> str:
 def _route_after_epic_decomposition(state: FeatureState) -> str:
     """Route based on epic decomposition success.
 
-    If decomposition failed (has error and no epics), don't advance to approval gate.
+    If decomposition failed (has error and no epics), route to stats posting
+    before ending the workflow.
 
     Returns:
-        "plan_approval_gate" on success, END ("__end__") on failure.
+        "plan_approval_gate" on success, "post_terminal_stats" on unrecoverable failure.
     """
     last_error = state.get("last_error")
     epic_keys = state.get("epic_keys", [])
 
     if last_error and not epic_keys:
-        logger.error(f"Epic decomposition failed, workflow paused: {last_error}")
-        return END
+        logger.error(f"Epic decomposition failed, workflow ending: {last_error}")
+        return "post_terminal_stats"
 
     return "plan_approval_gate"
 
@@ -192,17 +196,18 @@ def _route_after_epic_decomposition(state: FeatureState) -> str:
 def _route_after_task_generation(state: FeatureState) -> str:
     """Route based on task generation success.
 
-    If task generation failed (has error and no tasks), don't advance.
+    If task generation failed (has error and no tasks), route to stats posting
+    before ending the workflow.
 
     Returns:
-        "task_approval_gate" on success, END on failure.
+        "task_approval_gate" on success, "post_terminal_stats" on unrecoverable failure.
     """
     last_error = state.get("last_error")
     task_keys = state.get("task_keys", [])
 
     if last_error and not task_keys:
-        logger.error(f"Task generation failed, workflow paused: {last_error}")
-        return END
+        logger.error(f"Task generation failed, workflow ending: {last_error}")
+        return "post_terminal_stats"
 
     return "task_approval_gate"
 
@@ -342,7 +347,12 @@ def build_feature_graph() -> StateGraph:
     22. ci_evaluator: checks CI status, attempts autonomous fixes on failure (up to 5 retries)
     23. ci_evaluator (passed) -> human_review_gate
     24. human_review_gate -> complete_tasks
-    25. complete_tasks -> aggregate_epic_status -> aggregate_feature_status -> END
+    25. complete_tasks -> aggregate_epic_status -> aggregate_feature_status -> post_terminal_stats -> END
+
+    Terminal paths all route through post_terminal_stats before END:
+    - Success: aggregate_feature_status -> post_terminal_stats -> END
+    - Blocked: escalate_blocked -> post_terminal_stats -> END
+    - Failure: unrecoverable generation errors -> post_terminal_stats -> END
 
     Returns:
         Configured StateGraph ready for compilation.
@@ -402,6 +412,9 @@ def build_feature_graph() -> StateGraph:
     graph.add_node("aggregate_epic_status", aggregate_epic_status)
     graph.add_node("aggregate_feature_status", aggregate_feature_status)
 
+    # Stats posting node — always the last node before END on terminal paths
+    graph.add_node("post_terminal_stats", post_terminal_stats)
+
     # Q&A node
     graph.add_node("answer_question", answer_question)
 
@@ -452,7 +465,7 @@ def build_feature_graph() -> StateGraph:
         _route_after_generation,
         {
             "prd_approval_gate": "prd_approval_gate",
-            END: END,
+            "post_terminal_stats": "post_terminal_stats",  # unrecoverable failure
         },
     )
     graph.add_conditional_edges(
@@ -473,7 +486,7 @@ def build_feature_graph() -> StateGraph:
         _route_after_spec_generation,
         {
             "spec_approval_gate": "spec_approval_gate",
-            END: END,
+            "post_terminal_stats": "post_terminal_stats",  # unrecoverable failure
         },
     )
     graph.add_conditional_edges(
@@ -494,7 +507,7 @@ def build_feature_graph() -> StateGraph:
         _route_after_epic_decomposition,
         {
             "plan_approval_gate": "plan_approval_gate",
-            END: END,  # Error state - don't advance
+            "post_terminal_stats": "post_terminal_stats",  # unrecoverable failure
         },
     )
     graph.add_conditional_edges(
@@ -517,7 +530,7 @@ def build_feature_graph() -> StateGraph:
         _route_after_task_generation,
         {
             "task_approval_gate": "task_approval_gate",
-            END: END,
+            "post_terminal_stats": "post_terminal_stats",  # unrecoverable failure
         },
     )
     graph.add_conditional_edges(
@@ -605,7 +618,7 @@ def build_feature_graph() -> StateGraph:
             "ci_evaluator": "ci_evaluator",
         },
     )
-    graph.add_edge("escalate_blocked", END)
+    graph.add_edge("escalate_blocked", "post_terminal_stats")
 
     # Human Review flow (US9)
     graph.add_conditional_edges(
@@ -639,7 +652,8 @@ def build_feature_graph() -> StateGraph:
     )
     graph.add_edge("complete_tasks", "aggregate_epic_status")
     graph.add_edge("aggregate_epic_status", "aggregate_feature_status")
-    graph.add_edge("aggregate_feature_status", END)
+    graph.add_edge("aggregate_feature_status", "post_terminal_stats")
+    graph.add_edge("post_terminal_stats", END)
 
     # Q&A routing: answer_question returns to the gate it came from
     graph.add_conditional_edges(

@@ -43,6 +43,7 @@ from forge.workflow.nodes.rca_option_gate import (
     route_rca_option,
 )
 from forge.workflow.nodes.rebase import rebase_pr
+from forge.workflow.nodes.stats_posting import post_terminal_stats
 from forge.workflow.nodes.triage import route_triage_gate, triage_check, triage_gate
 from forge.workflow.nodes.workspace_setup import setup_workspace
 from forge.workflow.utils import resolve_shared_resume_node
@@ -345,9 +346,13 @@ def build_bug_graph() -> StateGraph:
     2. Analysis + reflection: analyze_bug ↔ reflect_rca → rca_option_gate (pause)
     3. Planning: plan_bug_fix → plan_approval_gate (pause) → decompose_plan → END
     4. (Spawned tasks are handled by the task workflow)
-    5. Post-merge: human_review_gate → post_merge_summary → END
+    5. Post-merge: human_review_gate → post_merge_summary → post_terminal_stats → END
 
     Backward-compat implementation/CI/review nodes are preserved for in-flight tickets.
+
+    Terminal paths all route through post_terminal_stats before END:
+    - Success: post_merge_summary → post_terminal_stats → END
+    - Blocked: escalate_blocked → post_terminal_stats → END
 
     Returns:
         Configured StateGraph ready for compilation.
@@ -401,6 +406,9 @@ def build_bug_graph() -> StateGraph:
     graph.add_node("human_review_gate", human_review_gate)
     graph.add_node("implement_review", implement_review)
     graph.add_node("review_response_gate", review_response_gate)
+
+    # Stats posting node — always the last node before END on terminal paths
+    graph.add_node("post_terminal_stats", post_terminal_stats)
 
     # ── Set entry point ──
     graph.set_entry_point("route_entry")
@@ -585,7 +593,7 @@ def build_bug_graph() -> StateGraph:
         },
     )
     graph.add_edge("attempt_ci_fix", "ci_evaluator")
-    graph.add_edge("escalate_blocked", END)
+    graph.add_edge("escalate_blocked", "post_terminal_stats")
 
     # ── Review flow (merge path → post_merge_summary) ──
     # "complete_tasks" is the feature-workflow merge return from route_human_review;
@@ -641,6 +649,7 @@ def build_bug_graph() -> StateGraph:
     )
 
     # ── Post-merge terminal ──
-    graph.add_edge("post_merge_summary", END)
+    graph.add_edge("post_merge_summary", "post_terminal_stats")
+    graph.add_edge("post_terminal_stats", END)
 
     return graph

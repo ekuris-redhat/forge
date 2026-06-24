@@ -30,7 +30,13 @@ _SHARED_RESUME_MAP: dict[str, str] = {
 }
 
 _TERMINAL_NODES: frozenset[str] = frozenset(
-    {"complete", "complete_tasks", "aggregate_feature_status", "aggregate_epic_status"}
+    {
+        "complete",
+        "complete_tasks",
+        "aggregate_feature_status",
+        "aggregate_epic_status",
+        "post_terminal_stats",
+    }
 )
 
 
