@@ -119,6 +119,7 @@ At any approval gate, Forge classifies your comment by its prefix:
 - **`!` prefix** — revision request: Forge regenerates the current artifact with your feedback
 - **`?` prefix or `@forge ask`** — question: Forge answers and stays paused
 - **`>option N`** — RCA option selection (RCA Option Gate only)
+- **`/forge stats`** — posts current workflow statistics as a Jira comment (read-only)
 - **No prefix** — informational: ignored by the workflow
 
 ---

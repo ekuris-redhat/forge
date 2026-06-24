@@ -42,7 +42,7 @@ These labels advance the pipeline. Forge watches for label changes via Jira webh
 
 **Asking questions:** Start a comment with `?` or `@forge ask`. Forge answers without advancing or regenerating.
 
-**Informational comments:** Comments without a recognized prefix (`!`, `?`, `@forge ask`, `>option`) are ignored by the workflow — use them for team discussion without triggering Forge.
+**Informational comments:** Comments without a recognized prefix (`!`, `?`, `@forge ask`, `>option`, `/forge stats`) are ignored by the workflow — use them for team discussion without triggering Forge.
 
 **Handling failures:** When `forge:blocked` appears, read the Forge comment for the error. Fix the underlying issue if needed, then add `forge:retry`.
 

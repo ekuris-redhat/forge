@@ -44,7 +44,7 @@ Receives Jira webhook events. Validates the signature and enqueues the event for
 
 - `jira:issue_created` — triggers new workflow if `forge:managed` label is present
 - `jira:issue_updated` — handles label changes (approvals, retry)
-- `jira:issue_commented` — handles Q&A and revision requests
+- `jira:issue_commented` — handles Q&A, revision requests, and `/forge stats` commands
 
 Returns HTTP 200 immediately. Processing is asynchronous.
 

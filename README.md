@@ -135,6 +135,8 @@ Forge classifies Jira comments by their prefix:
 | `!` | Revision request | Forge regenerates the current artifact with your feedback |
 | `?` or `@forge ask` | Question | Forge answers without advancing or regenerating |
 | `>option N` | RCA option selection | Selects a fix option (RCA Option Gate only) |
+| `/forge stats` | Stats request | Forge posts current workflow statistics as a comment |
+| `/forge stats retry` | Stats refresh | Re-posts stats comment with fresh data |
 | _(no prefix)_ | Informational | Ignored by the workflow |
 
 ### Requesting Revisions

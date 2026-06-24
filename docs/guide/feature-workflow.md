@@ -185,7 +185,7 @@ Start a comment with `!` followed by your feedback. Forge regenerates the curren
 ```
 
 !!! note
-    Comments without a recognized prefix (`!`, `?`, `@forge ask`) are treated as informational and ignored by the workflow. Only `!`-prefixed comments trigger regeneration.
+    Comments without a recognized prefix (`!`, `?`, `@forge ask`, `/forge stats`) are treated as informational and ignored by the workflow. Only `!`-prefixed comments trigger regeneration.
 
 ## Handling Failures
 

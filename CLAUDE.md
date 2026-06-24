@@ -122,6 +122,8 @@ podman rm $(podman ps -a --filter name=forge- -q)
 | `!` | Revision request — triggers regeneration with feedback |
 | `?` or `@forge ask` | Question — triggers Q&A answer |
 | `>option N` | RCA option selection (RCA Option Gate only) |
+| `/forge stats` | Post current workflow statistics as a Jira comment (read-only) |
+| `/forge stats retry` | Re-post stats comment, forcing a fresh calculation |
 | _(no prefix)_ | Informational — workflow ignores it |
 
 ## GitHub PR Comment Commands
