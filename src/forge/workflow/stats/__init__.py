@@ -114,6 +114,9 @@ class StatsState(TypedDict, total=False):
             the blocking reason or error message), or None when not applicable.
         stats_comment_posted: True once the summary statistics comment has been
             posted to the Jira ticket (prevents double-posting on retries).
+        workflow_run_id: A unique identifier for this specific workflow run
+            (UUID4 string). Used as the idempotency key when posting the stats
+            comment to prevent duplicate posts across retries or re-invocations.
     """
 
     stats_stages: dict[str, StageStats]
@@ -122,3 +125,4 @@ class StatsState(TypedDict, total=False):
     stats_outcome: str | None
     stats_outcome_reason: str | None
     stats_comment_posted: bool
+    workflow_run_id: str

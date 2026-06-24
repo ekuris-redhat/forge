@@ -1,5 +1,6 @@
 """Bug workflow state definition."""
 
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -148,6 +149,7 @@ def create_initial_bug_state(ticket_key: str, **kwargs: Any) -> BugState:
         "stats_outcome": None,
         "stats_outcome_reason": None,
         "stats_comment_posted": False,
+        "workflow_run_id": str(uuid.uuid4()),
     }
 
     # Merge with kwargs, letting kwargs override defaults
