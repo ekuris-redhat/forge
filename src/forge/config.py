@@ -58,6 +58,16 @@ class Settings(BaseSettings):
         default="",
         description="Custom field ID for Specification storage (optional)",
     )
+    jira_service_account_id: str = Field(
+        default="",
+        description=(
+            "Jira account ID of the Forge service account used to post comments. "
+            "When set, only comments authored by this account are treated as Forge "
+            "comments when checking whether the stats comment is the final comment "
+            "on a ticket (see ensure_stats_is_final_comment). "
+            "Set via JIRA_SERVICE_ACCOUNT_ID environment variable."
+        ),
+    )
 
     # Jira workflow configuration
     jira_use_labels: bool = Field(

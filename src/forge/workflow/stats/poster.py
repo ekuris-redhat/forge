@@ -1,6 +1,6 @@
 """Stats comment posting service for Jira tickets.
 
-This module provides a non-blocking async function that formats and posts
+This module provides non-blocking async functions that format and post
 workflow statistics as a comment to the associated Jira ticket at the end
 of a workflow run.
 
@@ -12,11 +12,19 @@ post the marker is written to Redis with a 7-day TTL via
 :func:`~forge.workflow.stats.idempotency.mark_stats_posted`.  A hidden HTML
 comment (``<!-- forge:stats:<run_id> -->``) is also embedded in the comment
 body for independent verification.
+
+Re-Post Mechanism
+-----------------
+``ensure_stats_is_final_comment`` guarantees the stats comment is always the
+*last* Forge comment on the ticket.  It fetches all comments, identifies the
+most recent one posted by the Forge service account, and re-posts the stats
+summary if a non-stats comment was added after the most recent stats comment.
 """
 
 import asyncio
 import logging
 
+from forge.config import get_settings
 from forge.integrations.jira.client import JiraClient
 from forge.workflow.stats import StatsState
 from forge.workflow.stats.formatter import format_stats_summary
@@ -43,6 +51,12 @@ _MAX_BACKOFF_SECONDS = 16.0
 
 #: Overall timeout for the entire post_stats_comment operation (5-minute SLA).
 _OPERATION_TIMEOUT_SECONDS = 300.0
+
+#: Prefix embedded in all stats comment bodies for identification.
+#: This substring is present in every comment posted by post_stats_comment /
+#: ensure_stats_is_final_comment and is used by _is_stats_comment() to
+#: distinguish stats comments from other Forge comments.
+_STATS_BODY_MARKER = "<!-- forge:stats:"
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +159,93 @@ async def post_stats_comment(
     return posted
 
 
+async def ensure_stats_is_final_comment(
+    ticket_key: str,
+    stats: StatsState,
+    outcome: str,
+    outcome_detail: str | None = None,
+) -> bool:
+    """Ensure the stats summary is the last Forge comment on a Jira ticket.
+
+    Fetches all comments on *ticket_key*, filters to those posted by the
+    Forge service account (configured via ``JIRA_SERVICE_ACCOUNT_ID``), and
+    checks whether the most recent Forge comment is a stats comment.
+
+    - If no Forge comments exist → posts a new stats comment.
+    - If the most recent Forge comment **is** a stats comment → does nothing
+      and returns ``True`` (idempotent).
+    - If the most recent Forge comment is **not** a stats comment (e.g. an
+      error notification was added after the stats) → re-posts the stats
+      summary so it becomes the final Forge comment.
+
+    When ``JIRA_SERVICE_ACCOUNT_ID`` is not configured, all comments are
+    considered (no author filtering is applied).
+
+    This function is safe to call multiple times; repeated calls when the
+    stats comment is already the last comment are a no-op.
+
+    Args:
+        ticket_key: The Jira issue key to inspect (e.g. ``"PROJ-123"``).
+        stats: The workflow statistics state to format and (re-)post.
+        outcome: Outcome category passed to the stats formatter.
+        outcome_detail: Optional elaboration on the outcome.
+
+    Returns:
+        ``True`` if the stats comment is (or becomes) the final Forge comment,
+        ``False`` if the check or post operation fails.
+    """
+    jira = JiraClient()
+    try:
+        comments = await jira.get_comments(ticket_key)
+    except Exception:
+        logger.exception(
+            "ensure_stats_is_final_comment: failed to fetch comments for ticket %s",
+            ticket_key,
+        )
+        return False
+    finally:
+        await jira.close()
+
+    settings = get_settings()
+    service_account_id = settings.jira_service_account_id
+
+    # Filter to Forge comments (comments by the service account).
+    # When service_account_id is empty, treat *all* comments as Forge comments.
+    if service_account_id:
+        forge_comments = [c for c in comments if c.author_id == service_account_id]
+    else:
+        forge_comments = list(comments)
+
+    if not forge_comments:
+        # No Forge comments at all — post the initial stats comment.
+        logger.info(
+            "ensure_stats_is_final_comment: no Forge comments on %s; posting stats",
+            ticket_key,
+        )
+        return await post_stats_comment(ticket_key, stats, outcome, outcome_detail)
+
+    # Comments from get_comments() are returned in chronological order;
+    # the last element is the most recent.
+    most_recent = forge_comments[-1]
+
+    if _is_stats_comment(most_recent.body):
+        # Stats comment is already the final Forge comment — nothing to do.
+        logger.debug(
+            "ensure_stats_is_final_comment: stats comment is already final on %s",
+            ticket_key,
+        )
+        return True
+
+    # A non-stats Forge comment is more recent → re-post stats.
+    logger.info(
+        "ensure_stats_is_final_comment: re-posting stats on %s "
+        "(most recent Forge comment id=%s is not a stats comment)",
+        ticket_key,
+        most_recent.id,
+    )
+    return await post_stats_comment(ticket_key, stats, outcome, outcome_detail)
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -213,3 +314,18 @@ async def _post_with_retry(
         _MAX_ATTEMPTS,
     )
     return False
+
+
+def _is_stats_comment(body: str) -> bool:
+    """Return True if *body* was produced by the stats comment poster.
+
+    Detection is based on the hidden HTML marker (``<!-- forge:stats:… -->``)
+    that :func:`post_stats_comment` embeds in every comment it posts.
+
+    Args:
+        body: The raw text body of a Jira comment.
+
+    Returns:
+        ``True`` when the body contains the stats marker, ``False`` otherwise.
+    """
+    return _STATS_BODY_MARKER in body
