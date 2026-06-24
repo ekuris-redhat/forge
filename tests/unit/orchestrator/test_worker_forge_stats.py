@@ -111,15 +111,16 @@ class TestForgeStatsCommandDetection:
 
     @pytest.mark.asyncio
     async def test_forge_stats_with_trailing_text(self, worker: OrchestratorWorker, mock_jira):
-        """/forge stats with trailing text still triggers stats posting."""
+        """/forge stats with unknown trailing subcommand is treated as informational (no post)."""
         message = _make_jira_message("TEST-123", "/forge stats please show me")
         state = _base_state()
 
         with patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
             result = await worker._handle_resume_event(message, state)
 
+        # Unknown subcommand is informational — state is returned unchanged, no comment posted
         assert result is state
-        mock_jira.add_comment.assert_awaited_once()
+        mock_jira.add_comment.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_forge_stats_with_leading_whitespace(self, worker: OrchestratorWorker, mock_jira):

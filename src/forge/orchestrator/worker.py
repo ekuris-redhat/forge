@@ -30,6 +30,7 @@ from forge.skills.utils import extract_project_key
 from forge.workflow.registry import create_default_router
 from forge.workflow.router import WorkflowRouter
 from forge.workflow.stats.formatter import format_stats_summary
+from forge.workflow.stats.poster import ensure_stats_is_final_comment
 from forge.workflow.utils.comment_classifier import CommentType, classify_comment
 from forge.workflow.utils.jira_status import post_status_comment
 
@@ -618,11 +619,30 @@ class OrchestratorWorker:
                 comment_body = self._extract_text_from_adf(comment_body)
 
             if comment_body.strip():
-                # /forge stats command — post workflow statistics and return state unchanged.
-                # This is a read-only command that works regardless of workflow state.
+                # /forge stats [subcommand] — post workflow statistics and return state
+                # unchanged.  This is a read-only command that works regardless of workflow
+                # state.  Supported subcommands:
+                #   (none)  — post current stats as a new comment
+                #   retry   — force fresh stats re-post via ensure_stats_is_final_comment
+                # Unknown subcommands are treated as informational (no-op).
                 if comment_body.strip().lower().startswith("/forge stats"):
-                    logger.info(f"Detected /forge stats command for {message.ticket_key}")
-                    await self._handle_stats_command(message.ticket_key, current_state)
+                    # Parse optional subcommand from the remainder of the line.
+                    remainder = comment_body.strip()[len("/forge stats") :].strip().lower()
+                    subcommand = remainder.split()[0] if remainder.split() else ""
+
+                    if subcommand == "retry":
+                        logger.info(f"Detected /forge stats retry command for {message.ticket_key}")
+                        await self._handle_stats_retry_command(message.ticket_key, current_state)
+                    elif subcommand == "":
+                        # Base /forge stats — post current stats as a new comment.
+                        logger.info(f"Detected /forge stats command for {message.ticket_key}")
+                        await self._handle_stats_command(message.ticket_key, current_state)
+                    else:
+                        # Unknown subcommand — treat as informational, no-op.
+                        logger.info(
+                            f"Unknown /forge stats subcommand '{subcommand}' for "
+                            f"{message.ticket_key} — treating as informational"
+                        )
                     return current_state
 
                 # >option N detection for rca_option_gate (runs before general classification)
@@ -1114,6 +1134,48 @@ class OrchestratorWorker:
             ticket_key: Jira ticket key to post the stats comment on.
             current_state: Current workflow state from the checkpoint.
         """
+        await self._post_stats_comment(ticket_key, current_state, force_repost=False)
+
+    async def _handle_stats_retry_command(
+        self,
+        ticket_key: str,
+        current_state: dict[str, Any],
+    ) -> None:
+        """Handle a /forge stats retry Jira comment command.
+
+        Forces a fresh stats calculation from the current checkpoint state,
+        bypassing any cached data, and re-posts the stats comment via the
+        re-post mechanism so that it appears as the final Forge comment.
+        This is useful when the original stats comment failed to post or
+        when the data needs to be refreshed.
+
+        Args:
+            ticket_key: Jira ticket key to post the stats comment on.
+            current_state: Current workflow state from the checkpoint.
+        """
+        logger.info(f"Retrying stats post for {ticket_key} — forcing fresh stats calculation")
+        await self._post_stats_comment(ticket_key, current_state, force_repost=True)
+
+    async def _post_stats_comment(
+        self,
+        ticket_key: str,
+        current_state: dict[str, Any],
+        *,
+        force_repost: bool = False,
+    ) -> None:
+        """Shared helper for posting stats comments.
+
+        Derives the outcome and detail from the current workflow state,
+        formats the stats summary, and posts (or re-posts) it to Jira.
+
+        Args:
+            ticket_key: Jira ticket key to post the stats comment on.
+            current_state: Current workflow state from the checkpoint.
+            force_repost: When ``True``, use :func:`ensure_stats_is_final_comment`
+                to re-post the stats comment even if one was previously posted,
+                ensuring it appears as the final Forge comment (retry scenario).
+                When ``False``, post a new comment via ``JiraClient.add_comment``.
+        """
         stats_stages = current_state.get("stats_stages")
         if not stats_stages and stats_stages != {}:
             # No stats data found at all (missing key, not just empty dict)
@@ -1138,6 +1200,17 @@ class OrchestratorWorker:
         outcome_detail = current_state.get("stats_outcome_reason") or current_state.get(
             "last_error"
         )
+
+        if force_repost:
+            # Use the re-post mechanism so stats appears as the final Forge comment.
+            try:
+                await ensure_stats_is_final_comment(
+                    ticket_key, current_state, outcome, outcome_detail
+                )
+                logger.info(f"Re-posted stats comment to {ticket_key} via retry")
+            except Exception as e:
+                logger.warning(f"Failed to re-post stats comment to {ticket_key}: {e}")
+            return
 
         try:
             comment_body = format_stats_summary(current_state, outcome, outcome_detail)
