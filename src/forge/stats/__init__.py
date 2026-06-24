@@ -18,8 +18,16 @@ Public API
     Async function that returns ``(stats, error_message)``; never raises.
     Suitable for CLI / command-handler callers that need a display-ready
     error string instead of an exception.
+
+``format_stats_table(stats, *, colorize=False)``
+    Render a ``WorkflowStats`` as a human-readable ASCII table for terminal
+    display.
+
+``format_stats_json(stats)``
+    Serialize a ``WorkflowStats`` to a pretty-printed JSON string.
 """
 
+from forge.stats.cli_formatter import format_stats_json, format_stats_table
 from forge.stats.retrieval import (
     WorkflowStats,
     get_workflow_stats,
@@ -28,6 +36,8 @@ from forge.stats.retrieval import (
 
 __all__ = [
     "WorkflowStats",
+    "format_stats_json",
+    "format_stats_table",
     "get_workflow_stats",
     "get_workflow_stats_or_error",
 ]
