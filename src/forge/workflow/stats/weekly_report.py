@@ -693,7 +693,7 @@ async def collect_weekly_data(
                 raw = await redis_client.get(key)
                 if raw is None:
                     continue
-                state = json.loads(raw) if isinstance(raw, str) else raw
+                state = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
                 if not isinstance(state, dict):
                     logger.debug("Unexpected checkpoint value type at key %s; skipping", key)
                     continue

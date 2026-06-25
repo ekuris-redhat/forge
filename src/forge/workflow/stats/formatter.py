@@ -5,6 +5,7 @@ posting as a comment on the associated Jira ticket at the end of a workflow run.
 """
 
 from forge.workflow.stats import (
+    ALL_BUG_STAGES,
     ALL_FEATURE_STAGES,
     StageStats,
     StatsState,
@@ -34,6 +35,9 @@ _STAGE_LABELS: dict[str, str] = {
 
 #: Em-dash used when a stage was never executed.
 _DASH = "\u2014"
+
+#: Stage keys that only appear in Bug workflows.
+_BUG_ONLY_STAGES = frozenset({"triage", "rca", "planning"})
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +198,12 @@ def format_stats_summary(
     lines.append("")
     lines.append("||Stage||Iterations||Machine Time||Human Time||Input Tokens||Output Tokens||")
 
-    for stage_key in ALL_FEATURE_STAGES:
+    # Detect workflow type: prefer bug stage ordering when any bug-only stage
+    # key is present in the recorded data.
+    display_stages = (
+        ALL_BUG_STAGES if any(k in stages for k in _BUG_ONLY_STAGES) else ALL_FEATURE_STAGES
+    )
+    for stage_key in display_stages:
         label = _STAGE_LABELS.get(stage_key, stage_key.title())
         stage_data = stages.get(stage_key)
         lines.append(_build_stage_row(label, stage_data))
