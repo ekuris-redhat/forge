@@ -273,11 +273,22 @@ async def _post_with_retry(
         attempts are exhausted.
     """
     settings = get_settings()
-    token_threshold: int | None = (
-        settings.stats_cost_alert_threshold_tokens if settings.stats_cost_alert_enabled else None
-    )
+    token_threshold: int | None = None
+    dollar_threshold: float | None = None
+    pricing: dict[str, dict[str, float]] | None = None
+    if settings.stats_cost_alert_enabled:
+        pricing = settings.llm_pricing
+        if settings.stats_cost_alert_threshold_dollars is not None:
+            dollar_threshold = settings.stats_cost_alert_threshold_dollars
+        else:
+            token_threshold = settings.stats_cost_alert_threshold_tokens
     comment_body = format_stats_summary(
-        stats, outcome, outcome_detail, token_threshold=token_threshold
+        stats,
+        outcome,
+        outcome_detail,
+        token_threshold=token_threshold,
+        dollar_threshold=dollar_threshold,
+        pricing=pricing,
     )
 
     # Append the idempotency marker so readers can verify which run produced

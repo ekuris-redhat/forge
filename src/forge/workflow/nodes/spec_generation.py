@@ -156,7 +156,8 @@ async def generate_spec(state: WorkflowState) -> WorkflowState:
     logger.info(f"Generating specification for {ticket_key}")
 
     # Record stage start and begin timing
-    state = {**state, **record_stage_start(state, STAGE_SPEC)}
+    settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_SPEC, model_name=settings.llm_model)}
     node_start = time.monotonic()
 
     # Post Q&A summary for PRD if any
@@ -322,7 +323,8 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
     logger.info(f"Regenerating spec for {ticket_key} with feedback")
 
     # Record stage re-entry: start timer, increment revision count
-    state = {**state, **record_stage_start(state, STAGE_SPEC)}
+    settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_SPEC, model_name=settings.llm_model)}
     state = {**state, **increment_revision(state, STAGE_SPEC)}
     node_start = time.monotonic()
 

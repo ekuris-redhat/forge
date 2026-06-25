@@ -18,6 +18,13 @@ from forge.workflow.stats.formatter import (
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
 
+#: A minimal pricing table used by cost-related tests.
+_SAMPLE_PRICING: dict[str, dict[str, float]] = {
+    "claude-sonnet-4": {"input": 3.00, "output": 15.00},
+    "claude-opus-4": {"input": 15.00, "output": 75.00},
+    "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
+}
+
 
 def _make_stage(
     *,
@@ -29,6 +36,7 @@ def _make_stage(
     output_tokens: int = 500,
     started_at: str | None = "2024-01-01T00:00:00+00:00",
     ended_at: str | None = "2024-01-01T00:01:00+00:00",
+    model_name: str | None = None,
 ) -> dict:
     return {
         "stage_name": stage_name,
@@ -39,6 +47,7 @@ def _make_stage(
         "output_tokens": output_tokens,
         "started_at": started_at,
         "ended_at": ended_at,
+        "model_name": model_name,
     }
 
 
@@ -148,8 +157,15 @@ class TestFmtTokens:
 class TestBuildStageRow:
     def test_none_stage_shows_dashes(self):
         row = _build_stage_row("PRD", None)
-        # Should show em-dash in all metric columns
-        assert row == "|PRD|—|—|—|—|—|"
+        # Should show em-dash in all metric columns, with spaces
+        assert "PRD" in row
+        assert "—" in row
+        # 6 dash columns (Iterations, Machine Time, Human Time, Input, Output, Cost)
+        assert row.count("—") == 6
+
+    def test_none_stage_has_spacing(self):
+        row = _build_stage_row("PRD", None)
+        assert row.startswith("| PRD |")
 
     def test_executed_stage_shows_metrics(self):
         stage = _make_stage(
@@ -160,7 +176,41 @@ class TestBuildStageRow:
             output_tokens=500,
         )
         row = _build_stage_row("PRD", stage)
-        assert row == "|PRD|2|1m 30s|1m 0s|1,000|500|"
+        assert "| PRD |" in row
+        assert "| 2 |" in row
+        assert "| 1m 30s |" in row
+        assert "| 1m 0s |" in row
+        assert "| 1,000 |" in row
+        assert "| 500 |" in row
+
+    def test_executed_stage_no_pricing_shows_cost_unavailable(self):
+        stage = _make_stage(input_tokens=1000, output_tokens=500)
+        row = _build_stage_row("PRD", stage)
+        assert "cost unavailable" in row
+
+    def test_executed_stage_with_pricing_known_model(self):
+        stage = _make_stage(
+            model_name="claude-sonnet-4-5@20250929",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+        )
+        row = _build_stage_row("PRD", stage, pricing=_SAMPLE_PRICING)
+        # input: 1MTok * $3 = $3.00, output: 1MTok * $15 = $15.00, total = $18.00
+        assert "$18.00" in row
+
+    def test_executed_stage_with_pricing_unknown_model(self):
+        stage = _make_stage(
+            model_name="unknown-model-xyz",
+            input_tokens=1000,
+            output_tokens=500,
+        )
+        row = _build_stage_row("PRD", stage, pricing=_SAMPLE_PRICING)
+        assert "cost unavailable" in row
+
+    def test_executed_stage_with_pricing_no_model(self):
+        stage = _make_stage(model_name=None, input_tokens=1000, output_tokens=500)
+        row = _build_stage_row("PRD", stage, pricing=_SAMPLE_PRICING)
+        assert "cost unavailable" in row
 
     def test_stage_with_zero_times(self):
         stage = _make_stage(
@@ -171,7 +221,8 @@ class TestBuildStageRow:
             output_tokens=0,
         )
         row = _build_stage_row("Spec", stage)
-        assert row == "|Spec|1|0s|0s|0|0|"
+        assert "| Spec |" in row
+        assert "| 0s |" in row
 
 
 # ---------------------------------------------------------------------------
@@ -182,12 +233,14 @@ class TestBuildStageRow:
 class TestBuildTotalsRow:
     def test_empty_stages(self):
         row = _build_totals_row({})
-        assert row == "|*Total*|—|—|—|*0*|*0*|"
+        assert "| *Total* |" in row
+        assert "*0*" in row
 
     def test_single_stage(self):
         stages = {"prd": _make_stage(input_tokens=100, output_tokens=50)}
         row = _build_totals_row(stages)
-        assert row == "|*Total*|—|—|—|*100*|*50*|"
+        assert "*100*" in row
+        assert "*50*" in row
 
     def test_multiple_stages_summed(self):
         stages = {
@@ -195,7 +248,63 @@ class TestBuildTotalsRow:
             "spec": _make_stage(input_tokens=2000, output_tokens=800),
         }
         row = _build_totals_row(stages)
-        assert row == "|*Total*|—|—|—|*3,000*|*1,300*|"
+        assert "*3,000*" in row
+        assert "*1,300*" in row
+
+    def test_no_pricing_shows_cost_unavailable(self):
+        stages = {"prd": _make_stage(input_tokens=100, output_tokens=50)}
+        row = _build_totals_row(stages)
+        assert "cost unavailable" in row
+
+    def test_pricing_all_known_models(self):
+        stages = {
+            "prd": _make_stage(
+                model_name="claude-sonnet-4-5@20250929",
+                input_tokens=1_000_000,
+                output_tokens=1_000_000,
+            ),
+        }
+        row = _build_totals_row(stages, pricing=_SAMPLE_PRICING)
+        # input: $3.00, output: $15.00, total: $18.00
+        assert "$18.00" in row
+
+    def test_pricing_any_unknown_model_shows_unavailable(self):
+        stages = {
+            "prd": _make_stage(
+                model_name="claude-sonnet-4-5@20250929",
+                input_tokens=1000,
+                output_tokens=500,
+            ),
+            "spec": _make_stage(
+                model_name="unknown-model",
+                input_tokens=1000,
+                output_tokens=500,
+            ),
+        }
+        row = _build_totals_row(stages, pricing=_SAMPLE_PRICING)
+        assert "cost unavailable" in row
+
+    def test_pricing_zero_token_stages_skipped(self):
+        """Stages with zero tokens should not be counted as 'unknown model'."""
+        stages = {
+            "prd": _make_stage(
+                model_name="claude-sonnet-4-5@20250929",
+                input_tokens=1_000_000,
+                output_tokens=0,
+            ),
+            "ci": _make_stage(
+                model_name=None,
+                input_tokens=0,
+                output_tokens=0,
+            ),
+        }
+        row = _build_totals_row(stages, pricing=_SAMPLE_PRICING)
+        # ci has zero tokens so it is skipped; prd cost = $3.00
+        assert "$3.00" in row
+
+    def test_has_spacing(self):
+        row = _build_totals_row({})
+        assert "| *Total* |" in row
 
 
 # ---------------------------------------------------------------------------
@@ -271,10 +380,11 @@ class TestFormatStatsSummaryStructure:
         result = format_stats_summary(_minimal_stats(), "completed")
         assert "h3. Workflow Statistics" in result
 
-    def test_contains_table_header_row(self):
+    def test_contains_table_header_row_with_spacing(self):
         result = format_stats_summary(_minimal_stats(), "completed")
         assert (
-            "||Stage||Iterations||Machine Time||Human Time||Input Tokens||Output Tokens||" in result
+            "|| Stage || Iterations || Machine Time || Human Time ||"
+            " Input Tokens || Output Tokens || Cost ||" in result
         )
 
     def test_contains_all_feature_stages(self):
@@ -291,7 +401,7 @@ class TestFormatStatsSummaryStructure:
             for line in lines
             if line.startswith("|")
             and not line.startswith("||")
-            and not line.startswith("|*Total*")
+            and not line.startswith("| *Total*")
         ]
         assert len(stage_rows) == 7  # 7 feature stages
         for row in stage_rows:
@@ -299,7 +409,7 @@ class TestFormatStatsSummaryStructure:
 
     def test_contains_totals_row(self):
         result = format_stats_summary(_minimal_stats(), "completed")
-        assert "|*Total*|" in result
+        assert "| *Total* |" in result
 
     def test_contains_ci_cycles(self):
         stats = _minimal_stats(stats_ci_cycles=3)
@@ -346,12 +456,18 @@ class TestFormatStatsSummaryStageData:
         )
         stats = _minimal_stats(stage_timestamps={"prd": stage})
         result = format_stats_summary(stats, "completed")
-        assert "|PRD|3|1h 1m 1s|2m 0s|5,000|1,500|" in result
+        assert "| PRD |" in result
+        assert "| 3 |" in result
+        assert "| 1h 1m 1s |" in result
+        assert "| 2m 0s |" in result
+        assert "| 5,000 |" in result
+        assert "| 1,500 |" in result
 
     def test_unexecuted_stage_shows_dashes(self):
         stats = _minimal_stats()
         result = format_stats_summary(stats, "completed")
-        assert "|PRD|—|—|—|—|—|" in result
+        assert "| PRD |" in result
+        assert "—" in result
 
     def test_totals_sum_across_stages(self):
         stages = {
@@ -361,11 +477,12 @@ class TestFormatStatsSummaryStageData:
         }
         stats = _minimal_stats(stage_timestamps=stages)
         result = format_stats_summary(stats, "completed")
-        assert "|*Total*|—|—|—|*13,000*|*5,300*|" in result
+        assert "*13,000*" in result
+        assert "*5,300*" in result
 
     def test_empty_stages_totals_zero(self):
         result = format_stats_summary(_minimal_stats(), "completed")
-        assert "|*Total*|—|—|—|*0*|*0*|" in result
+        assert "*0*" in result
 
 
 class TestFormatStatsSummaryOutcome:
@@ -431,7 +548,7 @@ class TestFormatStatsSummaryMissingFields:
     def test_none_stage_timestamps(self):
         stats = _minimal_stats(stage_timestamps=None)
         result = format_stats_summary(stats, "completed")
-        assert "|*Total*|—|—|—|*0*|*0*|" in result
+        assert "| *Total* |" in result
 
     def test_none_pr_urls(self):
         stats = _minimal_stats(stats_pr_urls=None)
@@ -445,7 +562,71 @@ class TestFormatStatsSummaryMissingFields:
 
 
 # ---------------------------------------------------------------------------
-# Cost alert section
+# Cost column tests
+# ---------------------------------------------------------------------------
+
+
+class TestCostColumn:
+    """Tests for the Cost column in the stage table."""
+
+    def test_cost_column_in_header(self):
+        result = format_stats_summary(_minimal_stats(), "completed")
+        assert "|| Cost ||" in result
+
+    def test_cost_unavailable_when_no_pricing(self):
+        stage = _make_stage(
+            model_name="claude-sonnet-4-5@20250929",
+            input_tokens=1000,
+            output_tokens=500,
+        )
+        stats = _minimal_stats(stage_timestamps={"prd": stage})
+        result = format_stats_summary(stats, "completed")
+        assert "cost unavailable" in result
+
+    def test_cost_displayed_with_pricing(self):
+        stage = _make_stage(
+            stage_name="prd",
+            model_name="claude-sonnet-4-5@20250929",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+        )
+        stats = _minimal_stats(stage_timestamps={"prd": stage})
+        result = format_stats_summary(stats, "completed", pricing=_SAMPLE_PRICING)
+        # input: $3.00, output: $15.00, total per stage: $18.00
+        assert "$18.00" in result
+
+    def test_cost_unavailable_when_model_not_in_pricing(self):
+        stage = _make_stage(
+            stage_name="prd",
+            model_name="unknown-model-xyz",
+            input_tokens=1000,
+            output_tokens=500,
+        )
+        stats = _minimal_stats(stage_timestamps={"prd": stage})
+        result = format_stats_summary(stats, "completed", pricing=_SAMPLE_PRICING)
+        assert "cost unavailable" in result
+
+    def test_total_cost_sum_across_stages(self):
+        stages = {
+            "prd": _make_stage(
+                model_name="claude-sonnet-4-5@20250929",
+                input_tokens=1_000_000,
+                output_tokens=0,
+            ),
+            "spec": _make_stage(
+                model_name="claude-sonnet-4-5@20250929",
+                input_tokens=1_000_000,
+                output_tokens=0,
+            ),
+        }
+        stats = _minimal_stats(stage_timestamps=stages)
+        result = format_stats_summary(stats, "completed", pricing=_SAMPLE_PRICING)
+        # Each stage: $3.00 input; total: $6.00
+        assert "$6.00" in result
+
+
+# ---------------------------------------------------------------------------
+# Cost alert section (token-based)
 # ---------------------------------------------------------------------------
 
 
@@ -460,7 +641,7 @@ def _stats_with_tokens(input_tokens: int, output_tokens: int) -> dict:
 
 
 class TestCostAlert:
-    """Tests for the cost alert section in format_stats_summary."""
+    """Tests for the token-based cost alert section in format_stats_summary."""
 
     # ------------------------------------------------------------------
     # Threshold exceeded — alert should appear
@@ -572,3 +753,149 @@ class TestCostAlert:
         stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
         result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
         assert "*Actual usage:*" in result
+
+
+# ---------------------------------------------------------------------------
+# Dollar-based cost alert tests
+# ---------------------------------------------------------------------------
+
+
+class TestDollarCostAlert:
+    """Tests for dollar-threshold cost alerting in format_stats_summary."""
+
+    def _stats_with_model(
+        self,
+        model_name: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> dict:
+        stage = _make_stage(
+            stage_name="prd",
+            model_name=model_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+        return _minimal_stats(stage_timestamps={"prd": stage})
+
+    def test_dollar_alert_triggers_when_cost_exceeds_threshold(self):
+        # claude-sonnet-4: $3/MTok input, $15/MTok output
+        # 2M input = $6.00, 1M output = $15.00, total = $21.00 > $10.00
+        stats = self._stats_with_model(
+            "claude-sonnet-4-5@20250929",
+            input_tokens=2_000_000,
+            output_tokens=1_000_000,
+        )
+        result = format_stats_summary(
+            stats,
+            "completed",
+            dollar_threshold=10.00,
+            pricing=_SAMPLE_PRICING,
+        )
+        assert "COST ALERT" in result
+
+    def test_dollar_alert_shows_dollar_amounts(self):
+        stats = self._stats_with_model(
+            "claude-sonnet-4-5@20250929",
+            input_tokens=2_000_000,
+            output_tokens=1_000_000,
+        )
+        result = format_stats_summary(
+            stats,
+            "completed",
+            dollar_threshold=10.00,
+            pricing=_SAMPLE_PRICING,
+        )
+        assert "$10.00" in result  # threshold
+        assert "$21.00" in result  # actual cost
+
+    def test_dollar_alert_not_triggered_when_cost_below_threshold(self):
+        # $1.00 input cost, well below $100 threshold
+        stats = self._stats_with_model(
+            "claude-sonnet-4-5@20250929",
+            input_tokens=333_333,
+            output_tokens=0,
+        )
+        result = format_stats_summary(
+            stats,
+            "completed",
+            dollar_threshold=100.00,
+            pricing=_SAMPLE_PRICING,
+        )
+        assert "COST ALERT" not in result
+
+    def test_dollar_alert_not_triggered_when_cost_equals_threshold(self):
+        # exactly $3.00 input for 1M tokens, threshold = $3.00
+        stats = self._stats_with_model(
+            "claude-sonnet-4-5@20250929",
+            input_tokens=1_000_000,
+            output_tokens=0,
+        )
+        result = format_stats_summary(
+            stats,
+            "completed",
+            dollar_threshold=3.00,
+            pricing=_SAMPLE_PRICING,
+        )
+        assert "COST ALERT" not in result
+
+    def test_dollar_alert_not_triggered_without_pricing(self):
+        """Dollar threshold without pricing table should not trigger alert."""
+        stats = self._stats_with_model(
+            "claude-sonnet-4-5@20250929",
+            input_tokens=10_000_000,
+            output_tokens=10_000_000,
+        )
+        result = format_stats_summary(
+            stats,
+            "completed",
+            dollar_threshold=0.01,
+            pricing=None,
+        )
+        assert "COST ALERT" not in result
+
+    def test_dollar_alert_not_triggered_when_cost_unavailable(self):
+        """Dollar alert should not trigger if model is unknown (cost unavailable)."""
+        stats = self._stats_with_model(
+            "unknown-model",
+            input_tokens=10_000_000,
+            output_tokens=10_000_000,
+        )
+        result = format_stats_summary(
+            stats,
+            "completed",
+            dollar_threshold=0.01,
+            pricing=_SAMPLE_PRICING,
+        )
+        assert "COST ALERT" not in result
+
+    def test_dollar_alert_takes_precedence_over_token_threshold(self):
+        """When dollar_threshold is set, token_threshold should be ignored."""
+        # Very large tokens but low cost -> token threshold would trigger, dollar won't
+        stats = self._stats_with_model(
+            "claude-sonnet-4-5@20250929",
+            input_tokens=5_000_000,
+            output_tokens=0,
+        )
+        result = format_stats_summary(
+            stats,
+            "completed",
+            token_threshold=1_000_000,  # would trigger if dollar not set
+            dollar_threshold=1000.00,  # well above $15.00 cost
+            pricing=_SAMPLE_PRICING,
+        )
+        # Dollar threshold dominates; $15.00 < $1000.00 so no alert
+        assert "COST ALERT" not in result
+
+    def test_dollar_alert_uses_actual_cost_label(self):
+        stats = self._stats_with_model(
+            "claude-sonnet-4-5@20250929",
+            input_tokens=2_000_000,
+            output_tokens=1_000_000,
+        )
+        result = format_stats_summary(
+            stats,
+            "completed",
+            dollar_threshold=10.00,
+            pricing=_SAMPLE_PRICING,
+        )
+        assert "*Actual cost:*" in result

@@ -1,10 +1,11 @@
 """Configuration management using Pydantic settings."""
 
+import json
 import logging
 from functools import cached_property, lru_cache
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 if TYPE_CHECKING:
@@ -390,6 +391,41 @@ class Settings(BaseSettings):
             "stats_cost_alert_enabled is True. Default: 1,000,000 tokens."
         ),
     )
+    stats_cost_alert_threshold_dollars: float | None = Field(
+        default=None,
+        description=(
+            "Dollar cost threshold that triggers a cost alert in the workflow stats summary. "
+            "When set, the alert compares total dollar cost (sum of all stage costs) against "
+            "this value instead of comparing raw token count against "
+            "stats_cost_alert_threshold_tokens. Only active when stats_cost_alert_enabled is "
+            "True. Set via STATS_COST_ALERT_THRESHOLD_DOLLARS environment variable."
+        ),
+    )
+    llm_pricing: dict[str, dict[str, float]] = Field(
+        default_factory=lambda: {
+            "claude-opus-4": {"input": 15.00, "output": 75.00},
+            "claude-sonnet-4": {"input": 3.00, "output": 15.00},
+            "claude-haiku-3-5": {"input": 0.80, "output": 4.00},
+            "gemini-3.5-flash": {"input": 1.50, "output": 9.00},
+            "gemini-2.5-pro": {"input": 1.25, "output": 10.00},
+            "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
+            "gemini-2.0-flash": {"input": 0.10, "output": 0.40},
+        },
+        description=(
+            "LLM pricing table mapping model name substrings/patterns to per-million-token "
+            "rates. Keys are model name substrings (longest match wins); values are dicts "
+            "with 'input' and 'output' keys in $/MTok. "
+            "Set via LLM_PRICING environment variable as a JSON-encoded string."
+        ),
+    )
+
+    @field_validator("llm_pricing", mode="before")
+    @classmethod
+    def parse_llm_pricing(cls, v: object) -> object:
+        """Parse LLM_PRICING from a JSON string when provided as an env var."""
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
 
     # OpenTelemetry Configuration
     otlp_endpoint: str = Field(

@@ -194,7 +194,8 @@ async def generate_prd(state: WorkflowState) -> WorkflowState:
     logger.info(f"Generating PRD for {ticket_key}")
 
     # Record stage start and begin timing
-    state = {**state, **record_stage_start(state, STAGE_PRD)}
+    settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_PRD, model_name=settings.llm_model)}
     node_start = time.monotonic()
 
     jira = JiraClient()
@@ -350,7 +351,8 @@ async def regenerate_prd_with_feedback(state: WorkflowState) -> WorkflowState:
     logger.info(f"Regenerating PRD for {ticket_key} with feedback")
 
     # Record stage re-entry: start timer, increment revision count
-    state = {**state, **record_stage_start(state, STAGE_PRD)}
+    settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_PRD, model_name=settings.llm_model)}
     state = {**state, **increment_revision(state, STAGE_PRD)}
     node_start = time.monotonic()
 

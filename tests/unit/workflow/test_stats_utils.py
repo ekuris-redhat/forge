@@ -108,6 +108,28 @@ class TestRecordStageStart:
         result = record_stage_start(_empty_state(), "implement")
         assert list(result.keys()) == ["stage_timestamps"]
 
+    def test_model_name_recorded_when_provided(self):
+        result = record_stage_start(_empty_state(), "prd", model_name="claude-sonnet-4-5")
+        stage = result["stage_timestamps"]["prd"]
+        assert stage["model_name"] == "claude-sonnet-4-5"
+
+    def test_model_name_defaults_to_none(self):
+        result = record_stage_start(_empty_state(), "implement")
+        stage = result["stage_timestamps"]["implement"]
+        assert stage["model_name"] is None
+
+    def test_model_name_none_explicitly(self):
+        result = record_stage_start(_empty_state(), "ci", model_name=None)
+        stage = result["stage_timestamps"]["ci"]
+        assert stage["model_name"] is None
+
+    def test_model_name_set_on_re_entry(self):
+        """Model name should be updated when re-entering an existing stage."""
+        state = _state_with_stage("implement")
+        result = record_stage_start(state, "implement", model_name="gemini-2.5-flash")
+        stage = result["stage_timestamps"]["implement"]
+        assert stage["model_name"] == "gemini-2.5-flash"
+
 
 # ---------------------------------------------------------------------------
 # record_stage_end
@@ -125,7 +147,9 @@ class TestRecordStageEnd:
         state = _state_with_stage("implement", machine_time_seconds=10.0)
         result = record_stage_end(state, "implement", machine_time=25.5)
 
-        assert result["stage_timestamps"]["implement"]["machine_time_seconds"] == pytest.approx(35.5)
+        assert result["stage_timestamps"]["implement"]["machine_time_seconds"] == pytest.approx(
+            35.5
+        )
 
     def test_accumulates_human_time(self):
         state = _state_with_stage("implement", human_time_seconds=100.0)

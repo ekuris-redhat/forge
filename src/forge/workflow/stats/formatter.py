@@ -10,6 +10,7 @@ from forge.workflow.stats import (
     StageStats,
     StatsState,
 )
+from forge.workflow.stats.costing import calculate_stage_cost
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -72,13 +73,28 @@ def _fmt_tokens(count: int) -> str:
     return f"{count:,}"
 
 
-def _build_stage_row(label: str, stage: StageStats | None) -> str:
+def _fmt_cost(cost: float) -> str:
+    """Format a dollar cost value for display (e.g. '$1.23')."""
+    return f"${cost:.2f}"
+
+
+def _build_stage_row(
+    label: str,
+    stage: StageStats | None,
+    pricing: dict[str, dict[str, float]] | None = None,
+) -> str:
     """Return a single Jira table row for a workflow stage.
 
     If *stage* is None (never executed), all metric columns show '—'.
+
+    Args:
+        label: Human-readable stage label for the first column.
+        stage: Stage metrics dict, or ``None`` when the stage was not executed.
+        pricing: Optional LLM pricing table passed to :func:`calculate_stage_cost`.
+            When ``None``, the cost column shows ``cost unavailable``.
     """
     if stage is None:
-        return f"|{label}|{_DASH}|{_DASH}|{_DASH}|{_DASH}|{_DASH}|"
+        return f"| {label} | {_DASH} | {_DASH} | {_DASH} | {_DASH} | {_DASH} | {_DASH} |"
 
     iterations = stage.get("iteration_count", 0)
     machine_time = _fmt_seconds(stage.get("machine_time_seconds", 0.0))
@@ -86,14 +102,79 @@ def _build_stage_row(label: str, stage: StageStats | None) -> str:
     input_tok = _fmt_tokens(stage.get("input_tokens", 0))
     output_tok = _fmt_tokens(stage.get("output_tokens", 0))
 
-    return f"|{label}|{iterations}|{machine_time}|{human_time}|{input_tok}|{output_tok}|"
+    if pricing is not None:
+        model_name = stage.get("model_name")
+        input_cost, output_cost = calculate_stage_cost(
+            model_name,
+            stage.get("input_tokens", 0),
+            stage.get("output_tokens", 0),
+            pricing,
+        )
+        if input_cost is not None and output_cost is not None:
+            cost_str = _fmt_cost(input_cost + output_cost)
+        else:
+            cost_str = "cost unavailable"
+    else:
+        cost_str = "cost unavailable"
+
+    return (
+        f"| {label} | {iterations} | {machine_time} | {human_time} |"
+        f" {input_tok} | {output_tok} | {cost_str} |"
+    )
 
 
-def _build_totals_row(stages: dict[str, StageStats]) -> str:
-    """Return the aggregate token totals row summed across all stages."""
+def _build_totals_row(
+    stages: dict[str, StageStats],
+    pricing: dict[str, dict[str, float]] | None = None,
+) -> str:
+    """Return the aggregate token totals row summed across all stages.
+
+    Args:
+        stages: Mapping of stage key to stage metrics.
+        pricing: Optional LLM pricing table.  When provided, computes and
+            displays a total dollar cost.  When ``None`` or any stage has an
+            unknown model, shows ``cost unavailable``.
+    """
     total_input = sum(s.get("input_tokens", 0) for s in stages.values())
     total_output = sum(s.get("output_tokens", 0) for s in stages.values())
-    return f"|*Total*|—|—|—|*{_fmt_tokens(total_input)}*|*{_fmt_tokens(total_output)}*|"
+
+    cost_str = _build_total_cost_str(stages, pricing)
+
+    return (
+        f"| *Total* | — | — | — |"
+        f" *{_fmt_tokens(total_input)}* | *{_fmt_tokens(total_output)}* | {cost_str} |"
+    )
+
+
+def _build_total_cost_str(
+    stages: dict[str, StageStats],
+    pricing: dict[str, dict[str, float]] | None,
+) -> str:
+    """Compute the formatted total cost string for the totals row.
+
+    Returns ``'cost unavailable'`` when *pricing* is ``None`` or any stage
+    with recorded tokens has an unknown model.  Otherwise returns a formatted
+    dollar amount.
+    """
+    if pricing is None:
+        return "cost unavailable"
+
+    total_cost = 0.0
+    for stage in stages.values():
+        model_name = stage.get("model_name")
+        input_tokens = stage.get("input_tokens", 0)
+        output_tokens = stage.get("output_tokens", 0)
+        if input_tokens == 0 and output_tokens == 0:
+            # Stage used no tokens — skip without penalising the total.
+            continue
+        input_cost, output_cost = calculate_stage_cost(
+            model_name, input_tokens, output_tokens, pricing
+        )
+        if input_cost is None or output_cost is None:
+            return "cost unavailable"
+        total_cost += input_cost + output_cost
+
+    return _fmt_cost(total_cost)
 
 
 def _build_outcome_str(outcome: str, outcome_detail: str | None) -> str:
@@ -130,8 +211,11 @@ def _build_outcome_str(outcome: str, outcome_detail: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_cost_alert(total_tokens: int, threshold: int) -> list[str]:
-    """Return Jira wiki markup lines for a cost alert section.
+def _build_cost_alert(
+    total_tokens: int,
+    threshold: int,
+) -> list[str]:
+    """Return Jira wiki markup lines for a token-based cost alert section.
 
     The alert is displayed as a visually prominent panel when the aggregate
     token usage exceeds *threshold*.
@@ -153,23 +237,55 @@ def _build_cost_alert(total_tokens: int, threshold: int) -> list[str]:
     ]
 
 
+def _build_dollar_cost_alert(
+    total_cost: float,
+    threshold: float,
+) -> list[str]:
+    """Return Jira wiki markup lines for a dollar-based cost alert section.
+
+    The alert is displayed as a visually prominent panel when the aggregate
+    dollar cost exceeds *threshold*.
+
+    Args:
+        total_cost: Actual aggregate dollar cost across all stages.
+        threshold: Configured dollar threshold that was exceeded.
+
+    Returns:
+        A list of Jira wiki markup lines (without a trailing newline).
+    """
+    return [
+        "",
+        "{panel:title=⚠️ COST ALERT|borderColor=#FF0000|titleBGColor=#FF0000|titleColor=#FFFFFF|bgColor=#FFF0F0}",
+        "LLM cost has exceeded the configured threshold.",
+        f"*Threshold:* {_fmt_cost(threshold)}",
+        f"*Actual cost:* {_fmt_cost(total_cost)}",
+        "{panel}",
+    ]
+
+
 def format_stats_summary(
     stats: StatsState,
     outcome: str,
     outcome_detail: str | None = None,
     token_threshold: int | None = None,
+    dollar_threshold: float | None = None,
+    pricing: dict[str, dict[str, float]] | None = None,
 ) -> str:
     """Format a StatsState snapshot into a Jira wiki markup comment.
 
     The generated comment includes:
     * A stage-by-stage metrics table (iterations, machine time, human time,
-      input tokens, output tokens).
-    * An aggregate token totals row.
+      input tokens, output tokens, cost).
+    * An aggregate token totals row with total cost.
     * A PR links section (omitted when no PRs were created).
     * A CI cycles line.
     * A final outcome field.
     * An optional cost alert panel when total token usage exceeds
-      *token_threshold* (omitted when threshold is ``None`` or not exceeded).
+      *token_threshold* or total dollar cost exceeds *dollar_threshold*
+      (omitted when both thresholds are ``None`` or not exceeded).
+
+    When *dollar_threshold* is set it takes precedence over *token_threshold*
+    for cost alerting purposes.
 
     Args:
         stats: The workflow statistics state to format.
@@ -180,7 +296,13 @@ def format_stats_summary(
         token_threshold: Optional token count threshold.  When the aggregate
             token usage (input + output across all stages) exceeds this value,
             a prominent "⚠️ COST ALERT" section is appended to the summary.
-            Pass ``None`` (the default) to disable cost alerting.
+            Pass ``None`` (the default) to disable token-based cost alerting.
+        dollar_threshold: Optional dollar cost threshold.  When set, compares
+            total dollar cost against this value rather than using the token
+            threshold.  Pass ``None`` (the default) to use token-based alerting.
+        pricing: Optional LLM pricing table (mapping model name substrings to
+            ``{"input": $/MTok, "output": $/MTok}``).  When provided, a *Cost*
+            column is populated in the stage table.  Defaults to ``None``.
 
     Returns:
         A Jira wiki markup string ready to post as a ticket comment.
@@ -196,7 +318,10 @@ def format_stats_summary(
     # ------------------------------------------------------------------
     lines.append("h3. Workflow Statistics")
     lines.append("")
-    lines.append("||Stage||Iterations||Machine Time||Human Time||Input Tokens||Output Tokens||")
+    lines.append(
+        "|| Stage || Iterations || Machine Time || Human Time ||"
+        " Input Tokens || Output Tokens || Cost ||"
+    )
 
     # Detect workflow type: prefer bug stage ordering when any bug-only stage
     # key is present in the recorded data.
@@ -206,10 +331,10 @@ def format_stats_summary(
     for stage_key in display_stages:
         label = _STAGE_LABELS.get(stage_key, stage_key.title())
         stage_data = stages.get(stage_key)
-        lines.append(_build_stage_row(label, stage_data))
+        lines.append(_build_stage_row(label, stage_data, pricing=pricing))
 
     # Aggregate totals row (always shown, even when no stages ran)
-    lines.append(_build_totals_row(stages))
+    lines.append(_build_totals_row(stages, pricing=pricing))
 
     # ------------------------------------------------------------------
     # PR links section (omitted when no PRs)
@@ -236,7 +361,15 @@ def format_stats_summary(
     # ------------------------------------------------------------------
     # Cost alert (only when threshold is configured and exceeded)
     # ------------------------------------------------------------------
-    if token_threshold is not None:
+    if dollar_threshold is not None and pricing is not None:
+        # Dollar-based alerting takes precedence over token-based.
+        total_cost_str = _build_total_cost_str(stages, pricing)
+        # Only alert when total cost is computable (not 'cost unavailable').
+        if total_cost_str != "cost unavailable":
+            total_cost = float(total_cost_str.lstrip("$"))
+            if total_cost > dollar_threshold:
+                lines.extend(_build_dollar_cost_alert(total_cost, dollar_threshold))
+    elif token_threshold is not None:
         total_tokens = sum(
             s.get("input_tokens", 0) + s.get("output_tokens", 0) for s in stages.values()
         )

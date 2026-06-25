@@ -395,4 +395,41 @@ class TestCommentContent:
         ):
             await post_stats_comment(TICKET_KEY, stats, "blocked", detail)
 
-        mock_fmt.assert_called_once_with(stats, "blocked", detail, token_threshold=1_000_000)
+        mock_fmt.assert_called_once()
+        call_kwargs = mock_fmt.call_args.kwargs
+        # Token-based threshold is passed when dollar threshold is not configured
+        assert call_kwargs.get("token_threshold") == 1_000_000
+        assert call_kwargs.get("dollar_threshold") is None
+
+    @pytest.mark.asyncio
+    async def test_dollar_threshold_passed_to_formatter_when_configured(self):
+        """When stats_cost_alert_threshold_dollars is set, it is passed to the formatter."""
+        from unittest.mock import patch as _patch
+
+        mock_jira = _make_jira_mock()
+        stats = _minimal_stats()
+
+        with (
+            patch("forge.workflow.stats.poster.JiraClient", return_value=mock_jira),
+            _patch(
+                "forge.workflow.stats.poster.get_settings",
+                return_value=MagicMock(
+                    stats_cost_alert_enabled=True,
+                    stats_cost_alert_threshold_dollars=5.0,
+                    stats_cost_alert_threshold_tokens=1_000_000,
+                    llm_pricing={"claude-sonnet-4": {"input": 3.0, "output": 15.0}},
+                ),
+            ),
+            patch(
+                "forge.workflow.stats.poster.format_stats_summary",
+                wraps=__import__(
+                    "forge.workflow.stats.formatter", fromlist=["format_stats_summary"]
+                ).format_stats_summary,
+            ) as mock_fmt,
+        ):
+            await post_stats_comment(TICKET_KEY, stats, "completed")
+
+        mock_fmt.assert_called_once()
+        call_kwargs = mock_fmt.call_args.kwargs
+        assert call_kwargs.get("dollar_threshold") == 5.0
+        assert call_kwargs.get("token_threshold") is None

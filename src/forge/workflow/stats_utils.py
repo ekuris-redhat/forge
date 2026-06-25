@@ -29,12 +29,17 @@ def _get_stage(state: dict, stage_name: str) -> dict:
             "output_tokens": 0,
             "started_at": None,
             "ended_at": None,
+            "model_name": None,
         }
     # Return a shallow copy so callers can mutate freely
     return dict(existing)
 
 
-def record_stage_start(state: dict, stage_name: str) -> dict:
+def record_stage_start(
+    state: dict,
+    stage_name: str,
+    model_name: str | None = None,
+) -> dict:
     """Initialize a stage entry in stats_stages with a started_at timestamp.
 
     If the stage already exists (e.g. a retry), the started_at timestamp is
@@ -44,6 +49,9 @@ def record_stage_start(state: dict, stage_name: str) -> dict:
     Args:
         state: Current workflow state dict.
         stage_name: Name of the stage being started (e.g. ``"implement"``).
+        model_name: Optional name of the LLM model used in this stage
+            (e.g. ``"claude-sonnet-4-5@20250929"``).  Pass ``None`` for stages
+            that do not invoke an LLM (e.g. CI, review).
 
     Returns:
         Partial state update dict with ``stage_timestamps`` key.
@@ -52,6 +60,8 @@ def record_stage_start(state: dict, stage_name: str) -> dict:
     stage = _get_stage(state, stage_name)
     stage["started_at"] = _utc_now()
     stage["ended_at"] = None  # reset end marker when re-entering
+    if model_name is not None:
+        stage["model_name"] = model_name
     stages[stage_name] = stage
     return {"stage_timestamps": stages}
 

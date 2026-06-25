@@ -76,6 +76,10 @@ class StageStats(TypedDict, total=False):
             if the stage has not yet been entered.
         ended_at: ISO-8601 timestamp when the stage finished (either completed
             or abandoned), or None if it is still in progress.
+        model_name: Name of the LLM model actually used during this stage's
+            execution (e.g. "claude-sonnet-4-5@20250929"), or None when the
+            stage does not invoke an LLM (e.g. CI, review) or the model was
+            not recorded.
     """
 
     stage_name: str
@@ -86,6 +90,7 @@ class StageStats(TypedDict, total=False):
     output_tokens: int
     started_at: str | None
     ended_at: str | None
+    model_name: str | None
 
 
 class StatsState(TypedDict, total=False):
