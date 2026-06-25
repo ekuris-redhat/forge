@@ -25,7 +25,7 @@ def _base_state(ticket_key: str = "AISOS-123", **overrides) -> dict:
         "last_error": None,
         "feedback_comment": None,
         "context": {},
-        "stats_stages": {
+        "stage_timestamps": {
             "prd": {
                 "stage_name": "prd",
                 "iteration_count": 1,
@@ -37,7 +37,7 @@ def _base_state(ticket_key: str = "AISOS-123", **overrides) -> dict:
         },
         "stats_pr_urls": ["https://github.com/org/repo/pull/42"],
         "stats_ci_cycles": 2,
-        "stats_outcome": None,
+        "workflow_outcome": None,
         "stats_outcome_reason": None,
     }
     state.update(overrides)
@@ -136,8 +136,8 @@ class TestMissingCheckpoint:
         assert "MYPROJ-999" in captured.out
 
     @pytest.mark.asyncio
-    async def test_returns_exit_code_1_when_stats_stages_key_absent(self, capsys):
-        """Returns exit code 1 when stats_stages key is not in state."""
+    async def test_returns_exit_code_1_when_stage_timestamps_key_absent(self, capsys):
+        """Returns exit code 1 when stage_timestamps key is not in state."""
         state_without_stats = {
             "ticket_key": "AISOS-123",
             "ticket_type": "Feature",
@@ -278,8 +278,8 @@ class TestPlainTextOutput:
 
     @pytest.mark.asyncio
     async def test_empty_stages_still_returns_exit_code_0(self):
-        """Empty stats_stages dict (present key, empty value) returns exit 0."""
-        state = _base_state(stats_stages={})
+        """Empty stage_timestamps dict (present key, empty value) returns exit 0."""
+        state = _base_state(stage_timestamps={})
         args = _make_args("AISOS-123")
         with patch(
             "forge.orchestrator.checkpointer.get_checkpoint_state",
@@ -408,7 +408,7 @@ class TestJsonOutput:
     async def test_json_contains_outcome_detail(self, capsys):
         """JSON output includes outcome_detail."""
         args = _make_args("AISOS-123", json_flag=True)
-        state = _base_state(last_error="build failed", stats_outcome=None)
+        state = _base_state(last_error="build failed", workflow_outcome=None)
         with patch(
             "forge.orchestrator.checkpointer.get_checkpoint_state",
             new=AsyncMock(return_value=state),
@@ -424,7 +424,7 @@ class TestJsonOutput:
     async def test_json_empty_stages(self, capsys):
         """JSON output with empty stages contains empty stages dict."""
         args = _make_args("AISOS-123", json_flag=True)
-        state = _base_state(stats_stages={})
+        state = _base_state(stage_timestamps={})
         with patch(
             "forge.orchestrator.checkpointer.get_checkpoint_state",
             new=AsyncMock(return_value=state),
@@ -444,10 +444,10 @@ class TestOutcomeDerivation:
     """Tests for outcome derivation logic."""
 
     @pytest.mark.asyncio
-    async def test_pre_set_stats_outcome_used(self, capsys):
-        """stats_outcome field is used when set."""
+    async def test_pre_set_workflow_outcome_used(self, capsys):
+        """workflow_outcome field is used when set."""
         args = _make_args("AISOS-123", json_flag=True)
-        state = _base_state(stats_outcome="Completed")
+        state = _base_state(workflow_outcome="Completed")
         with patch(
             "forge.orchestrator.checkpointer.get_checkpoint_state",
             new=AsyncMock(return_value=state),
@@ -463,7 +463,7 @@ class TestOutcomeDerivation:
         args = _make_args("AISOS-123", json_flag=True)
         state = _base_state(
             is_blocked=True,
-            stats_outcome=None,
+            workflow_outcome=None,
             feedback_comment="waiting on PM",
         )
         with patch(
@@ -482,7 +482,7 @@ class TestOutcomeDerivation:
         args = _make_args("AISOS-123", json_flag=True)
         state = _base_state(
             is_blocked=False,
-            stats_outcome=None,
+            workflow_outcome=None,
             last_error="connection timeout",
         )
         with patch(
@@ -499,7 +499,7 @@ class TestOutcomeDerivation:
     async def test_in_progress_outcome_when_no_signals(self, capsys):
         """Outcome defaults to 'In Progress' when no outcome signals found."""
         args = _make_args("AISOS-123", json_flag=True)
-        state = _base_state(is_blocked=False, stats_outcome=None, last_error=None)
+        state = _base_state(is_blocked=False, workflow_outcome=None, last_error=None)
         with patch(
             "forge.orchestrator.checkpointer.get_checkpoint_state",
             new=AsyncMock(return_value=state),
@@ -515,7 +515,7 @@ class TestOutcomeDerivation:
         """stats_outcome_reason is used as outcome_detail when present."""
         args = _make_args("AISOS-123", json_flag=True)
         state = _base_state(
-            stats_outcome="Blocked",
+            workflow_outcome="Blocked",
             stats_outcome_reason="manual hold by PM",
         )
         with patch(
@@ -528,10 +528,10 @@ class TestOutcomeDerivation:
         assert data["outcome_detail"] == "manual hold by PM"
 
     @pytest.mark.asyncio
-    async def test_stats_outcome_precedence_over_is_blocked(self, capsys):
-        """Pre-set stats_outcome takes precedence over is_blocked flag."""
+    async def test_workflow_outcome_precedence_over_is_blocked(self, capsys):
+        """Pre-set workflow_outcome takes precedence over is_blocked flag."""
         args = _make_args("AISOS-123", json_flag=True)
-        state = _base_state(stats_outcome="Completed", is_blocked=True)
+        state = _base_state(workflow_outcome="Completed", is_blocked=True)
         with patch(
             "forge.orchestrator.checkpointer.get_checkpoint_state",
             new=AsyncMock(return_value=state),
@@ -575,7 +575,7 @@ class TestFormatterIntegration:
     async def test_format_stats_summary_receives_correct_outcome(self):
         """format_stats_summary is called with derived outcome."""
         args = _make_args("AISOS-123")
-        state = _base_state(stats_outcome="Completed")
+        state = _base_state(workflow_outcome="Completed")
 
         with (
             patch(

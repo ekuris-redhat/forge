@@ -107,10 +107,10 @@ class TestStatsState:
 
         hints = get_type_hints(StatsState)
 
-        assert "stats_stages" in hints
+        assert "stage_timestamps" in hints
         assert "stats_pr_urls" in hints
         assert "stats_ci_cycles" in hints
-        assert "stats_outcome" in hints
+        assert "workflow_outcome" in hints
         assert "stats_outcome_reason" in hints
         assert "stats_comment_posted" in hints
 
@@ -122,12 +122,12 @@ class TestStatsState:
         assert partial["stats_ci_cycles"] == 0
 
     def test_stats_state_nullable_outcome_fields(self):
-        """stats_outcome and stats_outcome_reason accept None."""
+        """workflow_outcome and stats_outcome_reason accept None."""
         from forge.workflow.stats import StatsState
 
         hints = get_type_hints(StatsState, include_extras=False)
 
-        outcome_hint = str(hints["stats_outcome"])
+        outcome_hint = str(hints["workflow_outcome"])
         reason_hint = str(hints["stats_outcome_reason"])
 
         assert "str" in outcome_hint
@@ -151,18 +151,18 @@ class TestStatsState:
         }
 
         state: StatsState = {
-            "stats_stages": {"implement": stage},
+            "stage_timestamps": {"implement": stage},
             "stats_pr_urls": ["https://github.com/org/repo/pull/42"],
             "stats_ci_cycles": 1,
-            "stats_outcome": "Completed",
+            "workflow_outcome": "Completed",
             "stats_outcome_reason": None,
             "stats_comment_posted": True,
         }
 
-        assert state["stats_stages"]["implement"]["stage_name"] == "implement"
+        assert state["stage_timestamps"]["implement"]["stage_name"] == "implement"
         assert state["stats_pr_urls"] == ["https://github.com/org/repo/pull/42"]
         assert state["stats_ci_cycles"] == 1
-        assert state["stats_outcome"] == "Completed"
+        assert state["workflow_outcome"] == "Completed"
         assert state["stats_outcome_reason"] is None
         assert state["stats_comment_posted"] is True
 
@@ -175,11 +175,11 @@ class TestStatsState:
         ],
     )
     def test_stats_state_valid_outcome_values(self, outcome: str):
-        """stats_outcome accepts the three documented outcome patterns."""
+        """workflow_outcome accepts the three documented outcome patterns."""
         from forge.workflow.stats import StatsState
 
-        state: StatsState = {"stats_outcome": outcome}
-        assert state["stats_outcome"] == outcome
+        state: StatsState = {"workflow_outcome": outcome}
+        assert state["workflow_outcome"] == outcome
 
     def test_stats_state_comment_posted_defaults_pattern(self):
         """stats_comment_posted is a bool field."""
@@ -188,17 +188,17 @@ class TestStatsState:
         hints = get_type_hints(StatsState)
         assert hints["stats_comment_posted"] is bool
 
-    def test_stats_stages_is_dict_of_stage_stats(self):
-        """stats_stages maps string keys to StageStats dicts."""
+    def test_stage_timestamps_is_dict_of_stage_stats(self):
+        """stage_timestamps maps string keys to StageStats dicts."""
         from forge.workflow.stats import StageStats, StatsState
 
         s1: StageStats = {"stage_name": "triage", "iteration_count": 1}
         s2: StageStats = {"stage_name": "implement", "iteration_count": 3}
 
-        state: StatsState = {"stats_stages": {"triage": s1, "implement": s2}}
-        assert len(state["stats_stages"]) == 2
-        assert state["stats_stages"]["triage"]["stage_name"] == "triage"
-        assert state["stats_stages"]["implement"]["iteration_count"] == 3
+        state: StatsState = {"stage_timestamps": {"triage": s1, "implement": s2}}
+        assert len(state["stage_timestamps"]) == 2
+        assert state["stage_timestamps"]["triage"]["stage_name"] == "triage"
+        assert state["stage_timestamps"]["implement"]["iteration_count"] == 3
 
 
 class TestStatsStateExportedFromPackage:

@@ -24,7 +24,7 @@ def _determine_outcome(state: FeatureState | BugState) -> str:
     """Return the outcome category string for the terminal state.
 
     Precedence:
-    1. If ``stats_outcome`` is already set in state, return it directly.
+    1. If ``workflow_outcome`` is already set in state, return it directly.
     2. If ``is_blocked`` is True, return ``"Blocked"``.
     3. If ``last_error`` is set, return ``"Failed"``.
     4. Otherwise, return ``"Completed"``.
@@ -36,7 +36,7 @@ def _determine_outcome(state: FeatureState | BugState) -> str:
         One of ``"Completed"``, ``"Blocked"``, or ``"Failed"``.
     """
     # If the workflow has already classified its own outcome, honour that.
-    existing = state.get("stats_outcome")
+    existing = state.get("workflow_outcome")
     if existing:
         return existing
 

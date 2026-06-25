@@ -39,7 +39,7 @@ def _base_state(ticket_key: str = "TEST-123", **overrides) -> dict:
         "current_node": "prd_approval_gate",
         "is_paused": True,
         "context": {},
-        "stats_stages": {
+        "stage_timestamps": {
             "prd": {
                 "stage_name": "prd",
                 "iteration_count": 1,
@@ -51,7 +51,7 @@ def _base_state(ticket_key: str = "TEST-123", **overrides) -> dict:
         },
         "stats_pr_urls": [],
         "stats_ci_cycles": 0,
-        "stats_outcome": None,
+        "workflow_outcome": None,
         "stats_outcome_reason": None,
         **overrides,
     }
@@ -223,9 +223,9 @@ class TestForgeStatsRetrieval:
 
     @pytest.mark.asyncio
     async def test_stats_uses_pre_set_outcome(self, worker: OrchestratorWorker, mock_jira):
-        """When stats_outcome is set in state, it is used in the formatted output."""
+        """When workflow_outcome is set in state, it is used in the formatted output."""
         message = _make_jira_message("TEST-123", "/forge stats")
-        state = _base_state(stats_outcome="Completed")
+        state = _base_state(workflow_outcome="Completed")
 
         with patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
             await worker._handle_resume_event(message, state)
@@ -237,7 +237,7 @@ class TestForgeStatsRetrieval:
     async def test_stats_derives_blocked_outcome(self, worker: OrchestratorWorker, mock_jira):
         """When is_blocked=True and no pre-set outcome, outcome is 'Blocked'."""
         message = _make_jira_message("TEST-123", "/forge stats")
-        state = _base_state(is_blocked=True, stats_outcome=None)
+        state = _base_state(is_blocked=True, workflow_outcome=None)
 
         with patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
             await worker._handle_resume_event(message, state)
@@ -249,7 +249,7 @@ class TestForgeStatsRetrieval:
     async def test_stats_derives_failed_outcome(self, worker: OrchestratorWorker, mock_jira):
         """When last_error is set and no pre-set outcome, outcome is 'Failed'."""
         message = _make_jira_message("TEST-123", "/forge stats")
-        state = _base_state(last_error="Something went wrong", stats_outcome=None)
+        state = _base_state(last_error="Something went wrong", workflow_outcome=None)
 
         with patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
             await worker._handle_resume_event(message, state)
@@ -263,7 +263,7 @@ class TestForgeStatsRetrieval:
     ):
         """Active workflow with no error/blocked status uses 'In Progress' outcome."""
         message = _make_jira_message("TEST-123", "/forge stats")
-        state = _base_state(stats_outcome=None, is_blocked=False, last_error=None)
+        state = _base_state(workflow_outcome=None, is_blocked=False, last_error=None)
 
         with patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
             await worker._handle_resume_event(message, state)
@@ -276,17 +276,17 @@ class TestForgeStatsMissingCheckpoint:
     """Tests for graceful handling when no stats data is present."""
 
     @pytest.mark.asyncio
-    async def test_no_stats_stages_posts_no_data_message(
+    async def test_no_stage_timestamps_posts_no_data_message(
         self, worker: OrchestratorWorker, mock_jira
     ):
-        """When stats_stages key is missing, posts 'No workflow data found.' message."""
+        """When stage_timestamps key is missing, posts 'No workflow data found.' message."""
         message = _make_jira_message("TEST-123", "/forge stats")
         state = {
             "ticket_key": "TEST-123",
             "current_node": "prd_approval_gate",
             "is_paused": True,
             "context": {},
-            # stats_stages is absent entirely
+            # stage_timestamps is absent entirely
         }
 
         with patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
@@ -298,10 +298,10 @@ class TestForgeStatsMissingCheckpoint:
         assert "No workflow data found" in comment_body
 
     @pytest.mark.asyncio
-    async def test_empty_stats_stages_still_formats(self, worker: OrchestratorWorker, mock_jira):
-        """Empty stats_stages dict (workflow just started) still produces formatted output."""
+    async def test_empty_stage_timestamps_still_formats(self, worker: OrchestratorWorker, mock_jira):
+        """Empty stage_timestamps dict (workflow just started) still produces formatted output."""
         message = _make_jira_message("TEST-123", "/forge stats")
-        state = _base_state(stats_stages={})
+        state = _base_state(stage_timestamps={})
 
         with patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
             result = await worker._handle_resume_event(message, state)
@@ -411,8 +411,8 @@ class TestHandleStatsCommandDirect:
         assert "Workflow Statistics" in args[1]
 
     @pytest.mark.asyncio
-    async def test_direct_call_without_stats_stages(self, worker: OrchestratorWorker, mock_jira):
-        """Direct call when stats_stages is missing posts 'No workflow data found.'."""
+    async def test_direct_call_without_stage_timestamps(self, worker: OrchestratorWorker, mock_jira):
+        """Direct call when stage_timestamps is missing posts 'No workflow data found.'."""
         state = {"ticket_key": "TEST-123", "current_node": "prd_approval_gate"}
 
         with patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
@@ -426,7 +426,7 @@ class TestHandleStatsCommandDirect:
     async def test_uses_stats_outcome_reason_as_detail(self, worker: OrchestratorWorker, mock_jira):
         """stats_outcome_reason is passed as outcome_detail to the formatter."""
         state = _base_state(
-            stats_outcome="Blocked",
+            workflow_outcome="Blocked",
             stats_outcome_reason="Waiting for security review",
         )
 
@@ -445,7 +445,7 @@ class TestHandleStatsCommandDirect:
     ):
         """last_error is used as outcome_detail when stats_outcome_reason is absent."""
         state = _base_state(
-            stats_outcome=None,
+            workflow_outcome=None,
             last_error="Connection timeout",
             stats_outcome_reason=None,
         )

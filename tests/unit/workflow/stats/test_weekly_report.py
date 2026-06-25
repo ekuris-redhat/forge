@@ -72,15 +72,15 @@ def _make_state(
     *,
     ticket_key: str = _TICKET,
     ticket_type: str = "Feature",
-    stats_outcome: str | None = "Completed",
+    workflow_outcome: str | None = "Completed",
     is_blocked: bool = False,
-    stats_stages: dict | None = None,
+    stage_timestamps: dict | None = None,
     stats_ci_cycles: int = 0,
     updated_at: str | None = None,
     **extra,
 ) -> dict:
-    if stats_stages is None:
-        stats_stages = {
+    if stage_timestamps is None:
+        stage_timestamps = {
             "prd": _make_stage_data(
                 stage_name="prd",
                 started_at=_ONE_DAY_AGO,
@@ -92,9 +92,9 @@ def _make_state(
     return {
         "ticket_key": ticket_key,
         "ticket_type": ticket_type,
-        "stats_outcome": stats_outcome,
+        "workflow_outcome": workflow_outcome,
         "is_blocked": is_blocked,
-        "stats_stages": stats_stages,
+        "stage_timestamps": stage_timestamps,
         "stats_ci_cycles": stats_ci_cycles,
         "updated_at": updated_at,
         **extra,
@@ -226,15 +226,15 @@ class TestBottleneckAnalysis:
 
 class TestParseCheckpointStats:
     def test_missing_ticket_key_returns_none(self) -> None:
-        result = _parse_checkpoint_stats({"stats_stages": {}})
+        result = _parse_checkpoint_stats({"stage_timestamps": {}})
         assert result is None
 
-    def test_missing_stats_stages_returns_none(self) -> None:
+    def test_missing_stage_timestamps_returns_none(self) -> None:
         result = _parse_checkpoint_stats({"ticket_key": "AISOS-1"})
         assert result is None
 
     def test_minimal_valid_state(self) -> None:
-        state = {"ticket_key": "AISOS-1", "stats_stages": {}}
+        state = {"ticket_key": "AISOS-1", "stage_timestamps": {}}
         result = _parse_checkpoint_stats(state)
         assert result is not None
         assert result.ticket_key == "AISOS-1"
@@ -244,13 +244,13 @@ class TestParseCheckpointStats:
     def test_token_aggregation(self) -> None:
         state = {
             "ticket_key": "AISOS-1",
-            "stats_stages": {
+            "stage_timestamps": {
                 "prd": _make_stage_data(input_tokens=300, output_tokens=150),
                 "spec": _make_stage_data(
                     stage_name="spec", input_tokens=200, output_tokens=100
                 ),
             },
-            "stats_outcome": "Completed",
+            "workflow_outcome": "Completed",
         }
         result = _parse_checkpoint_stats(state)
         assert result is not None
@@ -260,25 +260,25 @@ class TestParseCheckpointStats:
         assert result.tokens_by_stage["spec"] == (200, 100)
 
     def test_status_completed(self) -> None:
-        state = _make_state(stats_outcome="Completed")
+        state = _make_state(workflow_outcome="Completed")
         result = _parse_checkpoint_stats(state)
         assert result is not None
         assert result.status == "completed"
 
     def test_status_blocked_from_is_blocked(self) -> None:
-        state = _make_state(stats_outcome=None, is_blocked=True)
+        state = _make_state(workflow_outcome=None, is_blocked=True)
         result = _parse_checkpoint_stats(state)
         assert result is not None
         assert result.status == "blocked"
 
     def test_status_blocked_from_outcome(self) -> None:
-        state = _make_state(stats_outcome="Blocked: waiting for approval")
+        state = _make_state(workflow_outcome="Blocked: waiting for approval")
         result = _parse_checkpoint_stats(state)
         assert result is not None
         assert result.status == "blocked"
 
     def test_status_in_progress(self) -> None:
-        state = _make_state(stats_outcome=None, is_blocked=False)
+        state = _make_state(workflow_outcome=None, is_blocked=False)
         result = _parse_checkpoint_stats(state)
         assert result is not None
         assert result.status == "in_progress"
@@ -290,7 +290,7 @@ class TestParseCheckpointStats:
         assert result.ticket_type == "Bug"
 
     def test_ticket_type_defaults_to_feature(self) -> None:
-        state = {"ticket_key": "AISOS-1", "stats_stages": {}}
+        state = {"ticket_key": "AISOS-1", "stage_timestamps": {}}
         result = _parse_checkpoint_stats(state)
         assert result is not None
         assert result.ticket_type == "Feature"
@@ -304,11 +304,11 @@ class TestParseCheckpointStats:
     def test_revision_counts_extracted(self) -> None:
         state = {
             "ticket_key": "AISOS-1",
-            "stats_stages": {
+            "stage_timestamps": {
                 "prd": _make_stage_data(iteration_count=3),
                 "spec": _make_stage_data(stage_name="spec", iteration_count=1),
             },
-            "stats_outcome": "Completed",
+            "workflow_outcome": "Completed",
         }
         result = _parse_checkpoint_stats(state)
         assert result is not None
@@ -318,11 +318,11 @@ class TestParseCheckpointStats:
     def test_stage_durations_extracted(self) -> None:
         state = {
             "ticket_key": "AISOS-1",
-            "stats_stages": {
+            "stage_timestamps": {
                 "prd": _make_stage_data(machine_time_seconds=60.0),
                 "spec": _make_stage_data(stage_name="spec", machine_time_seconds=90.0),
             },
-            "stats_outcome": "Completed",
+            "workflow_outcome": "Completed",
         }
         result = _parse_checkpoint_stats(state)
         assert result is not None
@@ -334,10 +334,10 @@ class TestParseCheckpointStats:
         ended = "2024-06-14T11:00:00+00:00"
         state = {
             "ticket_key": "AISOS-1",
-            "stats_stages": {
+            "stage_timestamps": {
                 "prd": _make_stage_data(started_at=started, ended_at=ended),
             },
-            "stats_outcome": "Completed",
+            "workflow_outcome": "Completed",
         }
         result = _parse_checkpoint_stats(state)
         assert result is not None
@@ -346,7 +346,7 @@ class TestParseCheckpointStats:
     def test_duration_seconds_none_when_no_timestamps(self) -> None:
         state = {
             "ticket_key": "AISOS-1",
-            "stats_stages": {
+            "stage_timestamps": {
                 "prd": {
                     "stage_name": "prd",
                     "input_tokens": 0,
@@ -357,7 +357,7 @@ class TestParseCheckpointStats:
                     "ended_at": None,
                 }
             },
-            "stats_outcome": "Completed",
+            "workflow_outcome": "Completed",
         }
         result = _parse_checkpoint_stats(state)
         assert result is not None
@@ -368,10 +368,10 @@ class TestParseCheckpointStats:
         one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
         state = {
             "ticket_key": "AISOS-1",
-            "stats_stages": {
+            "stage_timestamps": {
                 "prd": _make_stage_data(started_at=one_hour_ago, ended_at=None),
             },
-            "stats_outcome": None,
+            "workflow_outcome": None,
         }
         result = _parse_checkpoint_stats(state)
         assert result is not None
@@ -380,8 +380,8 @@ class TestParseCheckpointStats:
         assert result.duration_seconds is not None
         assert 3500 < result.duration_seconds < 3700
 
-    def test_malformed_stats_stages_treated_as_empty(self) -> None:
-        state = {"ticket_key": "AISOS-1", "stats_stages": "not-a-dict"}
+    def test_malformed_stage_timestamps_treated_as_empty(self) -> None:
+        state = {"ticket_key": "AISOS-1", "stage_timestamps": "not-a-dict"}
         result = _parse_checkpoint_stats(state)
         assert result is not None
         assert result.input_tokens == 0
@@ -496,7 +496,7 @@ class TestIsWithinWindow:
     def test_stage_started_at_within_window(self) -> None:
         state = {
             "updated_at": _TWO_WEEKS_AGO,
-            "stats_stages": {
+            "stage_timestamps": {
                 "prd": {"started_at": _ONE_DAY_AGO, "ended_at": None}
             },
         }
@@ -505,7 +505,7 @@ class TestIsWithinWindow:
     def test_stage_ended_at_within_window(self) -> None:
         state = {
             "updated_at": _TWO_WEEKS_AGO,
-            "stats_stages": {
+            "stage_timestamps": {
                 "prd": {"started_at": _TWO_WEEKS_AGO, "ended_at": _ONE_DAY_AGO}
             },
         }
@@ -514,22 +514,22 @@ class TestIsWithinWindow:
     def test_all_timestamps_outside_window(self) -> None:
         state = {
             "updated_at": _TWO_WEEKS_AGO,
-            "stats_stages": {
+            "stage_timestamps": {
                 "prd": {"started_at": _TWO_WEEKS_AGO, "ended_at": _TWO_WEEKS_AGO}
             },
         }
         assert _is_within_window(state, self._cutoff()) is False
 
     def test_no_timestamps(self) -> None:
-        state = {"stats_stages": {}}
+        state = {"stage_timestamps": {}}
         assert _is_within_window(state, self._cutoff()) is False
 
-    def test_missing_stats_stages(self) -> None:
+    def test_missing_stage_timestamps(self) -> None:
         state = {"updated_at": _TWO_WEEKS_AGO}
         assert _is_within_window(state, self._cutoff()) is False
 
-    def test_malformed_stats_stages(self) -> None:
-        state = {"stats_stages": "bad", "updated_at": _TWO_WEEKS_AGO}
+    def test_malformed_stage_timestamps(self) -> None:
+        state = {"stage_timestamps": "bad", "updated_at": _TWO_WEEKS_AGO}
         assert _is_within_window(state, self._cutoff()) is False
 
 
@@ -674,8 +674,8 @@ def _redis_mock_with_data():
     key2 = f"langgraph:checkpoint:{ticket2}"
     state1 = _make_state(
         ticket_key=ticket1,
-        stats_outcome="Completed",
-        stats_stages={
+        workflow_outcome="Completed",
+        stage_timestamps={
             "prd": _make_stage_data(
                 stage_name="prd",
                 input_tokens=300,
@@ -690,9 +690,9 @@ def _redis_mock_with_data():
     )
     state2 = _make_state(
         ticket_key=ticket2,
-        stats_outcome=None,
+        workflow_outcome=None,
         is_blocked=False,
-        stats_stages={
+        stage_timestamps={
             "prd": _make_stage_data(
                 stage_name="prd",
                 input_tokens=200,
@@ -834,9 +834,9 @@ class TestCollectWeeklyData:
         # All timestamps are two weeks ago — outside a 7-day window
         old_state = _make_state(
             ticket_key=ticket_key,
-            stats_outcome="Completed",
+            workflow_outcome="Completed",
             updated_at=_TWO_WEEKS_AGO,
-            stats_stages={
+            stage_timestamps={
                 "prd": _make_stage_data(
                     started_at=_TWO_WEEKS_AGO, ended_at=_TWO_WEEKS_AGO
                 )
@@ -861,7 +861,7 @@ class TestCollectWeeklyData:
         redis_key = f"langgraph:checkpoint:{ticket_key}"
         state = _make_state(
             ticket_key=ticket_key,
-            stats_outcome=None,
+            workflow_outcome=None,
             is_blocked=True,
             updated_at=_ONE_DAY_AGO,
         )

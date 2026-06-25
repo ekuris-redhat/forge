@@ -73,7 +73,7 @@ def checkpoint_with_stats() -> dict:
         "last_error": None,
         "feedback_comment": None,
         "context": {},
-        "stats_stages": {
+        "stage_timestamps": {
             "prd": {
                 "stage_name": "prd",
                 "iteration_count": 2,
@@ -97,7 +97,7 @@ def checkpoint_with_stats() -> dict:
         },
         "stats_pr_urls": ["https://github.com/org/repo/pull/42"],
         "stats_ci_cycles": 1,
-        "stats_outcome": None,
+        "workflow_outcome": None,
         "stats_outcome_reason": None,
         "stats_comment_posted": False,
         "workflow_run_id": "test-run-abc123",
@@ -106,7 +106,7 @@ def checkpoint_with_stats() -> dict:
 
 @pytest.fixture
 def checkpoint_without_stats_key() -> dict:
-    """Checkpoint state that has no stats_stages key (legacy workflow)."""
+    """Checkpoint state that has no stage_timestamps key (legacy workflow)."""
     return {
         "ticket_key": "INT-101",
         "ticket_type": "Feature",
@@ -119,7 +119,7 @@ def checkpoint_without_stats_key() -> dict:
 
 @pytest.fixture
 def checkpoint_with_empty_stages() -> dict:
-    """Checkpoint state with stats_stages present but empty (workflow just started)."""
+    """Checkpoint state with stage_timestamps present but empty (workflow just started)."""
     return {
         "ticket_key": "INT-102",
         "ticket_type": "Feature",
@@ -128,10 +128,10 @@ def checkpoint_with_empty_stages() -> dict:
         "is_blocked": False,
         "last_error": None,
         "context": {},
-        "stats_stages": {},  # Present key, empty dict — in-progress workflow
+        "stage_timestamps": {},  # Present key, empty dict — in-progress workflow
         "stats_pr_urls": [],
         "stats_ci_cycles": 0,
-        "stats_outcome": None,
+        "workflow_outcome": None,
         "stats_outcome_reason": None,
         "stats_comment_posted": False,
         "workflow_run_id": "test-run-def456",
@@ -150,7 +150,7 @@ def checkpoint_blocked() -> dict:
         "last_error": None,
         "feedback_comment": "Requirements unclear — needs stakeholder input.",
         "context": {},
-        "stats_stages": {
+        "stage_timestamps": {
             "prd": {
                 "stage_name": "prd",
                 "iteration_count": 3,
@@ -162,7 +162,7 @@ def checkpoint_blocked() -> dict:
         },
         "stats_pr_urls": [],
         "stats_ci_cycles": 0,
-        "stats_outcome": None,
+        "workflow_outcome": None,
         "stats_outcome_reason": None,
         "stats_comment_posted": False,
         "workflow_run_id": "test-run-ghi789",
@@ -181,7 +181,7 @@ def checkpoint_failed() -> dict:
         "last_error": "LLM call timed out after 60 seconds",
         "feedback_comment": None,
         "context": {},
-        "stats_stages": {
+        "stage_timestamps": {
             "prd": {
                 "stage_name": "prd",
                 "iteration_count": 1,
@@ -193,7 +193,7 @@ def checkpoint_failed() -> dict:
         },
         "stats_pr_urls": [],
         "stats_ci_cycles": 0,
-        "stats_outcome": None,
+        "workflow_outcome": None,
         "stats_outcome_reason": None,
         "stats_comment_posted": False,
         "workflow_run_id": "test-run-jkl012",
@@ -212,7 +212,7 @@ def checkpoint_completed() -> dict:
         "last_error": None,
         "feedback_comment": None,
         "context": {},
-        "stats_stages": {
+        "stage_timestamps": {
             "prd": {
                 "stage_name": "prd",
                 "iteration_count": 1,
@@ -242,7 +242,7 @@ def checkpoint_completed() -> dict:
             "https://github.com/org/repo/pull/99",
         ],
         "stats_ci_cycles": 2,
-        "stats_outcome": "Completed",
+        "workflow_outcome": "Completed",
         "stats_outcome_reason": None,
         "stats_comment_posted": True,
         "workflow_run_id": "test-run-mno345",
@@ -354,7 +354,7 @@ class TestForgeStatsWithValidCheckpoint:
     ):
         """In-progress workflow (no outcome/blocked/error) → 'In Progress' outcome."""
         # Ensure no pre-set outcome, no blocked, no error
-        assert checkpoint_with_stats.get("stats_outcome") is None
+        assert checkpoint_with_stats.get("workflow_outcome") is None
         assert not checkpoint_with_stats.get("is_blocked")
         assert checkpoint_with_stats.get("last_error") is None
 
@@ -434,10 +434,10 @@ class TestForgeStatsWithMissingCheckpoint:
     """/forge stats posts a fallback message when no stats data exists."""
 
     @pytest.mark.asyncio
-    async def test_missing_stats_stages_key_posts_no_data_message(
+    async def test_missing_stage_timestamps_key_posts_no_data_message(
         self, worker: OrchestratorWorker, checkpoint_without_stats_key
     ):
-        """When stats_stages key is absent, posts 'No workflow data found.'."""
+        """When stage_timestamps key is absent, posts 'No workflow data found.'."""
         message = _make_jira_message("INT-101", "/forge stats")
         mock_jira = _make_mock_jira()
 
@@ -467,7 +467,7 @@ class TestForgeStatsWithMissingCheckpoint:
     async def test_empty_stages_dict_does_not_trigger_fallback(
         self, worker: OrchestratorWorker, checkpoint_with_empty_stages
     ):
-        """Empty stats_stages dict (key present) uses formatter, not fallback."""
+        """Empty stage_timestamps dict (key present) uses formatter, not fallback."""
         message = _make_jira_message("INT-102", "/forge stats")
         mock_jira = _make_mock_jira()
 
@@ -698,7 +698,7 @@ class TestCLIStatsTableOutput:
     async def test_table_output_missing_stats_key_exits_one(
         self, checkpoint_without_stats_key, capsys
     ):
-        """forge stats exits 1 when checkpoint lacks stats_stages key."""
+        """forge stats exits 1 when checkpoint lacks stage_timestamps key."""
         from forge.cli import cmd_stats
 
         args = argparse.Namespace(ticket="INT-101", json=False)
@@ -898,7 +898,7 @@ class TestPartialAndSpecialOutcomes:
     async def test_jira_stats_completed_workflow_shows_completed_outcome(
         self, worker: OrchestratorWorker, checkpoint_completed
     ):
-        """Pre-set stats_outcome='Completed' is forwarded directly to comment."""
+        """Pre-set workflow_outcome='Completed' is forwarded directly to comment."""
         message = _make_jira_message("INT-105", "/forge stats")
         mock_jira = _make_mock_jira()
 
@@ -982,8 +982,8 @@ class TestPartialAndSpecialOutcomes:
         # Remove spec stage to simulate partial run (only PRD completed)
         partial_state = {
             **checkpoint_with_stats,
-            "stats_stages": {
-                "prd": checkpoint_with_stats["stats_stages"]["prd"],
+            "stage_timestamps": {
+                "prd": checkpoint_with_stats["stage_timestamps"]["prd"],
             },
         }
 
@@ -1007,8 +1007,8 @@ class TestPartialAndSpecialOutcomes:
         # Use just the PRD stage
         partial_state = {
             **checkpoint_with_stats,
-            "stats_stages": {
-                "prd": checkpoint_with_stats["stats_stages"]["prd"],
+            "stage_timestamps": {
+                "prd": checkpoint_with_stats["stage_timestamps"]["prd"],
             },
         }
         args = argparse.Namespace(ticket="INT-100", json=True)

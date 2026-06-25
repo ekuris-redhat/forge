@@ -17,7 +17,7 @@ def _utc_now() -> str:
 
 def _get_stage(state: dict, stage_name: str) -> dict:
     """Return a copy of the stage entry, or a zeroed default if absent."""
-    stages: dict = state.get("stats_stages") or {}
+    stages: dict = state.get("stage_timestamps") or {}
     existing = stages.get(stage_name)
     if existing is None:
         return {
@@ -46,14 +46,14 @@ def record_stage_start(state: dict, stage_name: str) -> dict:
         stage_name: Name of the stage being started (e.g. ``"implement"``).
 
     Returns:
-        Partial state update dict with ``stats_stages`` key.
+        Partial state update dict with ``stage_timestamps`` key.
     """
-    stages: dict = dict(state.get("stats_stages") or {})
+    stages: dict = dict(state.get("stage_timestamps") or {})
     stage = _get_stage(state, stage_name)
     stage["started_at"] = _utc_now()
     stage["ended_at"] = None  # reset end marker when re-entering
     stages[stage_name] = stage
-    return {"stats_stages": stages}
+    return {"stage_timestamps": stages}
 
 
 def record_stage_end(
@@ -74,15 +74,15 @@ def record_stage_end(
         human_time: Wall-clock seconds of human-wait time to add (default 0).
 
     Returns:
-        Partial state update dict with ``stats_stages`` key.
+        Partial state update dict with ``stage_timestamps`` key.
     """
-    stages: dict = dict(state.get("stats_stages") or {})
+    stages: dict = dict(state.get("stage_timestamps") or {})
     stage = _get_stage(state, stage_name)
     stage["ended_at"] = _utc_now()
     stage["machine_time_seconds"] = stage.get("machine_time_seconds", 0.0) + machine_time
     stage["human_time_seconds"] = stage.get("human_time_seconds", 0.0) + human_time
     stages[stage_name] = stage
-    return {"stats_stages": stages}
+    return {"stage_timestamps": stages}
 
 
 def record_tokens(
@@ -103,14 +103,33 @@ def record_tokens(
         output_tokens: Number of completion tokens to add.
 
     Returns:
-        Partial state update dict with ``stats_stages`` key.
+        Partial state update dict with ``stage_timestamps``, ``stage_token_usage``,
+        and ``token_usage`` keys.
     """
-    stages: dict = dict(state.get("stats_stages") or {})
+    stages: dict = dict(state.get("stage_timestamps") or {})
     stage = _get_stage(state, stage_name)
     stage["input_tokens"] = stage.get("input_tokens", 0) + input_tokens
     stage["output_tokens"] = stage.get("output_tokens", 0) + output_tokens
     stages[stage_name] = stage
-    return {"stats_stages": stages}
+
+    # Update per-stage token usage map
+    stage_token_usage: dict = dict(state.get("stage_token_usage") or {})
+    existing_stage_tokens = stage_token_usage.get(stage_name) or {}
+    stage_token_usage[stage_name] = {
+        "input_tokens": (existing_stage_tokens.get("input_tokens") or 0) + input_tokens,
+        "output_tokens": (existing_stage_tokens.get("output_tokens") or 0) + output_tokens,
+    }
+
+    # Update aggregate token usage
+    agg: dict = dict(state.get("token_usage") or {})
+    agg["input_tokens"] = (agg.get("input_tokens") or 0) + input_tokens
+    agg["output_tokens"] = (agg.get("output_tokens") or 0) + output_tokens
+
+    return {
+        "stage_timestamps": stages,
+        "stage_token_usage": stage_token_usage,
+        "token_usage": agg,
+    }
 
 
 def increment_revision(state: dict, stage_name: str) -> dict:
@@ -124,13 +143,22 @@ def increment_revision(state: dict, stage_name: str) -> dict:
         stage_name: Name of the stage being revised.
 
     Returns:
-        Partial state update dict with ``stats_stages`` key.
+        Partial state update dict with ``stage_timestamps`` and
+        ``revision_counts`` keys.
     """
-    stages: dict = dict(state.get("stats_stages") or {})
+    stages: dict = dict(state.get("stage_timestamps") or {})
     stage = _get_stage(state, stage_name)
-    stage["iteration_count"] = stage.get("iteration_count", 0) + 1
+    new_count = stage.get("iteration_count", 0) + 1
+    stage["iteration_count"] = new_count
     stages[stage_name] = stage
-    return {"stats_stages": stages}
+
+    revision_counts: dict = dict(state.get("revision_counts") or {})
+    revision_counts[stage_name] = new_count
+
+    return {
+        "stage_timestamps": stages,
+        "revision_counts": revision_counts,
+    }
 
 
 def increment_ci_cycle(state: dict) -> dict:
@@ -176,10 +204,10 @@ def set_outcome(_state: dict, outcome: str, reason: str | None = None) -> dict:
         reason: Optional human-readable elaboration (e.g. blocking reason).
 
     Returns:
-        Partial state update dict with ``stats_outcome`` and
+        Partial state update dict with ``workflow_outcome`` and
         ``stats_outcome_reason`` keys.
     """
     return {
-        "stats_outcome": outcome,
+        "workflow_outcome": outcome,
         "stats_outcome_reason": reason,
     }

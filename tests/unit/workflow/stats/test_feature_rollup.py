@@ -100,7 +100,7 @@ def _make_stage_data(
 
 def _make_state(
     ticket_key: str = "AISOS-100",
-    stats_outcome: str | None = "Completed",
+    workflow_outcome: str | None = "Completed",
     updated_at: str | None = None,
 ) -> dict:
     if updated_at is None:
@@ -108,9 +108,9 @@ def _make_state(
     return {
         "ticket_key": ticket_key,
         "ticket_type": "Feature",
-        "stats_outcome": stats_outcome,
+        "workflow_outcome": workflow_outcome,
         "is_blocked": False,
-        "stats_stages": {
+        "stage_timestamps": {
             "prd": _make_stage_data(started_at=_ONE_DAY_AGO, ended_at=_ONE_DAY_AGO),
         },
         "stats_ci_cycles": 0,

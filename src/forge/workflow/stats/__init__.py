@@ -58,7 +58,7 @@ class StageStats(TypedDict, total=False):
     """Per-stage execution metrics captured during workflow execution.
 
     Each stage in a workflow gets one StageStats entry, keyed by stage name
-    in the StatsState.stats_stages mapping. Fields are updated incrementally
+    in the StatsState.stage_timestamps mapping. Fields are updated incrementally
     as the stage progresses and finalised when the stage ends.
 
     Fields:
@@ -102,14 +102,22 @@ class StatsState(TypedDict, total=False):
         "Failed: <error>"    — workflow terminated due to an unrecoverable error.
 
     Fields:
-        stats_stages: Mapping from stage name to its StageStats snapshot.
+        stage_timestamps: Mapping from stage name to its StageStats snapshot.
             Updated in-place as each stage starts and ends.
+        revision_counts: Mapping from stage name to the number of revision/retry
+            cycles that stage has undergone.  Mirrors the ``iteration_count``
+            value from each ``StageStats`` entry but exposed as a flat top-level
+            field for easy access by formatters and reporting code.
+        token_usage: Workflow-wide aggregate token counts with keys
+            ``"input_tokens"`` and ``"output_tokens"``.
+        stage_token_usage: Per-stage token breakdown keyed by stage name; each
+            value is a dict with ``"input_tokens"`` and ``"output_tokens"`` keys.
         stats_pr_urls: URLs of all pull requests opened during this workflow
             run (across all repositories).
         stats_ci_cycles: Number of CI fix-attempt cycles that were triggered
             during the implementation phase.
-        stats_outcome: Final outcome string for the workflow run, or None while
-            the workflow is still in progress.
+        workflow_outcome: Final outcome string for the workflow run, or None
+            while the workflow is still in progress.
         stats_outcome_reason: Human-readable elaboration on the outcome (e.g.
             the blocking reason or error message), or None when not applicable.
         stats_comment_posted: True once the summary statistics comment has been
@@ -119,10 +127,13 @@ class StatsState(TypedDict, total=False):
             comment to prevent duplicate posts across retries or re-invocations.
     """
 
-    stats_stages: dict[str, StageStats]
+    stage_timestamps: dict[str, StageStats]
+    revision_counts: dict[str, int]
+    token_usage: dict[str, int]
+    stage_token_usage: dict[str, dict[str, int]]
     stats_pr_urls: list[str]
     stats_ci_cycles: int
-    stats_outcome: str | None
+    workflow_outcome: str | None
     stats_outcome_reason: str | None
     stats_comment_posted: bool
     workflow_run_id: str

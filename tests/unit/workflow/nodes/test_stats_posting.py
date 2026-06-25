@@ -65,15 +65,15 @@ class TestDetermineOutcome:
         feature_state["last_error"] = "Some error"
         assert _determine_outcome(feature_state) == "Blocked"
 
-    def test_existing_stats_outcome_returned_directly(self, feature_state):
-        """If stats_outcome is already set, it is returned without re-deriving."""
-        feature_state["stats_outcome"] = "Completed"
+    def test_existing_workflow_outcome_returned_directly(self, feature_state):
+        """If workflow_outcome is already set, it is returned without re-deriving."""
+        feature_state["workflow_outcome"] = "Completed"
         feature_state["last_error"] = "Some error"  # would normally produce 'Failed'
         assert _determine_outcome(feature_state) == "Completed"
 
-    def test_existing_stats_outcome_blocked(self, feature_state):
-        """Pre-set stats_outcome of 'Blocked' is honoured directly."""
-        feature_state["stats_outcome"] = "Blocked"
+    def test_existing_workflow_outcome_blocked(self, feature_state):
+        """Pre-set workflow_outcome of 'Blocked' is honoured directly."""
+        feature_state["workflow_outcome"] = "Blocked"
         assert _determine_outcome(feature_state) == "Blocked"
 
     def test_completed_for_bug_state(self, bug_state):
@@ -359,9 +359,9 @@ class TestPostTerminalStats:
         mock_ensure.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_uses_pre_set_stats_outcome(self, feature_state):
-        """If stats_outcome is already set in state it is forwarded unchanged."""
-        feature_state["stats_outcome"] = "Blocked"
+    async def test_uses_pre_set_workflow_outcome(self, feature_state):
+        """If workflow_outcome is already set in state it is forwarded unchanged."""
+        feature_state["workflow_outcome"] = "Blocked"
         feature_state["stats_outcome_reason"] = "Awaiting vendor API"
         feature_state["last_error"] = None  # would normally produce 'Completed'
 

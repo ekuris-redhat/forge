@@ -57,12 +57,12 @@ def _full_state(**overrides) -> dict:
         "last_error": None,
         "feedback_comment": None,
         "context": {},
-        "stats_stages": {
+        "stage_timestamps": {
             "prd": _make_stage(stage_name="prd"),
         },
         "stats_pr_urls": ["https://github.com/org/repo/pull/1"],
         "stats_ci_cycles": 2,
-        "stats_outcome": "Completed",
+        "workflow_outcome": "Completed",
         "stats_outcome_reason": None,
         "stats_comment_posted": True,
         "workflow_run_id": "abc-123",
@@ -142,8 +142,8 @@ class TestWorkflowStatsDataclass:
 class TestExtractStats:
     """Tests for the _extract_stats helper."""
 
-    def test_returns_none_when_stats_stages_absent(self):
-        """Returns None when stats_stages key is missing (legacy workflow)."""
+    def test_returns_none_when_stage_timestamps_absent(self):
+        """Returns None when stage_timestamps key is missing (legacy workflow)."""
         state = {
             "ticket_key": _TICKET,
             "ticket_type": "Feature",
@@ -153,7 +153,7 @@ class TestExtractStats:
         assert result is None
 
     def test_returns_workflow_stats_with_stages_present(self):
-        """Returns WorkflowStats when stats_stages key is present."""
+        """Returns WorkflowStats when stage_timestamps key is present."""
         state = _full_state()
         result = _extract_stats(_TICKET, state)
         assert result is not None
@@ -169,14 +169,14 @@ class TestExtractStats:
     def test_stages_are_extracted(self):
         """stages dict contains the stages from the checkpoint."""
         stage = _make_stage(stage_name="prd")
-        state = _full_state(stats_stages={"prd": stage})
+        state = _full_state(stage_timestamps={"prd": stage})
         result = _extract_stats(_TICKET, state)
         assert result is not None
         assert result.stages == {"prd": stage}
 
     def test_empty_stages_dict_is_valid(self):
-        """An empty stats_stages dict is returned as an empty stages dict."""
-        state = _full_state(stats_stages={})
+        """An empty stage_timestamps dict is returned as an empty stages dict."""
+        state = _full_state(stage_timestamps={})
         result = _extract_stats(_TICKET, state)
         assert result is not None
         assert result.stages == {}
@@ -227,16 +227,16 @@ class TestExtractStats:
         assert result.ci_cycles == 0
 
     def test_outcome_extracted(self):
-        """outcome is extracted from stats_outcome."""
-        state = _full_state(stats_outcome="Completed")
+        """outcome is extracted from workflow_outcome."""
+        state = _full_state(workflow_outcome="Completed")
         result = _extract_stats(_TICKET, state)
         assert result is not None
         assert result.outcome == "Completed"
 
     def test_outcome_none_when_missing(self):
-        """Missing stats_outcome yields outcome=None."""
+        """Missing workflow_outcome yields outcome=None."""
         state = _full_state()
-        del state["stats_outcome"]
+        del state["workflow_outcome"]
         result = _extract_stats(_TICKET, state)
         assert result is not None
         assert result.outcome is None
@@ -279,8 +279,8 @@ class TestExtractStats:
         assert result.workflow_run_id == ""
 
     def test_malformed_stages_dict_treated_as_empty(self):
-        """Malformed stats_stages (not a dict) is treated as empty dict."""
-        state = _full_state(stats_stages="not-a-dict")
+        """Malformed stage_timestamps (not a dict) is treated as empty dict."""
+        state = _full_state(stage_timestamps="not-a-dict")
         result = _extract_stats(_TICKET, state)
         assert result is not None
         assert result.stages == {}
@@ -296,8 +296,8 @@ class TestExtractStats:
         """Partial stats for an in-progress workflow are returned as-is."""
         stage = _make_stage(stage_name="prd", ended_at=None)
         state = _full_state(
-            stats_stages={"prd": stage},
-            stats_outcome=None,
+            stage_timestamps={"prd": stage},
+            workflow_outcome=None,
             stats_outcome_reason=None,
             stats_comment_posted=False,
         )
@@ -343,7 +343,7 @@ class TestGetWorkflowStats:
 
     @pytest.mark.asyncio
     async def test_returns_none_for_legacy_checkpoint_without_stats(self):
-        """Returns None when checkpoint exists but has no stats_stages key."""
+        """Returns None when checkpoint exists but has no stage_timestamps key."""
         legacy_state = {
             "ticket_key": _TICKET,
             "ticket_type": "Feature",
@@ -357,7 +357,7 @@ class TestGetWorkflowStats:
     async def test_stages_populated_from_checkpoint(self):
         """stages dict contains the stages stored in the checkpoint."""
         stage = _make_stage(stage_name="spec")
-        state = _full_state(stats_stages={"spec": stage})
+        state = _full_state(stage_timestamps={"spec": stage})
         with _patch_checkpoint(state):
             result = await get_workflow_stats(_TICKET)
         assert result is not None
@@ -365,8 +365,8 @@ class TestGetWorkflowStats:
 
     @pytest.mark.asyncio
     async def test_empty_stages_valid(self):
-        """Workflow with empty stats_stages is returned (not treated as missing)."""
-        state = _full_state(stats_stages={})
+        """Workflow with empty stage_timestamps is returned (not treated as missing)."""
+        state = _full_state(stage_timestamps={})
         with _patch_checkpoint(state):
             result = await get_workflow_stats(_TICKET)
         assert result is not None
@@ -377,8 +377,8 @@ class TestGetWorkflowStats:
         """Partial stats for an in-progress workflow are returned with available data."""
         stage = _make_stage(ended_at=None)
         state = _full_state(
-            stats_stages={"prd": stage},
-            stats_outcome=None,
+            stage_timestamps={"prd": stage},
+            workflow_outcome=None,
             stats_pr_urls=[],
             stats_ci_cycles=0,
         )
@@ -534,7 +534,7 @@ class TestGetWorkflowStatsOrError:
     async def test_stats_fields_correct_on_success(self):
         """Returned WorkflowStats has correct fields populated."""
         state = _full_state(
-            stats_outcome="Completed",
+            workflow_outcome="Completed",
             stats_ci_cycles=3,
             stats_pr_urls=["https://github.com/org/repo/pull/5"],
         )

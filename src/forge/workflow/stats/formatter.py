@@ -181,7 +181,7 @@ def format_stats_summary(
     Returns:
         A Jira wiki markup string ready to post as a ticket comment.
     """
-    stages: dict[str, StageStats] = stats.get("stats_stages") or {}
+    stages: dict[str, StageStats] = stats.get("stage_timestamps") or {}
     pr_urls: list[str] = stats.get("stats_pr_urls") or []
     ci_cycles: int = stats.get("stats_ci_cycles") or 0
 

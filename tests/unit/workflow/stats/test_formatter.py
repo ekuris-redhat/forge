@@ -45,10 +45,10 @@ def _make_stage(
 def _minimal_stats(**overrides) -> dict:
     """Return a minimal StatsState-like dict."""
     base = {
-        "stats_stages": {},
+        "stage_timestamps": {},
         "stats_pr_urls": [],
         "stats_ci_cycles": 0,
-        "stats_outcome": None,
+        "workflow_outcome": None,
         "stats_outcome_reason": None,
         "stats_comment_posted": False,
     }
@@ -344,7 +344,7 @@ class TestFormatStatsSummaryStageData:
             input_tokens=5000,
             output_tokens=1500,
         )
-        stats = _minimal_stats(stats_stages={"prd": stage})
+        stats = _minimal_stats(stage_timestamps={"prd": stage})
         result = format_stats_summary(stats, "completed")
         assert "|PRD|3|1h 1m 1s|2m 0s|5,000|1,500|" in result
 
@@ -359,7 +359,7 @@ class TestFormatStatsSummaryStageData:
             "spec": _make_stage(input_tokens=2000, output_tokens=800),
             "implementation": _make_stage(input_tokens=10000, output_tokens=4000),
         }
-        stats = _minimal_stats(stats_stages=stages)
+        stats = _minimal_stats(stage_timestamps=stages)
         result = format_stats_summary(stats, "completed")
         assert "|*Total*|—|—|—|*13,000*|*5,300*|" in result
 
@@ -428,8 +428,8 @@ class TestFormatStatsSummaryMissingFields:
         assert "*CI Cycles:* 0" in result
         assert "*Outcome:* Completed" in result
 
-    def test_none_stats_stages(self):
-        stats = _minimal_stats(stats_stages=None)
+    def test_none_stage_timestamps(self):
+        stats = _minimal_stats(stage_timestamps=None)
         result = format_stats_summary(stats, "completed")
         assert "|*Total*|—|—|—|*0*|*0*|" in result
 
@@ -456,7 +456,7 @@ def _stats_with_tokens(input_tokens: int, output_tokens: int) -> dict:
         input_tokens=input_tokens,
         output_tokens=output_tokens,
     )
-    return _minimal_stats(stats_stages={"prd": stage})
+    return _minimal_stats(stage_timestamps={"prd": stage})
 
 
 class TestCostAlert:
@@ -502,7 +502,7 @@ class TestCostAlert:
             "prd": _make_stage(input_tokens=400_000, output_tokens=200_000),
             "spec": _make_stage(input_tokens=300_000, output_tokens=200_000),
         }
-        stats = _minimal_stats(stats_stages=stages)
+        stats = _minimal_stats(stage_timestamps=stages)
         result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
         # total = 400k + 200k + 300k + 200k = 1_100_000 > 1_000_000
         assert "COST ALERT" in result

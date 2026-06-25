@@ -212,7 +212,7 @@ def _parse_timestamp(ts: str | None) -> datetime | None:
 def _parse_checkpoint_stats(state: dict) -> TicketSummary | None:
     """Extract a :class:`TicketSummary` from a single checkpoint state dict.
 
-    Reads the ``stats_stages``, ``stats_ci_cycles``, ``stats_outcome``,
+    Reads the ``stage_timestamps``, ``stats_ci_cycles``, ``workflow_outcome``,
     ``ticket_key``, and ``ticket_type`` fields produced by the stats
     recording utilities.
 
@@ -221,21 +221,21 @@ def _parse_checkpoint_stats(state: dict) -> TicketSummary | None:
 
     Returns:
         A populated :class:`TicketSummary`, or ``None`` when the state lacks
-        the minimum required fields (``ticket_key``, ``stats_stages``).
+        the minimum required fields (``ticket_key``, ``stage_timestamps``).
     """
     ticket_key: str | None = state.get("ticket_key")
     if not ticket_key:
         logger.debug("Checkpoint state missing ticket_key; skipping")
         return None
 
-    if "stats_stages" not in state:
-        logger.debug("Checkpoint for %s has no stats_stages; skipping", ticket_key)
+    if "stage_timestamps" not in state:
+        logger.debug("Checkpoint for %s has no stage_timestamps; skipping", ticket_key)
         return None
 
-    stats_stages: dict = state.get("stats_stages") or {}
+    stats_stages: dict = state.get("stage_timestamps") or {}
     if not isinstance(stats_stages, dict):
         logger.warning(
-            "Malformed stats_stages for %s (type %s); treating as empty",
+            "Malformed stage_timestamps for %s (type %s); treating as empty",
             ticket_key,
             type(stats_stages).__name__,
         )
@@ -246,7 +246,7 @@ def _parse_checkpoint_stats(state: dict) -> TicketSummary | None:
     ticket_type = str(raw_type) if raw_type else "Feature"
 
     # --- Outcome / status ---
-    outcome: str | None = state.get("stats_outcome")
+    outcome: str | None = state.get("workflow_outcome")
     is_blocked: bool = bool(state.get("is_blocked", False))
 
     if outcome and outcome.lower().startswith("completed"):
@@ -416,7 +416,7 @@ def _is_within_window(state: dict, cutoff: datetime) -> bool:
     if updated_at and updated_at >= cutoff:
         return True
 
-    stats_stages = state.get("stats_stages") or {}
+    stats_stages = state.get("stage_timestamps") or {}
     if not isinstance(stats_stages, dict):
         return False
 

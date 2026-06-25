@@ -255,10 +255,10 @@ class TestPostStatsCommentIdempotency:
 
     def _minimal_stats(self, **overrides) -> dict:
         base = {
-            "stats_stages": {},
+            "stage_timestamps": {},
             "stats_pr_urls": [],
             "stats_ci_cycles": 0,
-            "stats_outcome": None,
+            "workflow_outcome": None,
             "stats_outcome_reason": None,
             "stats_comment_posted": False,
             "workflow_run_id": RUN_ID,
@@ -427,10 +427,10 @@ class TestPostStatsCommentIdempotency:
         mock_jira = self._make_jira_mock()
         # Stats without workflow_run_id
         stats = {
-            "stats_stages": {},
+            "stage_timestamps": {},
             "stats_pr_urls": [],
             "stats_ci_cycles": 0,
-            "stats_outcome": None,
+            "workflow_outcome": None,
             "stats_outcome_reason": None,
             "stats_comment_posted": False,
         }

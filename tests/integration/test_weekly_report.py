@@ -73,16 +73,16 @@ def _make_checkpoint(
     ticket_key: str = "PROJ-1",
     *,
     ticket_type: str = "Feature",
-    stats_outcome: str | None = "Completed",
+    workflow_outcome: str | None = "Completed",
     is_blocked: bool = False,
     stats_ci_cycles: int = 0,
     updated_at: str | None = None,
-    stats_stages: dict | None = None,
+    stage_timestamps: dict | None = None,
     **extra: object,
 ) -> dict:
     """Build a minimal checkpoint state dict that weekly_report can parse."""
-    if stats_stages is None:
-        stats_stages = {
+    if stage_timestamps is None:
+        stage_timestamps = {
             "prd": _make_stage(
                 "prd",
                 started_at=_ONE_DAY_AGO,
@@ -92,9 +92,9 @@ def _make_checkpoint(
     return {
         "ticket_key": ticket_key,
         "ticket_type": ticket_type,
-        "stats_outcome": stats_outcome,
+        "workflow_outcome": workflow_outcome,
         "is_blocked": is_blocked,
-        "stats_stages": stats_stages,
+        "stage_timestamps": stage_timestamps,
         "stats_ci_cycles": stats_ci_cycles,
         "updated_at": updated_at or _ONE_DAY_AGO,
         **extra,
@@ -114,9 +114,9 @@ def mock_workflow_checkpoints() -> dict[str, dict]:
         "PROJ-1": _make_checkpoint(
             ticket_key="PROJ-1",
             ticket_type="Feature",
-            stats_outcome="Completed",
+            workflow_outcome="Completed",
             stats_ci_cycles=1,
-            stats_stages={
+            stage_timestamps={
                 "prd": _make_stage(
                     "prd",
                     iteration_count=2,
@@ -140,8 +140,8 @@ def mock_workflow_checkpoints() -> dict[str, dict]:
         "PROJ-2": _make_checkpoint(
             ticket_key="PROJ-2",
             ticket_type="Feature",
-            stats_outcome=None,
-            stats_stages={
+            workflow_outcome=None,
+            stage_timestamps={
                 "prd": _make_stage(
                     "prd",
                     iteration_count=1,
@@ -156,9 +156,9 @@ def mock_workflow_checkpoints() -> dict[str, dict]:
         "PROJ-3": _make_checkpoint(
             ticket_key="PROJ-3",
             ticket_type="Feature",
-            stats_outcome=None,
+            workflow_outcome=None,
             is_blocked=True,
-            stats_stages={
+            stage_timestamps={
                 "prd": _make_stage(
                     "prd",
                     iteration_count=3,
@@ -515,7 +515,7 @@ class TestCollectWeeklyDataFiltersByDateRange:
         old_checkpoint = _make_checkpoint(
             ticket_key="PROJ-20",
             updated_at=_TEN_DAYS_AGO,
-            stats_stages={
+            stage_timestamps={
                 "prd": _make_stage(
                     "prd",
                     started_at=_TEN_DAYS_AGO,
@@ -554,7 +554,7 @@ class TestCollectWeeklyDataFiltersByDateRange:
             "PROJ-20": _make_checkpoint(
                 ticket_key="PROJ-20",
                 updated_at=_TEN_DAYS_AGO,
-                stats_stages={
+                stage_timestamps={
                     "prd": _make_stage(
                         "prd", started_at=_TEN_DAYS_AGO, ended_at=_TEN_DAYS_AGO
                     )
@@ -588,7 +588,7 @@ class TestCollectWeeklyDataFiltersByDateRange:
         checkpoint = _make_checkpoint(
             ticket_key="PROJ-30",
             updated_at=_TEN_DAYS_AGO,  # old top-level timestamp
-            stats_stages={
+            stage_timestamps={
                 "prd": _make_stage(
                     "prd",
                     started_at=_ONE_DAY_AGO,  # recent stage timestamp qualifies it
@@ -797,9 +797,9 @@ class TestFeatureRollupGroupsCorrectly:
     async def test_completion_percentage_computed(self):
         """completion_percentage is 50 % when 1 of 2 linked tickets is completed."""
         checkpoint_done = _make_checkpoint(
-            ticket_key="PROJ-60", stats_outcome="Completed"
+            ticket_key="PROJ-60", workflow_outcome="Completed"
         )
-        checkpoint_wip = _make_checkpoint(ticket_key="PROJ-61", stats_outcome=None)
+        checkpoint_wip = _make_checkpoint(ticket_key="PROJ-61", workflow_outcome=None)
         redis = _build_redis_mock(
             {"PROJ-60": checkpoint_done, "PROJ-61": checkpoint_wip}
         )
@@ -1421,11 +1421,11 @@ class TestReportTicketUpdateIdempotency:
     @pytest.mark.asyncio
     async def test_missing_stats_fields_handled_gracefully(self):
         """Checkpoints with missing optional stats fields still produce TicketSummary."""
-        # A checkpoint that has stats_stages present but with missing optional fields
+        # A checkpoint that has stage_timestamps present but with missing optional fields
         checkpoint = {
             "ticket_key": "PROJ-70",
             "ticket_type": "Feature",
-            "stats_stages": {
+            "stage_timestamps": {
                 "prd": {
                     "stage_name": "prd",
                     # input_tokens, output_tokens, etc. intentionally absent
@@ -1433,7 +1433,7 @@ class TestReportTicketUpdateIdempotency:
                     "ended_at": _ONE_DAY_AGO,
                 }
             },
-            # stats_outcome, stats_ci_cycles, is_blocked intentionally absent
+            # workflow_outcome, stats_ci_cycles, is_blocked intentionally absent
             "updated_at": _ONE_DAY_AGO,
         }
         redis = _build_redis_mock({"PROJ-70": checkpoint})

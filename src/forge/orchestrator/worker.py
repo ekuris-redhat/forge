@@ -1201,7 +1201,7 @@ class OrchestratorWorker:
                 ensuring it appears as the final Forge comment (retry scenario).
                 When ``False``, post a new comment via ``JiraClient.add_comment``.
         """
-        stats_stages = current_state.get("stats_stages")
+        stats_stages = current_state.get("stage_timestamps")
         if not stats_stages and stats_stages != {}:
             # No stats data found at all (missing key, not just empty dict)
             logger.info(f"No workflow stats data found for {ticket_key}")
@@ -1216,8 +1216,8 @@ class OrchestratorWorker:
             return
 
         # Determine current outcome from state for the on-demand stats view.
-        # Use pre-set stats_outcome if available; otherwise derive from state flags.
-        outcome = current_state.get("stats_outcome") or (
+        # Use pre-set workflow_outcome if available; otherwise derive from state flags.
+        outcome = current_state.get("workflow_outcome") or (
             "Blocked"
             if current_state.get("is_blocked")
             else ("Failed" if current_state.get("last_error") else "In Progress")

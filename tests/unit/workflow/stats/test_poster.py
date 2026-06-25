@@ -31,10 +31,10 @@ OUTCOME_DETAIL = None
 
 def _minimal_stats(**overrides) -> dict:
     base = {
-        "stats_stages": {},
+        "stage_timestamps": {},
         "stats_pr_urls": [],
         "stats_ci_cycles": 0,
-        "stats_outcome": None,
+        "workflow_outcome": None,
         "stats_outcome_reason": None,
         "stats_comment_posted": False,
     }

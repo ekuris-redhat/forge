@@ -51,7 +51,7 @@ def create_mock_agent(
 
 def _get_stage(result: dict, stage_name: str) -> dict:
     """Extract a stage entry from result state, or {} if absent."""
-    return (result.get("stats_stages") or {}).get(stage_name, {})
+    return (result.get("stage_timestamps") or {}).get(stage_name, {})
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ class TestGeneratePrdStatsRecording:
             result = await generate_prd(state)
 
         stage = _get_stage(result, STAGE_PRD)
-        assert stage, "stats_stages[STAGE_PRD] should be populated"
+        assert stage, "stage_timestamps[STAGE_PRD] should be populated"
         assert stage.get("started_at") is not None, "started_at must be set"
 
     @pytest.mark.asyncio
@@ -339,7 +339,7 @@ class TestRegeneratePrdStatsRecording:
 
         result = await regenerate_prd_with_feedback(state)
 
-        # State returned unchanged — no stats_stages mutation
+        # State returned unchanged — no stage_timestamps mutation
         assert result is state
 
     @pytest.mark.asyncio
@@ -410,7 +410,7 @@ class TestGenerateSpecStatsRecording:
             result = await generate_spec(state)
 
         stage = _get_stage(result, STAGE_SPEC)
-        assert stage, "stats_stages[STAGE_SPEC] should be populated"
+        assert stage, "stage_timestamps[STAGE_SPEC] should be populated"
         assert stage.get("started_at") is not None
 
     @pytest.mark.asyncio

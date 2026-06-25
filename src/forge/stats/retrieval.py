@@ -84,17 +84,17 @@ def _extract_stats(ticket_key: str, state: dict) -> WorkflowStats | None:
         A populated ``WorkflowStats`` instance, or ``None`` when the
         checkpoint contains no stats data (e.g. legacy workflows).
     """
-    if "stats_stages" not in state:
+    if "stage_timestamps" not in state:
         logger.debug(
-            "Checkpoint for %s has no stats_stages key (legacy workflow or pre-stats run)",
+            "Checkpoint for %s has no stage_timestamps key (legacy workflow or pre-stats run)",
             ticket_key,
         )
         return None
 
-    stages = state.get("stats_stages") or {}
+    stages = state.get("stage_timestamps") or {}
     if not isinstance(stages, dict):
         logger.warning(
-            "Checkpoint for %s has malformed stats_stages (expected dict, got %s); "
+            "Checkpoint for %s has malformed stage_timestamps (expected dict, got %s); "
             "treating as empty",
             ticket_key,
             type(stages).__name__,
@@ -116,7 +116,7 @@ def _extract_stats(ticket_key: str, state: dict) -> WorkflowStats | None:
         stages=stages,
         pr_urls=pr_urls,
         ci_cycles=state.get("stats_ci_cycles") or 0,
-        outcome=state.get("stats_outcome"),
+        outcome=state.get("workflow_outcome"),
         outcome_reason=state.get("stats_outcome_reason"),
         comment_posted=bool(state.get("stats_comment_posted", False)),
         workflow_run_id=state.get("workflow_run_id", ""),

@@ -39,7 +39,7 @@ def _base_state(ticket_key: str = "TEST-123", **overrides) -> dict:
         "current_node": "prd_approval_gate",
         "is_paused": True,
         "context": {},
-        "stats_stages": {
+        "stage_timestamps": {
             "prd": {
                 "stage_name": "prd",
                 "iteration_count": 1,
@@ -51,7 +51,7 @@ def _base_state(ticket_key: str = "TEST-123", **overrides) -> dict:
         },
         "stats_pr_urls": [],
         "stats_ci_cycles": 0,
-        "stats_outcome": None,
+        "workflow_outcome": None,
         "stats_outcome_reason": None,
         **overrides,
     }
@@ -284,7 +284,7 @@ class TestForgeStatsRetryRepostBehavior:
     @pytest.mark.asyncio
     async def test_retry_passes_correct_outcome_to_ensure(self, worker: OrchestratorWorker):
         """Retry derives outcome correctly and passes it to ensure_stats_is_final_comment."""
-        state = _base_state(stats_outcome="Completed")
+        state = _base_state(workflow_outcome="Completed")
 
         with patch(
             "forge.orchestrator.worker.ensure_stats_is_final_comment",
@@ -300,7 +300,7 @@ class TestForgeStatsRetryRepostBehavior:
     @pytest.mark.asyncio
     async def test_retry_derives_blocked_outcome(self, worker: OrchestratorWorker):
         """Retry correctly derives 'Blocked' outcome when is_blocked=True."""
-        state = _base_state(is_blocked=True, stats_outcome=None)
+        state = _base_state(is_blocked=True, workflow_outcome=None)
 
         with patch(
             "forge.orchestrator.worker.ensure_stats_is_final_comment",
@@ -314,7 +314,7 @@ class TestForgeStatsRetryRepostBehavior:
     @pytest.mark.asyncio
     async def test_retry_derives_failed_outcome(self, worker: OrchestratorWorker):
         """Retry correctly derives 'Failed' outcome when last_error is set."""
-        state = _base_state(last_error="Something went wrong", stats_outcome=None)
+        state = _base_state(last_error="Something went wrong", workflow_outcome=None)
 
         with patch(
             "forge.orchestrator.worker.ensure_stats_is_final_comment",
@@ -328,7 +328,7 @@ class TestForgeStatsRetryRepostBehavior:
     @pytest.mark.asyncio
     async def test_retry_derives_in_progress_outcome(self, worker: OrchestratorWorker):
         """Retry uses 'In Progress' outcome for active workflows."""
-        state = _base_state(stats_outcome=None, is_blocked=False, last_error=None)
+        state = _base_state(workflow_outcome=None, is_blocked=False, last_error=None)
 
         with patch(
             "forge.orchestrator.worker.ensure_stats_is_final_comment",
@@ -343,7 +343,7 @@ class TestForgeStatsRetryRepostBehavior:
     async def test_retry_passes_outcome_detail(self, worker: OrchestratorWorker):
         """Retry passes stats_outcome_reason as outcome_detail."""
         state = _base_state(
-            stats_outcome="Blocked",
+            workflow_outcome="Blocked",
             stats_outcome_reason="Waiting for review",
         )
 
@@ -361,7 +361,7 @@ class TestForgeStatsRetryRepostBehavior:
     async def test_retry_uses_last_error_as_detail(self, worker: OrchestratorWorker):
         """Retry passes last_error as outcome_detail when no stats_outcome_reason."""
         state = _base_state(
-            stats_outcome=None,
+            workflow_outcome=None,
             last_error="Connection timeout",
             stats_outcome_reason=None,
         )
@@ -381,16 +381,16 @@ class TestForgeStatsRetryNoData:
     """Tests for retry behaviour when no stats data is present."""
 
     @pytest.mark.asyncio
-    async def test_retry_with_no_stats_stages_posts_no_data(
+    async def test_retry_with_no_stage_timestamps_posts_no_data(
         self, worker: OrchestratorWorker, mock_jira
     ):
-        """/forge stats retry without stats_stages posts 'No workflow data found.'."""
+        """/forge stats retry without stage_timestamps posts 'No workflow data found.'."""
         state = {
             "ticket_key": "TEST-123",
             "current_node": "prd_approval_gate",
             "is_paused": True,
             "context": {},
-            # stats_stages key is absent
+            # stage_timestamps key is absent
         }
 
         with (

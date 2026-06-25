@@ -160,10 +160,10 @@ class TestFeatureStateStatsIntegration:
 
         hints = get_type_hints(FeatureState)
 
-        assert "stats_stages" in hints
+        assert "stage_timestamps" in hints
         assert "stats_pr_urls" in hints
         assert "stats_ci_cycles" in hints
-        assert "stats_outcome" in hints
+        assert "workflow_outcome" in hints
         assert "stats_outcome_reason" in hints
         assert "stats_comment_posted" in hints
 
@@ -173,10 +173,10 @@ class TestFeatureStateStatsIntegration:
 
         state = create_initial_feature_state("TEST-123")
 
-        assert state["stats_stages"] == {}
+        assert state["stage_timestamps"] == {}
         assert state["stats_pr_urls"] == []
         assert state["stats_ci_cycles"] == 0
-        assert state["stats_outcome"] is None
+        assert state["workflow_outcome"] is None
         assert state["stats_outcome_reason"] is None
         assert state["stats_comment_posted"] is False
 
@@ -207,10 +207,10 @@ class TestBugStateStatsIntegration:
 
         hints = get_type_hints(BugState)
 
-        assert "stats_stages" in hints
+        assert "stage_timestamps" in hints
         assert "stats_pr_urls" in hints
         assert "stats_ci_cycles" in hints
-        assert "stats_outcome" in hints
+        assert "workflow_outcome" in hints
         assert "stats_outcome_reason" in hints
         assert "stats_comment_posted" in hints
 
@@ -220,9 +220,9 @@ class TestBugStateStatsIntegration:
 
         state = create_initial_bug_state("BUG-456")
 
-        assert state["stats_stages"] == {}
+        assert state["stage_timestamps"] == {}
         assert state["stats_pr_urls"] == []
         assert state["stats_ci_cycles"] == 0
-        assert state["stats_outcome"] is None
+        assert state["workflow_outcome"] is None
         assert state["stats_outcome_reason"] is None
         assert state["stats_comment_posted"] is False

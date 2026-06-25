@@ -654,14 +654,14 @@ async def cmd_stats(args: argparse.Namespace) -> int:
         print(f"No workflow data found for {ticket}")
         return 1
 
-    # stats_stages key must be present (even empty dict is valid data)
-    if "stats_stages" not in state:
+    # stage_timestamps key must be present (even empty dict is valid data)
+    if "stage_timestamps" not in state:
         print(f"No workflow data found for {ticket}")
         return 1
 
     # Derive outcome from state (same logic as worker._handle_stats_command)
-    if state.get("stats_outcome"):
-        outcome = state["stats_outcome"]
+    if state.get("workflow_outcome"):
+        outcome = state["workflow_outcome"]
         outcome_detail = state.get("stats_outcome_reason")
     elif state.get("is_blocked"):
         outcome = "Blocked"
@@ -674,7 +674,7 @@ async def cmd_stats(args: argparse.Namespace) -> int:
         outcome_detail = None
 
     if args.json:
-        stats_stages = state.get("stats_stages") or {}
+        stats_stages = state.get("stage_timestamps") or {}
         pr_urls = state.get("stats_pr_urls") or []
         ci_cycles = state.get("stats_ci_cycles") or 0
         output = {
