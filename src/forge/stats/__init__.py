@@ -19,7 +19,7 @@ Public API
     Suitable for CLI / command-handler callers that need a display-ready
     error string instead of an exception.
 
-``format_stats_table(stats, *, colorize=False)``
+``format_stats_table(stats, *, use_color=False)``
     Render a ``WorkflowStats`` as a human-readable ASCII table for terminal
     display.
 
