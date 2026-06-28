@@ -3,6 +3,7 @@
 import logging
 import re
 from datetime import datetime
+from typing import Any
 
 import aiosqlite
 from pydantic import BaseModel, Field, field_validator
@@ -110,7 +111,9 @@ class WaitlistDatabase:
             """)
             await db.commit()
 
-    async def add_entry(self, name: str, business_email: str, company_size: str, role: str) -> dict:
+    async def add_entry(
+        self, name: str, business_email: str, company_size: str, role: str
+    ) -> dict[str, Any]:
         """Add an entry to the waitlist database.
 
         Raises:
@@ -142,7 +145,7 @@ class WaitlistDatabase:
                 "timestamp": timestamp,
             }
 
-    async def get_entry_by_email(self, email: str) -> dict | None:
+    async def get_entry_by_email(self, email: str) -> dict[str, Any] | None:
         """Retrieve a waitlist entry by its email address."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
