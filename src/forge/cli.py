@@ -688,7 +688,8 @@ async def cmd_stats(args: argparse.Namespace) -> int:
         print(json_module.dumps(output, indent=2))
     else:
         # Use the Jira formatter for content, then display as plain text
-        summary = format_stats_summary(state, outcome, outcome_detail)
+        settings = get_settings()
+        summary = format_stats_summary(state, outcome, outcome_detail, pricing=settings.llm_pricing)
         print(summary)
 
     return 0

@@ -441,7 +441,9 @@ class TestHandleStatsCommandDirect:
             mock_format.return_value = "formatted stats"
             await worker._handle_stats_command("TEST-123", state)
 
-        mock_format.assert_called_once_with(state, "Blocked", "Waiting for security review")
+        mock_format.assert_called_once_with(
+            state, "Blocked", "Waiting for security review", pricing=worker.settings.llm_pricing
+        )
 
     @pytest.mark.asyncio
     async def test_uses_last_error_as_detail_when_no_reason(

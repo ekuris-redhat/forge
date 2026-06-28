@@ -168,6 +168,11 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
                         }
                     )
 
+        if all_passed or not any_still_running:
+            from forge.workflow.stats_utils import increment_ci_cycle
+
+            state = {**state, **increment_ci_cycle(state)}
+
         if all_passed:
             logger.info(f"All CI checks passed for {ticket_key}")
             machine_time = time.monotonic() - node_start
@@ -231,15 +236,11 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
 
         next_attempt = ci_fix_attempt + 1
         logger.info(f"CI failed for {ticket_key}, attempt {next_attempt}/{ci_fix_max}")
-        from forge.workflow.stats_utils import increment_ci_cycle
-
-        stats_updates = increment_ci_cycle(state)
         machine_time = time.monotonic() - node_start
         state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
         return update_state_timestamp(
             {
                 **state,
-                **stats_updates,
                 "ci_status": "fixing",
                 "ci_failed_checks": failed_checks,
                 "ci_fix_attempt": next_attempt,

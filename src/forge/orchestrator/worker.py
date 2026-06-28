@@ -1386,7 +1386,9 @@ class OrchestratorWorker:
             return
 
         try:
-            comment_body = format_stats_summary(current_state, outcome, outcome_detail)
+            comment_body = format_stats_summary(
+                current_state, outcome, outcome_detail, pricing=self.settings.llm_pricing
+            )
         except Exception as e:
             logger.warning(f"Failed to format stats for {ticket_key}: {e}")
             comment_body = "Unable to format workflow statistics."

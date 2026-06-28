@@ -593,6 +593,30 @@ class TestFormatterIntegration:
         assert call_args[0][1] == "Completed"
 
     @pytest.mark.asyncio
+    async def test_format_stats_summary_receives_pricing(self):
+        """format_stats_summary is called with the pricing dictionary."""
+        args = _make_args("AISOS-123")
+        state = _base_state()
+        from forge.config import get_settings
+
+        settings = get_settings()
+
+        with (
+            patch(
+                "forge.orchestrator.checkpointer.get_checkpoint_state",
+                new=AsyncMock(return_value=state),
+            ),
+            patch(
+                "forge.workflow.stats.formatter.format_stats_summary",
+                return_value="ok",
+            ) as mock_fmt,
+        ):
+            await cmd_stats(args)
+
+        mock_fmt.assert_called_once()
+        assert mock_fmt.call_args.kwargs.get("pricing") == settings.llm_pricing
+
+    @pytest.mark.asyncio
     async def test_format_stats_summary_not_called_for_json(self):
         """format_stats_summary is NOT called when --json flag is set."""
         args = _make_args("AISOS-123", json_flag=True)
