@@ -41,7 +41,7 @@ class TestForgeDirectorySetup:
 
     async def test_workspace_setup_node_creates_forge_directory(self):
         """The setup_workspace node should create .forge directory structure."""
-        from forge.orchestrator.nodes import setup_workspace
+        from forge.workflow.nodes.workspace_setup import setup_workspace
 
         initial_state = create_initial_state(
             thread_id="TEST-123",
@@ -118,7 +118,7 @@ class TestPreviousTaskKeysPassing:
 
     async def test_implementation_node_passes_implemented_tasks(self):
         """Implementation node should pass implemented_tasks as previous_task_keys."""
-        from forge.orchestrator.nodes import implement_task
+        from forge.workflow.nodes.implementation import implement_task
         from forge.workflow.feature.state import FeatureState as WorkflowState
 
         with tempfile.TemporaryDirectory() as workspace_dir:

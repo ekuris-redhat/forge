@@ -53,6 +53,7 @@ Initial PRD content without user personas.
 
         mock_jira = MagicMock()
         mock_jira.update_description = AsyncMock()
+        mock_jira.add_structured_comment = AsyncMock()
         mock_jira.add_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
@@ -93,6 +94,7 @@ Revised PRD with user personas.
 
         mock_jira = MagicMock()
         mock_jira.update_description = AsyncMock()
+        mock_jira.add_structured_comment = AsyncMock()
         mock_jira.add_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
@@ -158,6 +160,7 @@ class TestPrdRejectedMultiple:
 
         mock_jira = MagicMock()
         mock_jira.update_description = AsyncMock()
+        mock_jira.add_structured_comment = AsyncMock()
         mock_jira.add_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
@@ -201,6 +204,7 @@ class TestPrdRevisionPreservesContext:
         """Regeneration passes original PRD to agent."""
         mock_jira = MagicMock()
         mock_jira.update_description = AsyncMock()
+        mock_jira.add_structured_comment = AsyncMock()
         mock_jira.add_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
@@ -221,6 +225,7 @@ class TestPrdRevisionPreservesContext:
         """Feedback comment is passed to agent."""
         mock_jira = MagicMock()
         mock_jira.update_description = AsyncMock()
+        mock_jira.add_structured_comment = AsyncMock()
         mock_jira.add_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
