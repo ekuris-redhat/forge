@@ -764,6 +764,137 @@ import { JSDOM } from "jsdom";
       testContainerPacing.remove();
     }
 
+    // --- Test 14: Verify TerminalSimulator Playback Control Interactions ---
+    console.log(
+      "\n[Test 14] Verifying TerminalSimulator Playback Control Interactions (Pause, Resume, Restart):",
+    );
+    const testContainerPlayback = document.createElement("div");
+    testContainerPlayback.id = "playback-terminal-test";
+    document.body.appendChild(testContainerPlayback);
+
+    const playbackTimeoutCalls = [];
+    const playbackCustomSetTimeout = (callback, delay, ...args) => {
+      playbackTimeoutCalls.push({ delay, callback });
+      return setTimeout(
+        () => {
+          try {
+            callback();
+          } catch (err) {
+            // Ignore errors if test cleaned up
+          }
+        },
+        1,
+        ...args,
+      );
+    };
+
+    try {
+      const playbackSim = new window.TerminalSimulator({
+        container: "#playback-terminal-test",
+        useRealDelays: true,
+        minDelay: 100,
+        maxDelay: 200,
+        charDelay: 10,
+        restartDelay: 5000,
+        loop: false,
+        autoStart: false,
+        setTimeout: playbackCustomSetTimeout,
+      });
+
+      assert(playbackSim.isPaused === false, "Simulator initially not paused");
+      assert(
+        playbackSim.isCompleted === false,
+        "Simulator initially not completed",
+      );
+
+      const pauseBtn = playbackSim.pauseBtn;
+      const restartBtn = playbackSim.restartBtn;
+      const terminalOutput = playbackSim.terminalOutput;
+
+      assert(pauseBtn, "Pause button exists in rendered terminal simulator");
+      assert(
+        restartBtn,
+        "Restart button exists in rendered terminal simulator",
+      );
+      assert(
+        terminalOutput,
+        "Terminal output exists in rendered terminal simulator",
+      );
+
+      const btnText = pauseBtn.querySelector(".btn-text") || pauseBtn;
+      assert(
+        btnText.textContent.trim() === "Pause",
+        "Pause button initially displays 'Pause'",
+      );
+
+      playbackSim.start();
+
+      // Wait a tiny bit for a log to start typing
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      // 1. Test Pause Interaction
+      pauseBtn.click();
+      assert(
+        playbackSim.isPaused === true,
+        "Simulator isPaused is true after clicking Pause button",
+      );
+      assert(
+        btnText.textContent.trim() === "Resume",
+        "Pause button text transitions to 'Resume' after pause click",
+      );
+
+      const textAtPause = terminalOutput.textContent;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert(
+        terminalOutput.textContent === textAtPause,
+        "Log output freezes immediately and does not progress while paused",
+      );
+
+      // 2. Test Resume Interaction
+      pauseBtn.click();
+      assert(
+        playbackSim.isPaused === false,
+        "Simulator isPaused is false after clicking Resume button",
+      );
+      assert(
+        btnText.textContent.trim() === "Pause",
+        "Pause button text transitions back to 'Pause' after resume click",
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert(
+        terminalOutput.textContent.length > textAtPause.length,
+        "Simulator resumes typing animation from exact execution cursor point",
+      );
+
+      // 3. Test Restart Interaction
+      restartBtn.click();
+      assert(
+        terminalOutput.textContent === "",
+        "Restart button clears visual logs",
+      );
+      assert(
+        playbackSim.currentStep === 0,
+        "Restart button resets log index to 0",
+      );
+      assert(
+        playbackSim.currentCharIndex === 0,
+        "Restart button resets character index to 0",
+      );
+      assert(
+        playbackSim.isPaused === false,
+        "Restart button resets pause state to false",
+      );
+      assert(
+        btnText.textContent.trim() === "Pause",
+        "Pause button text is reset to 'Pause' on restart",
+      );
+
+      playbackSim.destroy();
+    } finally {
+      testContainerPlayback.remove();
+    }
+
     console.log("\n🎉 All Component Unit Tests passed successfully!");
   } catch (e) {
     console.error("\n❌ Component Unit Tests failed:");

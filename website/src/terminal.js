@@ -338,12 +338,12 @@ export class TerminalSimulator {
       this.minDelay === 0 && this.maxDelay === 0 ? 0 : this.charDelay;
 
     if (charDelay <= 0) {
-      logDiv.innerText = log.text;
+      logDiv.textContent = log.text;
       this.currentCharIndex = log.text.length;
       this.finishLogLine(log);
     } else {
       if (this.currentCharIndex < log.text.length) {
-        logDiv.innerText += log.text[this.currentCharIndex];
+        logDiv.textContent += log.text[this.currentCharIndex];
         this.currentCharIndex++;
         if (this.terminalBody) {
           this.terminalBody.scrollTop = this.terminalBody.scrollHeight;
@@ -396,18 +396,18 @@ export class TerminalSimulator {
 
       if (this.isPausedState) {
         if (btnText === this.pauseBtn) {
-          this.pauseBtn.innerText = "▶️ Resume";
+          this.pauseBtn.textContent = "▶️ Resume";
         } else {
-          btnText.innerText = "Resume";
-          if (btnIcon) btnIcon.innerText = "▶️";
+          btnText.textContent = "Resume";
+          if (btnIcon) btnIcon.textContent = "▶️";
         }
         this.pauseBtn.setAttribute("aria-label", "Resume Simulation");
       } else {
         if (btnText === this.pauseBtn) {
-          this.pauseBtn.innerText = "⏸️ Pause";
+          this.pauseBtn.textContent = "⏸️ Pause";
         } else {
-          btnText.innerText = "Pause";
-          if (btnIcon) btnIcon.innerText = "⏸️";
+          btnText.textContent = "Pause";
+          if (btnIcon) btnIcon.textContent = "⏸️";
         }
         this.pauseBtn.setAttribute("aria-label", "Pause Simulation");
       }
