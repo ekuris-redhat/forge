@@ -419,10 +419,13 @@ class TestGetWorkflowStats:
     @pytest.mark.asyncio
     async def test_propagates_exception_from_checkpointer(self):
         """Exceptions from get_checkpoint_state are not swallowed."""
-        with patch(
-            "forge.stats.retrieval.get_checkpoint_state",
-            new=AsyncMock(side_effect=ConnectionError("Redis down")),
-        ), pytest.raises(ConnectionError):
+        with (
+            patch(
+                "forge.stats.retrieval.get_checkpoint_state",
+                new=AsyncMock(side_effect=ConnectionError("Redis down")),
+            ),
+            pytest.raises(ConnectionError),
+        ):
             await get_workflow_stats(_TICKET)
 
 

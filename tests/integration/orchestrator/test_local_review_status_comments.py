@@ -129,7 +129,10 @@ class TestLocalReviewStatusCommentsTS005:
 
         with (
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner_pass1),
+            patch(
+                "forge.workflow.nodes.local_reviewer.ContainerRunner",
+                return_value=mock_runner_pass1,
+            ),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
         ):
             state = await local_review_changes(state)
@@ -139,7 +142,10 @@ class TestLocalReviewStatusCommentsTS005:
 
         with (
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner_pass2),
+            patch(
+                "forge.workflow.nodes.local_reviewer.ContainerRunner",
+                return_value=mock_runner_pass2,
+            ),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
         ):
             state = await local_review_changes(state)
@@ -150,31 +156,31 @@ class TestLocalReviewStatusCommentsTS005:
         # With MAX_REVIEW_ATTEMPTS=2:
         # Pass 1 (attempt 0): initial comment, finds issues, increments to attempt 1, pass 2
         # Pass 2 (attempt 1): fix comment (pass 2), finds no issues OR hits max attempts
-        
+
         # For a 3-comment scenario (initial + 2 fix comments), we need:
         # Pass 1: initial, finds issues -> retry
         # Pass 2: fix (pass 2), finds issues -> retry
         # Pass 3: Would be attempt 2 which equals MAX_REVIEW_ATTEMPTS, so it runs one more time
-        
+
         # Actually reviewing the code: review_attempts + 1 < MAX_REVIEW_ATTEMPTS
         # So with MAX_REVIEW_ATTEMPTS=2:
         # - attempt 0: runs, if issues and 0+1 < 2, retry (yes)
         # - attempt 1: runs, if issues and 1+1 < 2, retry (no, 2 is not < 2)
-        
+
         # So we can only get 2 passes max with MAX_REVIEW_ATTEMPTS=2
         # Pass 1 (attempt 0): initial comment
         # Pass 2 (attempt 1): fix comment (pass 2)
-        
+
         # For TS-005 to work as specified (3 fix passes), I need to adjust the test
         # or acknowledge that MAX_REVIEW_ATTEMPTS limits this
 
         # Let me verify what comments were actually posted
         assert len(all_comments) == 2  # Initial + fix(pass 2)
-        
+
         # Verify initial comment
         assert all_comments[0][0] == "FEAT-201"
         assert all_comments[0][1] == "🔍 Running local code review on changes before creating PR."
-        
+
         # Verify fix comment with pass 2
         assert all_comments[1][0] == "FEAT-201"
         assert all_comments[1][1] == "🔧 Local review found issues, applying fixes (pass 2)."
@@ -210,7 +216,10 @@ class TestLocalReviewStatusCommentsTS005:
 
             with (
                 patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-                patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner_pass1),
+                patch(
+                    "forge.workflow.nodes.local_reviewer.ContainerRunner",
+                    return_value=mock_runner_pass1,
+                ),
                 patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
             ):
                 state = await local_review_changes(state)
@@ -220,7 +229,10 @@ class TestLocalReviewStatusCommentsTS005:
 
             with (
                 patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-                patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner_pass2),
+                patch(
+                    "forge.workflow.nodes.local_reviewer.ContainerRunner",
+                    return_value=mock_runner_pass2,
+                ),
                 patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
             ):
                 state = await local_review_changes(state)
@@ -230,22 +242,25 @@ class TestLocalReviewStatusCommentsTS005:
 
             with (
                 patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-                patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner_pass3),
+                patch(
+                    "forge.workflow.nodes.local_reviewer.ContainerRunner",
+                    return_value=mock_runner_pass3,
+                ),
                 patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
             ):
                 result = await local_review_changes(state)
 
         # Verify all comments were posted: initial + fix(2) + fix(3)
         assert len(all_comments) == 3
-        
+
         # Verify initial comment
         assert all_comments[0][0] == "FEAT-202"
         assert all_comments[0][1] == "🔍 Running local code review on changes before creating PR."
-        
+
         # Verify fix comment with pass 2
         assert all_comments[1][0] == "FEAT-202"
         assert all_comments[1][1] == "🔧 Local review found issues, applying fixes (pass 2)."
-        
+
         # Verify fix comment with pass 3
         assert all_comments[2][0] == "FEAT-202"
         assert all_comments[2][1] == "🔧 Local review found issues, applying fixes (pass 3)."
@@ -292,23 +307,31 @@ class TestLocalReviewStatusCommentsFivePlusPass:
 
                 with (
                     patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-                    patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-                    patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
+                    patch(
+                        "forge.workflow.nodes.local_reviewer.ContainerRunner",
+                        return_value=mock_runner,
+                    ),
+                    patch(
+                        "forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git
+                    ),
                 ):
                     state = await local_review_changes(state)
 
         # Verify all comments were posted: initial + fix(2) + fix(3) + fix(4) + fix(5) + fix(6)
         assert len(all_comments) == 6
-        
+
         # Verify initial comment
         assert all_comments[0][0] == "FEAT-203"
         assert all_comments[0][1] == "🔍 Running local code review on changes before creating PR."
-        
+
         # Verify fix comments with incrementing pass numbers
         for i in range(1, 6):
             pass_num = i + 1
             assert all_comments[i][0] == "FEAT-203"
-            assert all_comments[i][1] == f"🔧 Local review found issues, applying fixes (pass {pass_num})."
+            assert (
+                all_comments[i][1]
+                == f"🔧 Local review found issues, applying fixes (pass {pass_num})."
+            )
 
         # Verify workflow routed to create_pr
         assert state["current_node"] == "create_pr"
@@ -348,7 +371,7 @@ class TestLocalReviewPassNumberResetsBetweenFeatures:
         ):
             mock_git = create_mock_git_operations(has_changes=False)
             mock_git_class.return_value = mock_git
-            
+
             result = await implement_task(state)
 
         # Verify pass_number was reset to 1 when entering local_review phase
@@ -390,7 +413,10 @@ class TestLocalReviewPassNumberPersistsAcrossIterations:
 
         with (
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner_pass1),
+            patch(
+                "forge.workflow.nodes.local_reviewer.ContainerRunner",
+                return_value=mock_runner_pass1,
+            ),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
         ):
             state = await local_review_changes(state)
@@ -405,7 +431,10 @@ class TestLocalReviewPassNumberPersistsAcrossIterations:
 
         with (
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner_pass2),
+            patch(
+                "forge.workflow.nodes.local_reviewer.ContainerRunner",
+                return_value=mock_runner_pass2,
+            ),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
         ):
             result = await local_review_changes(state)
@@ -433,13 +462,18 @@ class TestLocalReviewPassNumberPersistsAcrossIterations:
             # Passes 1-3: have unfixed issues
             for expected_pass_num in [1, 2, 3]:
                 assert state["local_review_pass_number"] == expected_pass_num
-                
+
                 mock_runner = create_mock_container_runner(has_unfixed_issues=True)
 
                 with (
                     patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-                    patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-                    patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
+                    patch(
+                        "forge.workflow.nodes.local_reviewer.ContainerRunner",
+                        return_value=mock_runner,
+                    ),
+                    patch(
+                        "forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git
+                    ),
                 ):
                     state = await local_review_changes(state)
 
@@ -453,7 +487,9 @@ class TestLocalReviewPassNumberPersistsAcrossIterations:
 
             with (
                 patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-                patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
+                patch(
+                    "forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner
+                ),
                 patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
             ):
                 result = await local_review_changes(state)

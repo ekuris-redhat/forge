@@ -298,7 +298,9 @@ class TestForgeStatsMissingCheckpoint:
         assert "No workflow data found" in comment_body
 
     @pytest.mark.asyncio
-    async def test_empty_stage_timestamps_still_formats(self, worker: OrchestratorWorker, mock_jira):
+    async def test_empty_stage_timestamps_still_formats(
+        self, worker: OrchestratorWorker, mock_jira
+    ):
         """Empty stage_timestamps dict (workflow just started) still produces formatted output."""
         message = _make_jira_message("TEST-123", "/forge stats")
         state = _base_state(stage_timestamps={})
@@ -411,7 +413,9 @@ class TestHandleStatsCommandDirect:
         assert "Workflow Statistics" in args[1]
 
     @pytest.mark.asyncio
-    async def test_direct_call_without_stage_timestamps(self, worker: OrchestratorWorker, mock_jira):
+    async def test_direct_call_without_stage_timestamps(
+        self, worker: OrchestratorWorker, mock_jira
+    ):
         """Direct call when stage_timestamps is missing posts 'No workflow data found.'."""
         state = {"ticket_key": "TEST-123", "current_node": "prd_approval_gate"}
 

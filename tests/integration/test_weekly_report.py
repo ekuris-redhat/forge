@@ -555,9 +555,7 @@ class TestCollectWeeklyDataFiltersByDateRange:
                 ticket_key="PROJ-20",
                 updated_at=_TEN_DAYS_AGO,
                 stage_timestamps={
-                    "prd": _make_stage(
-                        "prd", started_at=_TEN_DAYS_AGO, ended_at=_TEN_DAYS_AGO
-                    )
+                    "prd": _make_stage("prd", started_at=_TEN_DAYS_AGO, ended_at=_TEN_DAYS_AGO)
                 },
             ),
         }
@@ -728,15 +726,9 @@ class TestFeatureRollupGroupsCorrectly:
         redis = _build_redis_mock({"PROJ-10": checkpoint_t1, "PROJ-11": checkpoint_t2})
 
         # Both tickets resolve to parent FEAT-1
-        feature_issue = _make_jira_issue(
-            "FEAT-1", issue_type="Feature", summary="My Feature"
-        )
-        task_issue_t1 = _make_jira_issue(
-            "PROJ-10", issue_type="Task", parent_key="FEAT-1"
-        )
-        task_issue_t2 = _make_jira_issue(
-            "PROJ-11", issue_type="Task", parent_key="FEAT-1"
-        )
+        feature_issue = _make_jira_issue("FEAT-1", issue_type="Feature", summary="My Feature")
+        task_issue_t1 = _make_jira_issue("PROJ-10", issue_type="Task", parent_key="FEAT-1")
+        task_issue_t2 = _make_jira_issue("PROJ-11", issue_type="Task", parent_key="FEAT-1")
 
         issue_map = {
             "FEAT-1": feature_issue,
@@ -796,13 +788,9 @@ class TestFeatureRollupGroupsCorrectly:
     @pytest.mark.asyncio
     async def test_completion_percentage_computed(self):
         """completion_percentage is 50 % when 1 of 2 linked tickets is completed."""
-        checkpoint_done = _make_checkpoint(
-            ticket_key="PROJ-60", workflow_outcome="Completed"
-        )
+        checkpoint_done = _make_checkpoint(ticket_key="PROJ-60", workflow_outcome="Completed")
         checkpoint_wip = _make_checkpoint(ticket_key="PROJ-61", workflow_outcome=None)
-        redis = _build_redis_mock(
-            {"PROJ-60": checkpoint_done, "PROJ-61": checkpoint_wip}
-        )
+        redis = _build_redis_mock({"PROJ-60": checkpoint_done, "PROJ-61": checkpoint_wip})
 
         feature_issue = _make_jira_issue("FEAT-2", issue_type="Feature")
         task_done = _make_jira_issue("PROJ-60", issue_type="Task", parent_key="FEAT-2")
@@ -1113,9 +1101,7 @@ class TestCliWeeklyReportFileExport:
                 "forge.workflow.stats.weekly_report.collect_weekly_data",
                 new=AsyncMock(return_value=report),
             ):
-                code = await cmd_weekly_report(
-                    _make_cli_args(fmt="text", output=outfile)
-                )
+                code = await cmd_weekly_report(_make_cli_args(fmt="text", output=outfile))
 
             assert code == 0
             assert Path(outfile).exists()
@@ -1153,9 +1139,7 @@ class TestCliWeeklyReportFileExport:
                 "forge.workflow.stats.weekly_report.collect_weekly_data",
                 new=AsyncMock(return_value=report),
             ):
-                code = await cmd_weekly_report(
-                    _make_cli_args(fmt="json", output=outfile)
-                )
+                code = await cmd_weekly_report(_make_cli_args(fmt="json", output=outfile))
 
             assert code == 0
             content = Path(outfile).read_text()
@@ -1315,9 +1299,7 @@ class TestReportTicketUpdateIdempotency:
             "forge.workflow.stats.report_ticket.JiraClient",
             side_effect=jira_instances,
         ):
-            ticket_key = await ensure_report_ticket(
-                "PROJ", date(2024, 1, 8), "## Report content"
-            )
+            ticket_key = await ensure_report_ticket("PROJ", date(2024, 1, 8), "## Report content")
 
         assert ticket_key == "PROJ-42"
         mock_jira_resolve.search_issues.assert_awaited_once()
@@ -1349,9 +1331,7 @@ class TestReportTicketUpdateIdempotency:
             "forge.workflow.stats.report_ticket.JiraClient",
             side_effect=jira_instances,
         ):
-            ticket_key = await ensure_report_ticket(
-                "PROJ", date(2024, 1, 8), "## New report"
-            )
+            ticket_key = await ensure_report_ticket("PROJ", date(2024, 1, 8), "## New report")
 
         assert ticket_key == "PROJ-100"
         mock_jira_create.create_task.assert_awaited_once()

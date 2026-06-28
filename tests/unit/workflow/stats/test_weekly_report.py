@@ -246,9 +246,7 @@ class TestParseCheckpointStats:
             "ticket_key": "AISOS-1",
             "stage_timestamps": {
                 "prd": _make_stage_data(input_tokens=300, output_tokens=150),
-                "spec": _make_stage_data(
-                    stage_name="spec", input_tokens=200, output_tokens=100
-                ),
+                "spec": _make_stage_data(stage_name="spec", input_tokens=200, output_tokens=100),
             },
             "workflow_outcome": "Completed",
         }
@@ -465,9 +463,7 @@ class TestCalculateBottlenecks:
 
     def test_stages_only_in_some_tickets(self) -> None:
         tickets = [
-            TicketSummary(
-                ticket_key="A-1", stage_durations={"prd": 60.0, "spec": 90.0}
-            ),
+            TicketSummary(ticket_key="A-1", stage_durations={"prd": 60.0, "spec": 90.0}),
             TicketSummary(ticket_key="A-2", stage_durations={"prd": 120.0}),
         ]
         result = _calculate_bottlenecks(tickets)
@@ -496,27 +492,21 @@ class TestIsWithinWindow:
     def test_stage_started_at_within_window(self) -> None:
         state = {
             "updated_at": _TWO_WEEKS_AGO,
-            "stage_timestamps": {
-                "prd": {"started_at": _ONE_DAY_AGO, "ended_at": None}
-            },
+            "stage_timestamps": {"prd": {"started_at": _ONE_DAY_AGO, "ended_at": None}},
         }
         assert _is_within_window(state, self._cutoff()) is True
 
     def test_stage_ended_at_within_window(self) -> None:
         state = {
             "updated_at": _TWO_WEEKS_AGO,
-            "stage_timestamps": {
-                "prd": {"started_at": _TWO_WEEKS_AGO, "ended_at": _ONE_DAY_AGO}
-            },
+            "stage_timestamps": {"prd": {"started_at": _TWO_WEEKS_AGO, "ended_at": _ONE_DAY_AGO}},
         }
         assert _is_within_window(state, self._cutoff()) is True
 
     def test_all_timestamps_outside_window(self) -> None:
         state = {
             "updated_at": _TWO_WEEKS_AGO,
-            "stage_timestamps": {
-                "prd": {"started_at": _TWO_WEEKS_AGO, "ended_at": _TWO_WEEKS_AGO}
-            },
+            "stage_timestamps": {"prd": {"started_at": _TWO_WEEKS_AGO, "ended_at": _TWO_WEEKS_AGO}},
         }
         assert _is_within_window(state, self._cutoff()) is False
 
@@ -599,15 +589,11 @@ class TestAvgCycleTime:
         assert _avg_cycle_time([]) is None
 
     def test_no_completed_tickets(self) -> None:
-        tickets = [
-            TicketSummary(ticket_key="A-1", status="in_progress", duration_seconds=100.0)
-        ]
+        tickets = [TicketSummary(ticket_key="A-1", status="in_progress", duration_seconds=100.0)]
         assert _avg_cycle_time(tickets) is None
 
     def test_single_completed_ticket(self) -> None:
-        tickets = [
-            TicketSummary(ticket_key="A-1", status="completed", duration_seconds=3600.0)
-        ]
+        tickets = [TicketSummary(ticket_key="A-1", status="completed", duration_seconds=3600.0)]
         assert _avg_cycle_time(tickets) == pytest.approx(3600.0)
 
     def test_multiple_completed_tickets(self) -> None:
@@ -627,9 +613,7 @@ class TestAvgCycleTime:
     def test_mixed_statuses_only_completed_counted(self) -> None:
         tickets = [
             TicketSummary(ticket_key="A-1", status="completed", duration_seconds=3600.0),
-            TicketSummary(
-                ticket_key="A-2", status="in_progress", duration_seconds=1800.0
-            ),
+            TicketSummary(ticket_key="A-2", status="in_progress", duration_seconds=1800.0),
             TicketSummary(ticket_key="A-3", status="blocked", duration_seconds=7200.0),
         ]
         assert _avg_cycle_time(tickets) == pytest.approx(3600.0)
@@ -756,9 +740,7 @@ class TestCollectWeeklyData:
         assert report.period_days == 14
 
     @pytest.mark.asyncio
-    async def test_completed_and_in_progress_split(
-        self, _redis_mock_with_data
-    ) -> None:
+    async def test_completed_and_in_progress_split(self, _redis_mock_with_data) -> None:
         with (
             patch(
                 "forge.workflow.stats.weekly_report.get_redis_client",
@@ -783,7 +765,7 @@ class TestCollectWeeklyData:
             _patch_now(_NOW),
         ):
             report = await collect_weekly_data("AISOS")
-        assert report.total_input_tokens == 500   # 300 + 200
+        assert report.total_input_tokens == 500  # 300 + 200
         assert report.total_output_tokens == 250  # 150 + 100
 
     @pytest.mark.asyncio
@@ -837,14 +819,10 @@ class TestCollectWeeklyData:
             workflow_outcome="Completed",
             updated_at=_TWO_WEEKS_AGO,
             stage_timestamps={
-                "prd": _make_stage_data(
-                    started_at=_TWO_WEEKS_AGO, ended_at=_TWO_WEEKS_AGO
-                )
+                "prd": _make_stage_data(started_at=_TWO_WEEKS_AGO, ended_at=_TWO_WEEKS_AGO)
             },
         )
-        redis_mock = _make_redis_mock(
-            keys=[redis_key], states={redis_key: old_state}
-        )
+        redis_mock = _make_redis_mock(keys=[redis_key], states={redis_key: old_state})
         with (
             patch(
                 "forge.workflow.stats.weekly_report.get_redis_client",
@@ -865,9 +843,7 @@ class TestCollectWeeklyData:
             is_blocked=True,
             updated_at=_ONE_DAY_AGO,
         )
-        redis_mock = _make_redis_mock(
-            keys=[redis_key], states={redis_key: state}
-        )
+        redis_mock = _make_redis_mock(keys=[redis_key], states={redis_key: state})
         with (
             patch(
                 "forge.workflow.stats.weekly_report.get_redis_client",
@@ -951,7 +927,7 @@ class TestCollectWeeklyData:
             report = await collect_weekly_data("AISOS")
         assert "prd" in report.tokens_by_stage
         total_in, total_out = report.tokens_by_stage["prd"]
-        assert total_in == 500   # 300 + 200
+        assert total_in == 500  # 300 + 200
         assert total_out == 250  # 150 + 100
 
     @pytest.mark.asyncio

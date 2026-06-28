@@ -325,7 +325,15 @@ class TestStageConstants:
             STAGE_TASKS,
         )
 
-        expected = {STAGE_PRD, STAGE_SPEC, STAGE_EPICS, STAGE_TASKS, STAGE_IMPLEMENTATION, STAGE_CI, STAGE_REVIEW}
+        expected = {
+            STAGE_PRD,
+            STAGE_SPEC,
+            STAGE_EPICS,
+            STAGE_TASKS,
+            STAGE_IMPLEMENTATION,
+            STAGE_CI,
+            STAGE_REVIEW,
+        }
         assert set(ALL_FEATURE_STAGES) == expected
 
     # ------------------------------------------------------------------
@@ -378,7 +386,14 @@ class TestStageConstants:
             STAGE_TRIAGE,
         )
 
-        expected = {STAGE_TRIAGE, STAGE_RCA, STAGE_PLANNING, STAGE_IMPLEMENTATION, STAGE_CI, STAGE_REVIEW}
+        expected = {
+            STAGE_TRIAGE,
+            STAGE_RCA,
+            STAGE_PLANNING,
+            STAGE_IMPLEMENTATION,
+            STAGE_CI,
+            STAGE_REVIEW,
+        }
         assert set(ALL_BUG_STAGES) == expected
 
     # ------------------------------------------------------------------
