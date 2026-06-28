@@ -6,6 +6,7 @@ for codebase analysis before any exploration begins.
 
 import json
 import logging
+import time
 
 from langgraph.graph import END
 
@@ -15,9 +16,19 @@ from forge.integrations.jira.client import JiraClient
 from forge.models.workflow import ForgeLabel
 from forge.prompts import load_prompt
 from forge.workflow.bug.state import BugState
+from forge.workflow.stats import STAGE_TRIAGE
+from forge.workflow.stats_utils import record_stage_end, record_stage_start, record_tokens
 from forge.workflow.utils import set_paused, update_state_timestamp
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
 
 _MAX_RETRIES = 3
 
@@ -46,12 +57,17 @@ async def triage_check(state: BugState) -> BugState:
     is_resume = state.get("current_node") == "triage_gate"
 
     settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_TRIAGE, model_name=settings.llm_model)}
+    node_start = time.monotonic()
+
     jira = JiraClient(settings)
     agent = ForgeAgent(settings)
 
     try:
         if retry_count >= _MAX_RETRIES:
             logger.error("triage_check exceeded max retries for %s", ticket_key)
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_TRIAGE, machine_time)}
             return {**state, "current_node": "escalate_blocked"}
 
         # Step 1: Post acknowledgement on first invocation only (not on resume)
@@ -79,6 +95,10 @@ async def triage_check(state: BugState) -> BugState:
             context={"ticket_key": ticket_key},
         )
 
+        input_tokens = _estimate_tokens(user_prompt)
+        output_tokens = _estimate_tokens(raw_result)
+        state = {**state, **record_tokens(state, STAGE_TRIAGE, input_tokens, output_tokens)}
+
         # Step 4: Parse result
         result_stripped = raw_result.strip()
         if result_stripped.lower() == "sufficient":
@@ -89,6 +109,8 @@ async def triage_check(state: BugState) -> BugState:
                 else "Ticket has enough information to proceed. Starting root cause analysis — results will be posted here."
             )
             await jira.add_comment(ticket_key, pass_msg)
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_TRIAGE, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -123,6 +145,9 @@ async def triage_check(state: BugState) -> BugState:
         )
         await jira.set_workflow_label(ticket_key, ForgeLabel.TRIAGE_PENDING)
 
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_TRIAGE, machine_time)}
+
         return update_state_timestamp(
             {
                 **state,
@@ -137,6 +162,8 @@ async def triage_check(state: BugState) -> BugState:
     except Exception as e:
         logger.error("triage_check failed for %s: %s", ticket_key, e)
         new_retry = retry_count + 1
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_TRIAGE, machine_time)}
         return {
             **state,
             "last_error": str(e),

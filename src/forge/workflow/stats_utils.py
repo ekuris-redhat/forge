@@ -24,7 +24,6 @@ def _get_stage(state: dict, stage_name: str) -> dict:
             "stage_name": stage_name,
             "iteration_count": 0,
             "machine_time_seconds": 0.0,
-            "human_time_seconds": 0.0,
             "input_tokens": 0,
             "output_tokens": 0,
             "started_at": None,
@@ -70,7 +69,6 @@ def record_stage_end(
     state: dict,
     stage_name: str,
     machine_time: float,
-    human_time: float = 0.0,
 ) -> dict:
     """Mark a stage as ended and accumulate time metrics.
 
@@ -81,7 +79,6 @@ def record_stage_end(
         state: Current workflow state dict.
         stage_name: Name of the stage that has finished.
         machine_time: Wall-clock seconds of automated work to add.
-        human_time: Wall-clock seconds of human-wait time to add (default 0).
 
     Returns:
         Partial state update dict with ``stage_timestamps`` key.
@@ -90,7 +87,6 @@ def record_stage_end(
     stage = _get_stage(state, stage_name)
     stage["ended_at"] = _utc_now()
     stage["machine_time_seconds"] = stage.get("machine_time_seconds", 0.0) + machine_time
-    stage["human_time_seconds"] = stage.get("human_time_seconds", 0.0) + human_time
     stages[stage_name] = stage
     return {"stage_timestamps": stages}
 

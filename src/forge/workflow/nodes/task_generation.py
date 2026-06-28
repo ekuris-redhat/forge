@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import time
 from typing import Any
 
 from forge.config import get_settings
@@ -11,10 +12,22 @@ from forge.integrations.jira.client import JiraClient, MissingProjectConfig
 from forge.models.workflow import ForgeLabel
 from forge.prompts import load_prompt
 from forge.workflow.feature.state import FeatureState as WorkflowState
+from forge.workflow.stats import STAGE_TASKS
+from forge.workflow.stats_utils import (
+    increment_revision,
+    record_stage_end,
+    record_stage_start,
+    record_tokens,
+)
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import post_status_comment
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    return max(1, len(text) // 4)
 
 
 async def generate_tasks(state: WorkflowState) -> WorkflowState:
@@ -35,8 +48,14 @@ async def generate_tasks(state: WorkflowState) -> WorkflowState:
     ticket_key = state["ticket_key"]
     epic_keys = state.get("epic_keys", [])
 
+    settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_TASKS, model_name=settings.llm_model)}
+    node_start = time.monotonic()
+
     if not epic_keys:
         logger.warning(f"No Epics found for task generation on {ticket_key}")
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
         return {
             **state,
             "last_error": "No Epics available for task generation",
@@ -125,7 +144,7 @@ async def generate_tasks(state: WorkflowState) -> WorkflowState:
             sibling_epics = [e for e in all_epics_details if e["epic_key"] != epic_key]
 
             # Generate Tasks using Deep Agents - primary operation
-            tasks_data = await _generate_tasks_for_epic(
+            tasks_data, in_tok, out_tok = await _generate_tasks_for_epic(
                 agent,
                 epic_plan,
                 epic_summary,
@@ -134,6 +153,7 @@ async def generate_tasks(state: WorkflowState) -> WorkflowState:
                 sibling_epics=sibling_epics if sibling_epics else None,
                 existing_tasks=created_tasks_context if created_tasks_context else None,
             )
+            state = {**state, **record_tokens(state, STAGE_TASKS, in_tok, out_tok)}
 
             # Create Tasks in Jira - secondary operation
             for task in tasks_data:
@@ -214,6 +234,8 @@ async def generate_tasks(state: WorkflowState) -> WorkflowState:
             except Exception as e:
                 jira_error = str(e)
                 logger.warning(f"Failed to set workflow label for {ticket_key}: {e}")
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -229,6 +251,8 @@ async def generate_tasks(state: WorkflowState) -> WorkflowState:
             )
         else:
             # No Tasks created at all - this is a failure
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
             return {
                 **state,
                 "last_error": jira_error or "Failed to create any Tasks in Jira",
@@ -242,6 +266,8 @@ async def generate_tasks(state: WorkflowState) -> WorkflowState:
 
         await notify_error(state, str(e), "generate_tasks")
         # Save any Tasks we managed to create
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
         result_state = {
             **state,
             "last_error": str(e),
@@ -264,7 +290,7 @@ async def _generate_tasks_for_epic(
     spec_content: str = "",
     sibling_epics: list[dict[str, str]] | None = None,
     existing_tasks: list[dict[str, str]] | None = None,
-) -> list[dict[str, str]]:
+) -> tuple[list[dict[str, str]], int, int]:
     """Generate Tasks for a single Epic.
 
     Args:
@@ -277,7 +303,7 @@ async def _generate_tasks_for_epic(
         existing_tasks: Tasks already created for sibling epics (to avoid duplication).
 
     Returns:
-        List of Task dicts with summary, description, repo.
+        A tuple of (List of Task dicts, input_tokens, output_tokens).
     """
     existing_tasks_section = _format_existing_tasks(existing_tasks)
     sibling_epics_section = _format_sibling_epics(sibling_epics)
@@ -305,7 +331,9 @@ async def _generate_tasks_for_epic(
         context=context,
     )
 
-    return _parse_tasks_response(result)
+    input_tokens = _estimate_tokens(prompt)
+    output_tokens = _estimate_tokens(result) if result else 0
+    return _parse_tasks_response(result), input_tokens, output_tokens
 
 
 def _format_sibling_epics(sibling_epics: list[dict[str, str]] | None) -> str:
@@ -481,6 +509,7 @@ async def regenerate_all_tasks(state: WorkflowState) -> WorkflowState:
         # Clear task_keys and set feedback for regeneration
         updated_state = {
             **state,
+            **increment_revision(state, STAGE_TASKS),
             "task_keys": [],
             "tasks_by_repo": {},
             "feedback_comment": feedback,
@@ -535,6 +564,10 @@ async def regenerate_epic_tasks(state: WorkflowState) -> WorkflowState:
     logger.info(f"Regenerating tasks for Epic {epic_key} on {ticket_key} with feedback")
 
     settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_TASKS, model_name=settings.llm_model)}
+    state = {**state, **increment_revision(state, STAGE_TASKS)}
+    node_start = time.monotonic()
+
     jira = JiraClient()
     agent = ForgeAgent()
 
@@ -628,7 +661,7 @@ async def regenerate_epic_tasks(state: WorkflowState) -> WorkflowState:
 
         spec_content = state.get("spec_content", "")
 
-        tasks_data = await _generate_tasks_for_epic(
+        tasks_data, in_tok, out_tok = await _generate_tasks_for_epic(
             agent,
             epic_plan,
             epic_summary,
@@ -637,8 +670,11 @@ async def regenerate_epic_tasks(state: WorkflowState) -> WorkflowState:
             sibling_epics=sibling_epics if sibling_epics else None,
             existing_tasks=existing_tasks_ctx if existing_tasks_ctx else None,
         )
+        state = {**state, **record_tokens(state, STAGE_TASKS, in_tok, out_tok)}
 
         if not tasks_data:
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
             return {
                 **state,
                 "last_error": f"No replacement Tasks generated for Epic {epic_key}",
@@ -695,6 +731,8 @@ async def regenerate_epic_tasks(state: WorkflowState) -> WorkflowState:
                 logger.warning(f"Failed to create Task '{summary}' for {epic_key}: {e}")
 
         if not new_task_keys:
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
             return {
                 **state,
                 "last_error": jira_error
@@ -721,6 +759,8 @@ async def regenerate_epic_tasks(state: WorkflowState) -> WorkflowState:
             cleanup_suffix = (
                 f"; cleanup failures: {'; '.join(cleanup_errors)}" if cleanup_errors else ""
             )
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
             return {
                 **state,
                 "last_error": (
@@ -746,6 +786,8 @@ async def regenerate_epic_tasks(state: WorkflowState) -> WorkflowState:
         all_task_keys = remaining_task_keys + new_task_keys
         logger.info(f"Regenerated {len(new_task_keys)} tasks for Epic {epic_key} on {ticket_key}")
 
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
         return update_state_timestamp(
             {
                 **state,
@@ -764,6 +806,8 @@ async def regenerate_epic_tasks(state: WorkflowState) -> WorkflowState:
         from forge.workflow.nodes.error_handler import notify_error
 
         await notify_error(state, str(e), "regenerate_epic_tasks")
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
         return {
             **state,
             "last_error": str(e),
@@ -800,6 +844,11 @@ async def update_single_task(state: WorkflowState) -> WorkflowState:
 
     logger.info(f"Updating Task {task_key} with feedback")
 
+    settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_TASKS, model_name=settings.llm_model)}
+    state = {**state, **increment_revision(state, STAGE_TASKS)}
+    node_start = time.monotonic()
+
     jira = JiraClient()
     agent = ForgeAgent()
 
@@ -823,6 +872,11 @@ async def update_single_task(state: WorkflowState) -> WorkflowState:
             },
         )
 
+        # Record tokens
+        input_tokens = _estimate_tokens(original_description) + _estimate_tokens(feedback)
+        output_tokens = _estimate_tokens(new_description)
+        state = {**state, **record_tokens(state, STAGE_TASKS, input_tokens, output_tokens)}
+
         # Update Task in Jira
         await jira.update_description(task_key, new_description)
 
@@ -833,6 +887,9 @@ async def update_single_task(state: WorkflowState) -> WorkflowState:
         )
 
         logger.info(f"Task {task_key} updated with feedback")
+
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
 
         return update_state_timestamp(
             {
@@ -850,6 +907,8 @@ async def update_single_task(state: WorkflowState) -> WorkflowState:
         from forge.workflow.nodes.error_handler import notify_error
 
         await notify_error(state, str(e), "update_single_task")
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_TASKS, machine_time)}
         return {
             **state,
             "last_error": str(e),

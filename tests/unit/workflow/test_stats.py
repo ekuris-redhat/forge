@@ -17,7 +17,6 @@ class TestStageStats:
         assert "stage_name" in hints
         assert "iteration_count" in hints
         assert "machine_time_seconds" in hints
-        assert "human_time_seconds" in hints
         assert "input_tokens" in hints
         assert "output_tokens" in hints
         assert "started_at" in hints
@@ -32,7 +31,6 @@ class TestStageStats:
         assert hints["stage_name"] is str
         assert hints["iteration_count"] is int
         assert hints["machine_time_seconds"] is float
-        assert hints["human_time_seconds"] is float
         assert hints["input_tokens"] is int
         assert hints["output_tokens"] is int
 

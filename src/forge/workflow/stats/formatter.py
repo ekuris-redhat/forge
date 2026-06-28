@@ -94,11 +94,10 @@ def _build_stage_row(
             When ``None``, the cost column shows ``cost unavailable``.
     """
     if stage is None:
-        return f"| {label} | {_DASH} | {_DASH} | {_DASH} | {_DASH} | {_DASH} | {_DASH} |"
+        return f"| {label} | {_DASH} | {_DASH} | {_DASH} | {_DASH} | {_DASH} |"
 
     iterations = stage.get("iteration_count", 0)
     machine_time = _fmt_seconds(stage.get("machine_time_seconds", 0.0))
-    human_time = _fmt_seconds(stage.get("human_time_seconds", 0.0))
     input_tok = _fmt_tokens(stage.get("input_tokens", 0))
     output_tok = _fmt_tokens(stage.get("output_tokens", 0))
 
@@ -117,10 +116,7 @@ def _build_stage_row(
     else:
         cost_str = "cost unavailable"
 
-    return (
-        f"| {label} | {iterations} | {machine_time} | {human_time} |"
-        f" {input_tok} | {output_tok} | {cost_str} |"
-    )
+    return f"| {label} | {iterations} | {machine_time} | {input_tok} | {output_tok} | {cost_str} |"
 
 
 def _build_totals_row(
@@ -141,7 +137,7 @@ def _build_totals_row(
     cost_str = _build_total_cost_str(stages, pricing)
 
     return (
-        f"| *Total* | — | — | — |"
+        f"| *Total* | — | — |"
         f" *{_fmt_tokens(total_input)}* | *{_fmt_tokens(total_output)}* | {cost_str} |"
     )
 
@@ -274,7 +270,7 @@ def format_stats_summary(
     """Format a StatsState snapshot into a Jira wiki markup comment.
 
     The generated comment includes:
-    * A stage-by-stage metrics table (iterations, machine time, human time,
+    * A stage-by-stage metrics table (iterations, machine time,
       input tokens, output tokens, cost).
     * An aggregate token totals row with total cost.
     * A PR links section (omitted when no PRs were created).
@@ -319,8 +315,7 @@ def format_stats_summary(
     lines.append("h3. Workflow Statistics")
     lines.append("")
     lines.append(
-        "|| Stage || Iterations || Machine Time || Human Time ||"
-        " Input Tokens || Output Tokens || Cost ||"
+        "|| Stage || Iterations || Machine Time || Input Tokens || Output Tokens || Cost ||"
     )
 
     # Detect workflow type: prefer bug stage ordering when any bug-only stage

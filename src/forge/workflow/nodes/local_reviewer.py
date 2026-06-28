@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from pathlib import Path
 
 from forge.config import get_settings
@@ -10,12 +11,22 @@ from forge.models.workflow import TicketType
 from forge.prompts import load_prompt
 from forge.sandbox import ContainerRunner
 from forge.workflow.feature.state import FeatureState as WorkflowState
+from forge.workflow.stats import STAGE_REVIEW
+from forge.workflow.stats_utils import record_stage_end, record_stage_start, record_tokens
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import post_status_comment
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.manager import Workspace
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
 
 MAX_REVIEW_ATTEMPTS = 2
 _QUALITATIVE_CAP = 2
@@ -115,10 +126,18 @@ async def local_review_changes(state: WorkflowState) -> WorkflowState:
         logger.info(f"No workspace for local review on {ticket_key}, skipping")
         return update_state_timestamp({**state, "current_node": "create_pr"})
 
+    settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_REVIEW, model_name=settings.llm_model)}
+    node_start = time.monotonic()
+
     if ticket_type == TicketType.BUG:
-        return await _run_bug_review(state)
+        result_state = await _run_bug_review(state)
     else:
-        return await _run_feature_review(state)
+        result_state = await _run_feature_review(state)
+
+    machine_time = time.monotonic() - node_start
+    result_state = {**result_state, **record_stage_end(result_state, STAGE_REVIEW, machine_time)}
+    return result_state
 
 
 async def _run_bug_review(state: WorkflowState) -> WorkflowState:
@@ -153,6 +172,10 @@ async def _run_bug_review(state: WorkflowState) -> WorkflowState:
             task_key=f"{ticket_key}-qualreview",
             repo_name=current_repo,
         )
+
+        input_tokens = _estimate_tokens(task_description)
+        output_tokens = _estimate_tokens(result.stdout) if result.stdout else 0
+        state = {**state, **record_tokens(state, STAGE_REVIEW, input_tokens, output_tokens)}
 
         git = GitOperations(
             Workspace(
@@ -313,6 +336,10 @@ async def _run_feature_review(state: WorkflowState) -> WorkflowState:
             task_key=f"{ticket_key}-review",
             repo_name=current_repo,
         )
+
+        input_tokens = _estimate_tokens(task_description)
+        output_tokens = _estimate_tokens(result.stdout) if result.stdout else 0
+        state = {**state, **record_tokens(state, STAGE_REVIEW, input_tokens, output_tokens)}
 
         git = GitOperations(
             Workspace(

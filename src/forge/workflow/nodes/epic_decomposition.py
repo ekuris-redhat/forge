@@ -1,6 +1,7 @@
 """Epic decomposition node for LangGraph workflow."""
 
 import logging
+import time
 from typing import Any
 
 from forge.config import get_settings
@@ -8,11 +9,23 @@ from forge.integrations.agents import ForgeAgent
 from forge.integrations.jira.client import JiraClient, MissingProjectConfig
 from forge.models.workflow import ForgeLabel
 from forge.workflow.feature.state import FeatureState as WorkflowState
+from forge.workflow.stats import STAGE_EPICS
+from forge.workflow.stats_utils import (
+    increment_revision,
+    record_stage_end,
+    record_stage_start,
+    record_tokens,
+)
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import post_status_comment
 from forge.workflow.utils.qa_summary import post_qa_summary_if_needed
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    return max(1, len(text) // 4)
 
 
 def _missing_repo_config_comment(project_key: str) -> str:
@@ -49,6 +62,10 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
     spec_content = state.get("spec_content", "")
 
     logger.info(f"Decomposing spec into Epics for {ticket_key}")
+
+    settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_EPICS, model_name=settings.llm_model)}
+    node_start = time.monotonic()
 
     # Post Q&A summary for spec if any
     qa_history = state.get("qa_history", [])
@@ -104,6 +121,8 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
                 )
                 await jira.add_comment(ticket_key, _missing_repo_config_comment(project_key))
                 await jira.set_workflow_label(ticket_key, ForgeLabel.BLOCKED)
+                machine_time = time.monotonic() - node_start
+                state = {**state, **record_stage_end(state, STAGE_EPICS, machine_time)}
                 return {**state, "last_error": str(e), "current_node": "decompose_epics"}
             logger.warning(f"Project {project_key}: {e} — falling back to GITHUB_KNOWN_REPOS")
             for repo in settings.known_repos:
@@ -127,6 +146,11 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
 
         # Generate Epic breakdown using Claude - primary operation
         epics_data = await agent.generate_epics(spec_content, context)
+
+        # Record tokens
+        input_tokens = _estimate_tokens(spec_content)
+        output_tokens = _estimate_tokens(str(epics_data)) if epics_data else 0
+        state = {**state, **record_tokens(state, STAGE_EPICS, input_tokens, output_tokens)}
 
         if not epics_data:
             logger.warning(f"No Epics generated for {ticket_key}")
@@ -200,6 +224,8 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
                 )
             generation_context["plan"] = "\n\n".join(plan_summary_parts)
 
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_EPICS, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -214,6 +240,8 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
             )
         else:
             # No Epics created at all - this is a failure
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_EPICS, machine_time)}
             return {
                 **state,
                 "last_error": jira_error or "Failed to create any Epics in Jira",
@@ -228,6 +256,8 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
 
         await notify_error(state, str(e), "decompose_epics")
         # Save any Epics we managed to create
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_EPICS, machine_time)}
         result_state = {
             **state,
             "last_error": str(e),
@@ -277,6 +307,7 @@ async def regenerate_all_epics(state: WorkflowState) -> WorkflowState:
             "epic_keys": [],
             "feedback_comment": feedback,
         }
+        updated_state = {**updated_state, **increment_revision(updated_state, STAGE_EPICS)}
 
         # Re-run decomposition (which will use context including feedback)
         return await decompose_epics(updated_state)
@@ -314,6 +345,11 @@ async def update_single_epic(state: WorkflowState) -> WorkflowState:
 
     logger.info(f"Updating Epic {epic_key} with feedback")
 
+    settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_EPICS, model_name=settings.llm_model)}
+    state = {**state, **increment_revision(state, STAGE_EPICS)}
+    node_start = time.monotonic()
+
     jira = JiraClient()
     agent = ForgeAgent()
 
@@ -337,6 +373,11 @@ async def update_single_epic(state: WorkflowState) -> WorkflowState:
             },
         )
 
+        # Record tokens
+        input_tokens = _estimate_tokens(original_plan) + _estimate_tokens(feedback)
+        output_tokens = _estimate_tokens(new_plan)
+        state = {**state, **record_tokens(state, STAGE_EPICS, input_tokens, output_tokens)}
+
         # Update Epic description
         await jira.update_description(epic_key, new_plan)
 
@@ -347,6 +388,9 @@ async def update_single_epic(state: WorkflowState) -> WorkflowState:
         )
 
         logger.info(f"Updated Epic {epic_key} plan")
+
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_EPICS, machine_time)}
 
         return update_state_timestamp(
             {
@@ -361,6 +405,8 @@ async def update_single_epic(state: WorkflowState) -> WorkflowState:
 
     except Exception as e:
         logger.error(f"Epic update failed for {epic_key}: {e}")
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_EPICS, machine_time)}
         return {
             **state,
             "last_error": str(e),

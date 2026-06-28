@@ -3,6 +3,7 @@
 import json
 import logging
 import tempfile
+import time
 from pathlib import Path
 
 from forge.config import get_settings
@@ -11,10 +12,20 @@ from forge.models.workflow import ForgeLabel
 from forge.prompts import load_prompt
 from forge.sandbox import ContainerRunner
 from forge.workflow.bug.state import BugState
+from forge.workflow.stats import STAGE_RCA
+from forge.workflow.stats_utils import record_stage_end, record_stage_start, record_tokens
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import post_status_comment
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
 
 _RCA_REQUIRED_KEYS = {
     "summary",
@@ -49,6 +60,9 @@ async def analyze_bug(state: BugState) -> BugState:
     reflection_critique = state.get("reflection_critique") or ""
 
     settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_RCA, model_name=settings.llm_model)}
+    node_start = time.monotonic()
+
     jira = JiraClient()
 
     try:
@@ -72,6 +86,8 @@ async def analyze_bug(state: BugState) -> BugState:
                 f"Details: {e}",
             )
             await jira.set_workflow_label(ticket_key, ForgeLabel.BLOCKED)
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_RCA, machine_time)}
             return {
                 **state,
                 "last_error": str(e),
@@ -98,12 +114,20 @@ async def analyze_bug(state: BugState) -> BugState:
                 task_key=f"{ticket_key}-analysis",
             )
 
+            # Record tokens
+            input_tokens = _estimate_tokens(task_description)
+            output_tokens = _estimate_tokens(result.stdout) if (result and result.stdout) else 0
+            state = {**state, **record_tokens(state, STAGE_RCA, input_tokens, output_tokens)}
+
             if not result.success:
                 raise RuntimeError(
                     f"Container failed with exit_code={result.exit_code}: {result.stderr}"
                 )
 
             data = _harvest_rca_json(workspace_path)
+
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_RCA, machine_time)}
 
         return update_state_timestamp(
             {
@@ -120,6 +144,8 @@ async def analyze_bug(state: BugState) -> BugState:
         logger.error(f"analyze_bug failed for {ticket_key}: {e}")
         new_retry = retry_count + 1
         next_node = "escalate_blocked" if new_retry >= MAX_ANALYSIS_RETRIES else "analyze_bug"
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_RCA, machine_time)}
         return {
             **state,
             "last_error": str(e),
@@ -223,6 +249,9 @@ async def reflect_rca(state: BugState) -> BugState:
     reflect_rca_retry_count = state.get("reflect_rca_retry_count", 0)
 
     settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_RCA, model_name=settings.llm_model)}
+    node_start = time.monotonic()
+
     jira = JiraClient()
 
     try:
@@ -243,6 +272,11 @@ async def reflect_rca(state: BugState) -> BugState:
                 task_key=f"{ticket_key}-reflect",
             )
 
+            # Record tokens
+            input_tokens = _estimate_tokens(task_description)
+            output_tokens = _estimate_tokens(result.stdout) if (result and result.stdout) else 0
+            state = {**state, **record_tokens(state, STAGE_RCA, input_tokens, output_tokens)}
+
             if not result.success:
                 raise RuntimeError(
                     f"Reflection container failed with exit_code={result.exit_code}: {result.stderr}"
@@ -251,6 +285,8 @@ async def reflect_rca(state: BugState) -> BugState:
             verdict = result.stdout.strip()
 
         if verdict.upper().strip() == "VALID":
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_RCA, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -267,6 +303,8 @@ async def reflect_rca(state: BugState) -> BugState:
                 f"Reflection cap reached — proceeding with best available RCA after "
                 f"{new_reflection_count} validation attempts.",
             )
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_RCA, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -276,6 +314,8 @@ async def reflect_rca(state: BugState) -> BugState:
                 }
             )
 
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_RCA, machine_time)}
         return update_state_timestamp(
             {
                 **state,
@@ -291,6 +331,8 @@ async def reflect_rca(state: BugState) -> BugState:
         next_node = (
             "escalate_blocked" if new_reflect_retry >= MAX_ANALYSIS_RETRIES else "reflect_rca"
         )
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_RCA, machine_time)}
         return {
             **state,
             "last_error": str(e),

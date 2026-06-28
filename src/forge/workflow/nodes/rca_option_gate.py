@@ -181,9 +181,15 @@ async def regenerate_rca(state: BugState) -> BugState:
     finally:
         await jira.close()
 
+    from forge.workflow.stats import STAGE_RCA
+    from forge.workflow.stats_utils import increment_revision
+
+    stats_updates = increment_revision(state, STAGE_RCA)
+
     return update_state_timestamp(
         {
             **state,
+            **stats_updates,
             "reflection_critique": feedback or None,
             "feedback_comment": None,
             "revision_requested": False,

@@ -1,6 +1,7 @@
 """implement_review node — addresses PR review feedback on an existing branch."""
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -14,9 +15,24 @@ from forge.sandbox import ContainerRunner
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.nodes.code_review import run_post_change_review, sync_pr_description
 from forge.workflow.nodes.workspace_setup import prepare_workspace
+from forge.workflow.stats import STAGE_REVIEW
+from forge.workflow.stats_utils import (
+    increment_revision,
+    record_stage_end,
+    record_stage_start,
+    record_tokens,
+)
 from forge.workflow.utils import set_paused, update_state_timestamp
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
 
 _REVIEW_COMMENTS_FILE = ".forge/review-comments.md"
 _REVIEW_PLAN_FILE = ".forge/review-plan.md"
@@ -122,12 +138,17 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
     logger.info(f"Implementing PR review feedback for {ticket_key}")
 
     settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_REVIEW, model_name=settings.llm_model)}
+    state = {**state, **increment_revision(state, STAGE_REVIEW)}
+    node_start = time.monotonic()
 
     try:
         try:
             workspace_path, git = prepare_workspace(state)
             state = {**state, "workspace_path": workspace_path}
         except ValueError as e:
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_REVIEW, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -171,7 +192,7 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
         analysis_prompt = load_prompt("implement-review", ticket_key=ticket_key)
 
         runner = ContainerRunner(settings)
-        await runner.run(
+        result_phase1 = await runner.run(
             workspace_path=Path(workspace_path),
             task_summary=f"Analyze PR review feedback for {ticket_key}",
             task_description=analysis_prompt,
@@ -179,6 +200,10 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
             task_key=f"{ticket_key}-review-analyze",
             repo_name=current_repo,
         )
+
+        input_tokens_1 = _estimate_tokens(analysis_prompt)
+        output_tokens_1 = _estimate_tokens(result_phase1.stdout) if result_phase1.stdout else 0
+        state = {**state, **record_tokens(state, STAGE_REVIEW, input_tokens_1, output_tokens_1)}
 
         # ── Check for objections ──────────────────────────────────────────────
         objections_path = Path(workspace_path) / _REVIEW_OBJECTIONS_FILE
@@ -193,6 +218,8 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
                     repo=_repo,
                     pr_number=pr_number,
                 )
+                machine_time = time.monotonic() - node_start
+                state = {**state, **record_stage_end(state, STAGE_REVIEW, machine_time)}
                 return update_state_timestamp(
                     {
                         **state,
@@ -213,7 +240,7 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
             fix_prompt = load_prompt("implement-review-fix", ticket_key=ticket_key)
 
             runner = ContainerRunner(settings)
-            await runner.run(
+            result_fix = await runner.run(
                 workspace_path=Path(workspace_path),
                 task_summary=f"Implement PR review plan for {ticket_key}",
                 task_description=fix_prompt,
@@ -221,6 +248,12 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
                 task_key=f"{ticket_key}-review-fix",
                 repo_name=current_repo,
             )
+
+            input_tokens_2 = _estimate_tokens(fix_prompt)
+            output_tokens_2 = (
+                _estimate_tokens(result_fix.stdout) if (result_fix and result_fix.stdout) else 0
+            )
+            state = {**state, **record_tokens(state, STAGE_REVIEW, input_tokens_2, output_tokens_2)}
 
             # Commit any uncommitted changes the container left
             if git.has_uncommitted_changes():
@@ -248,6 +281,7 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
                 spec_content=state.get("spec_content", ""),
                 guardrails=state.get("context", {}).get("guardrails", ""),
                 label="review-impl",
+                state=state,
             )
 
             if fork_owner and fork_repo:
@@ -271,6 +305,9 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
         # CI won't re-trigger and wait_for_ci_gate would block forever.
         next_node = "wait_for_ci_gate" if unpushed else "human_review_gate"
 
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_REVIEW, machine_time)}
+
         return update_state_timestamp(
             {
                 **state,
@@ -289,6 +326,8 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
         from forge.workflow.nodes.error_handler import notify_error
 
         await notify_error(state, str(e), "implement_review")
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_REVIEW, machine_time)}
         return {
             **state,
             "last_error": str(e),

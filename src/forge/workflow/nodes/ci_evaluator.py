@@ -2,6 +2,7 @@
 
 import io
 import logging
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,13 @@ from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.nodes.code_review import run_post_change_review, sync_pr_description
 from forge.workflow.nodes.error_handler import notify_error
 from forge.workflow.nodes.workspace_setup import prepare_workspace
+from forge.workflow.stats import STAGE_CI
+from forge.workflow.stats_utils import (
+    increment_revision,
+    record_stage_end,
+    record_stage_start,
+    record_tokens,
+)
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import (
     post_status_comment,
@@ -27,6 +35,13 @@ from forge.workspace.git_ops import GitOperations
 from forge.workspace.manager import Workspace
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
 
 
 async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
@@ -49,8 +64,13 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
     ci_fix_max = state.get("ci_fix_max_attempts", 5)
     settings = get_settings()
 
+    state = {**state, **record_stage_start(state, STAGE_CI, model_name=None)}
+    node_start = time.monotonic()
+
     if not pr_urls:
         logger.info(f"No PRs to evaluate for {ticket_key}")
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
         return update_state_timestamp(
             {
                 **state,
@@ -150,6 +170,8 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
 
         if all_passed:
             logger.info(f"All CI checks passed for {ticket_key}")
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -167,6 +189,8 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
                 f"CI partially complete for {ticket_key} "
                 f"({len(failed_checks)} failed, more still running) — waiting"
             )
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -179,6 +203,8 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
         # This prevents the fix pipeline from firing while real CI jobs are in-progress.
         if not failed_checks:
             logger.info(f"CI checks still running for {ticket_key}, waiting for completion")
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -191,6 +217,8 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
         if ci_fix_attempt >= ci_fix_max:
             logger.warning(f"CI fix attempt limit ({ci_fix_max}) reached for {ticket_key}")
             record_ci_fix_attempt(repo=state.get("current_repo", "unknown"), result="exhausted")
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -203,9 +231,15 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
 
         next_attempt = ci_fix_attempt + 1
         logger.info(f"CI failed for {ticket_key}, attempt {next_attempt}/{ci_fix_max}")
+        from forge.workflow.stats_utils import increment_ci_cycle
+
+        stats_updates = increment_ci_cycle(state)
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
         return update_state_timestamp(
             {
                 **state,
+                **stats_updates,
                 "ci_status": "fixing",
                 "ci_failed_checks": failed_checks,
                 "ci_fix_attempt": next_attempt,
@@ -216,6 +250,8 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
     except Exception as e:
         logger.error(f"CI evaluation failed for {ticket_key}: {e}")
         await notify_error(state, str(e), "ci_evaluator")
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
         return {
             **state,
             "last_error": str(e),
@@ -255,6 +291,11 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
 
     logger.info(f"Attempting CI fix for {ticket_key}")
 
+    settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_CI, model_name=settings.llm_model)}
+    state = {**state, **increment_revision(state, STAGE_CI)}
+    node_start = time.monotonic()
+
     # Post status comment to feature ticket at start of CI fix attempt
     ci_fix_attempt = state.get("ci_fix_attempt", 0)
     ci_fix_max = state.get("ci_fix_max_attempts", 5)
@@ -278,6 +319,8 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
     except Exception as _setup_err:
         logger.error(f"Workspace setup failed for {ticket_key}: {_setup_err}")
         await notify_error(state, str(_setup_err), "attempt_ci_fix")
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
         return {
             **state,
             "last_error": str(_setup_err),
@@ -311,7 +354,7 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
         )
 
         runner = ContainerRunner(settings)
-        await runner.run(
+        result_phase1 = await runner.run(
             workspace_path=Path(workspace_path),
             task_summary=f"Analyze CI failures (attempt {attempt})",
             task_description=analysis_prompt,
@@ -320,8 +363,14 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
             repo_name=state.get("current_repo", ""),
         )
 
+        input_tokens_1 = _estimate_tokens(analysis_prompt)
+        output_tokens_1 = _estimate_tokens(result_phase1.stdout) if result_phase1.stdout else 0
+        state = {**state, **record_tokens(state, STAGE_CI, input_tokens_1, output_tokens_1)}
+
         if not fix_plan_file.exists():
             logger.warning(f"No fix plan written for {ticket_key} — skipping fix phase")
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
             return update_state_timestamp(
                 {
                     **state,
@@ -339,7 +388,7 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
         fix_prompt = load_prompt("fix-ci", fix_plan=fix_plan)
 
         runner = ContainerRunner(settings)
-        await runner.run(
+        result_phase2 = await runner.run(
             workspace_path=Path(workspace_path),
             task_summary=f"Apply CI fix plan (attempt {attempt})",
             task_description=fix_prompt,
@@ -347,6 +396,10 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
             task_key=f"{ticket_key}-ci-fix",
             repo_name=state.get("current_repo", ""),
         )
+
+        input_tokens_2 = _estimate_tokens(fix_prompt)
+        output_tokens_2 = _estimate_tokens(result_phase2.stdout) if result_phase2.stdout else 0
+        state = {**state, **record_tokens(state, STAGE_CI, input_tokens_2, output_tokens_2)}
 
         workspace = Workspace(
             path=Path(workspace_path),
@@ -386,6 +439,7 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
                 spec_content=state.get("spec_content", ""),
                 guardrails=state.get("context", {}).get("guardrails", ""),
                 label=f"ci-fix-{attempt}",
+                state=state,
             )
 
             # Push all commits (CI fix + any review corrections)
@@ -409,6 +463,11 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
                 attempt=attempt,
             )
 
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
+
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
         return update_state_timestamp(
             {
                 **state,
@@ -420,6 +479,8 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
     except Exception as e:
         logger.error(f"CI fix failed for {ticket_key}: {e}")
         await notify_error(state, str(e), "attempt_ci_fix")
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
         return {
             **state,
             "last_error": str(e),

@@ -61,7 +61,7 @@ _COLOR_BOLD = "\033[1m"
 _COLOR_RESET = "\033[0m"
 
 # Column header names.
-_HEADERS = ("Stage", "Iterations", "Machine Time", "Human Time", "Tokens In", "Tokens Out")
+_HEADERS = ("Stage", "Iterations", "Machine Time", "Tokens In", "Tokens Out")
 
 # ---------------------------------------------------------------------------
 # Internal helpers — formatting primitives
@@ -108,34 +108,31 @@ def _colorize(text: str, color: str, *, use_color: bool) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _stage_row_values(label: str, stage: dict | None) -> tuple[str, str, str, str, str, str]:
-    """Return the six cell values for a single stage row.
+def _stage_row_values(label: str, stage: dict | None) -> tuple[str, str, str, str, str]:
+    """Return the five cell values for a single stage row.
 
     When *stage* is ``None`` (stage was never executed), all metric cells
     contain the em-dash sentinel ``"—"``.
     """
     if stage is None:
-        return (label, _DASH, _DASH, _DASH, _DASH, _DASH)
+        return (label, _DASH, _DASH, _DASH, _DASH)
 
     iterations = str(stage.get("iteration_count", 0))
     machine_time = _fmt_seconds(stage.get("machine_time_seconds", 0.0))
-    human_time = _fmt_seconds(stage.get("human_time_seconds", 0.0))
     tokens_in = _fmt_tokens(stage.get("input_tokens", 0))
     tokens_out = _fmt_tokens(stage.get("output_tokens", 0))
-    return (label, iterations, machine_time, human_time, tokens_in, tokens_out)
+    return (label, iterations, machine_time, tokens_in, tokens_out)
 
 
-def _totals_row_values(stages: dict[str, dict]) -> tuple[str, str, str, str, str, str]:
-    """Return the six cell values for the summary totals row."""
+def _totals_row_values(stages: dict[str, dict]) -> tuple[str, str, str, str, str]:
+    """Return the five cell values for the summary totals row."""
     total_machine = sum(s.get("machine_time_seconds", 0.0) for s in stages.values())
-    total_human = sum(s.get("human_time_seconds", 0.0) for s in stages.values())
     total_in = sum(s.get("input_tokens", 0) for s in stages.values())
     total_out = sum(s.get("output_tokens", 0) for s in stages.values())
     return (
         "TOTAL",
         "",
         _fmt_seconds(total_machine),
-        _fmt_seconds(total_human),
         _fmt_tokens(total_in),
         _fmt_tokens(total_out),
     )
@@ -214,7 +211,7 @@ def format_stats_table(
 
     * A metadata block: ticket key, outcome, CI cycles, workflow run ID.
     * A stage-by-stage metrics table with columns:
-      Stage | Iterations | Machine Time | Human Time | Tokens In | Tokens Out
+      Stage | Iterations | Machine Time | Tokens In | Tokens Out
     * A summary totals row (times and tokens summed across all stages).
     * A PR links section (omitted when no PRs were created).
 
@@ -336,7 +333,6 @@ def format_stats_json(stats: WorkflowStats) -> str:
                 "stage_name": stage_data.get("stage_name", stage_key),
                 "iteration_count": stage_data.get("iteration_count", 0),
                 "machine_time_seconds": stage_data.get("machine_time_seconds", 0.0),
-                "human_time_seconds": stage_data.get("human_time_seconds", 0.0),
                 "input_tokens": stage_data.get("input_tokens", 0),
                 "output_tokens": stage_data.get("output_tokens", 0),
                 "started_at": stage_data.get("started_at"),

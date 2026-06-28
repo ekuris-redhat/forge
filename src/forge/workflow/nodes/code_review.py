@@ -7,6 +7,7 @@ Provides two reusable operations:
 """
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,10 +17,19 @@ from forge.integrations.github.client import GitHubClient
 from forge.integrations.jira.client import JiraClient
 from forge.prompts import load_prompt
 from forge.sandbox import ContainerRunner
+from forge.workflow.stats import STAGE_REVIEW
+from forge.workflow.stats_utils import record_stage_end, record_stage_start, record_tokens
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.manager import Workspace
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
 
 
 async def run_post_change_review(
@@ -30,6 +40,7 @@ async def run_post_change_review(
     spec_content: str = "",
     guardrails: str = "",
     label: str = "post-change",
+    state: Any = None,
 ) -> bool:
     """Run the local-review container skill after a code-changing step.
 
@@ -45,11 +56,18 @@ async def run_post_change_review(
         spec_content: Spec to guide the review (optional).
         guardrails: Repository guidelines (optional).
         label: Short label for log messages (e.g. "ci-fix", "post-change").
+        state: Optional workflow state.
 
     Returns:
         True if the review committed any fixes, False otherwise.
     """
     settings = get_settings()
+    node_start = None
+    if state is not None:
+        start_updates = record_stage_start(state, STAGE_REVIEW, model_name=settings.llm_model)
+        state.setdefault("stage_timestamps", {}).update(start_updates.get("stage_timestamps", {}))
+        node_start = time.monotonic()
+
     try:
         task_description = load_prompt(
             "local-review",
@@ -59,7 +77,7 @@ async def run_post_change_review(
         )
 
         runner = ContainerRunner(settings)
-        await runner.run(
+        result = await runner.run(
             workspace_path=Path(workspace_path),
             task_summary=f"Post-{label} code review",
             task_description=task_description,
@@ -67,6 +85,18 @@ async def run_post_change_review(
             task_key=f"{ticket_key}-review-{label}",
             repo_name=current_repo,
         )
+
+        if state is not None:
+            input_tokens = _estimate_tokens(task_description)
+            output_tokens = _estimate_tokens(result.stdout) if result.stdout else 0
+            token_updates = record_tokens(state, STAGE_REVIEW, input_tokens, output_tokens)
+            state.setdefault("stage_timestamps", {}).update(
+                token_updates.get("stage_timestamps", {})
+            )
+            state.setdefault("stage_token_usage", {}).update(
+                token_updates.get("stage_token_usage", {})
+            )
+            state.setdefault("token_usage", {}).update(token_updates.get("token_usage", {}))
 
         git = GitOperations(
             Workspace(
@@ -77,17 +107,28 @@ async def run_post_change_review(
             )
         )
 
+        committed = False
         if git.has_uncommitted_changes():
             git.stage_all()
             git.commit(f"[{ticket_key}] fix: address issues found in {label} review")
             logger.info(f"Committed {label} review fixes for {ticket_key}")
-            return True
+            committed = True
+        else:
+            logger.info(f"Post-{label} review: no fixes needed for {ticket_key}")
 
-        logger.info(f"Post-{label} review: no fixes needed for {ticket_key}")
-        return False
+        if state is not None and node_start is not None:
+            machine_time = time.monotonic() - node_start
+            end_updates = record_stage_end(state, STAGE_REVIEW, machine_time)
+            state.setdefault("stage_timestamps", {}).update(end_updates.get("stage_timestamps", {}))
+
+        return committed
 
     except Exception as e:
         logger.warning(f"Post-{label} review failed (non-fatal): {e}")
+        if state is not None and node_start is not None:
+            machine_time = time.monotonic() - node_start
+            end_updates = record_stage_end(state, STAGE_REVIEW, machine_time)
+            state.setdefault("stage_timestamps", {}).update(end_updates.get("stage_timestamps", {}))
         return False
 
 
@@ -116,6 +157,11 @@ async def sync_pr_description(
     if pr_number is None:
         return
 
+    settings = get_settings()
+    start_updates = record_stage_start(state, STAGE_REVIEW, model_name=settings.llm_model)
+    state.setdefault("stage_timestamps", {}).update(start_updates.get("stage_timestamps", {}))
+    node_start = time.monotonic()
+
     try:
         commit_log = git._run_git(
             "log",
@@ -127,6 +173,9 @@ async def sync_pr_description(
 
         if not commit_log:
             logger.debug("PR description sync skipped — no commits on branch")
+            machine_time = time.monotonic() - node_start
+            end_updates = record_stage_end(state, STAGE_REVIEW, machine_time)
+            state.setdefault("stage_timestamps", {}).update(end_updates.get("stage_timestamps", {}))
             return
 
         github = GitHubClient()
@@ -140,7 +189,7 @@ async def sync_pr_description(
                 current_description=current_body,
                 commit_log=commit_log,
             )
-            agent = ForgeAgent(get_settings())
+            agent = ForgeAgent(settings)
             try:
                 updated_body = await agent.run_task(
                     task="sync-pr-description",
@@ -160,6 +209,17 @@ async def sync_pr_description(
             finally:
                 await agent.close()
 
+            input_tokens = _estimate_tokens(prompt)
+            output_tokens = _estimate_tokens(updated_body) if updated_body else 0
+            token_updates = record_tokens(state, STAGE_REVIEW, input_tokens, output_tokens)
+            state.setdefault("stage_timestamps", {}).update(
+                token_updates.get("stage_timestamps", {})
+            )
+            state.setdefault("stage_token_usage", {}).update(
+                token_updates.get("stage_token_usage", {})
+            )
+            state.setdefault("token_usage", {}).update(token_updates.get("token_usage", {}))
+
             if updated_body:
                 updated_body = agent._strip_preamble(updated_body)
             if updated_body and updated_body.strip() != current_body.strip():
@@ -177,5 +237,12 @@ async def sync_pr_description(
             await github.close()
             await jira.close()
 
+        machine_time = time.monotonic() - node_start
+        end_updates = record_stage_end(state, STAGE_REVIEW, machine_time)
+        state.setdefault("stage_timestamps", {}).update(end_updates.get("stage_timestamps", {}))
+
     except Exception as e:
         logger.warning(f"PR description sync failed (non-fatal): {e}")
+        machine_time = time.monotonic() - node_start
+        end_updates = record_stage_end(state, STAGE_REVIEW, machine_time)
+        state.setdefault("stage_timestamps", {}).update(end_updates.get("stage_timestamps", {}))

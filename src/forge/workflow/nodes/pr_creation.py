@@ -247,9 +247,14 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
             attempt=0,
         )
 
+        from forge.workflow.stats_utils import add_pr_url
+
+        stats_updates = add_pr_url(state, pr_url)
+
         return update_state_timestamp(
             {
                 **state,
+                **stats_updates,
                 "pr_urls": pr_urls,
                 "current_pr_url": pr_url,
                 "current_pr_number": pr_number,

@@ -85,7 +85,6 @@ class StageStats(TypedDict, total=False):
     stage_name: str
     iteration_count: int
     machine_time_seconds: float
-    human_time_seconds: float
     input_tokens: int
     output_tokens: int
     started_at: str | None

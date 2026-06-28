@@ -12,6 +12,7 @@ Architecture:
 """
 
 import logging
+import time
 from pathlib import Path
 
 from forge.config import get_settings
@@ -20,12 +21,21 @@ from forge.models.workflow import TicketType
 from forge.sandbox import ContainerRunner
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.nodes.error_handler import notify_error
+from forge.workflow.stats import STAGE_IMPLEMENTATION
+from forge.workflow.stats_utils import record_stage_end, record_stage_start, record_tokens
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import post_status_comment
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.manager import Workspace
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
 
 
 async def implement_task(state: WorkflowState) -> WorkflowState:
@@ -110,6 +120,12 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
     logger.info(f"Implementing Task {current_task} for {ticket_key}")
 
     settings = get_settings()
+    state = {
+        **state,
+        **record_stage_start(state, STAGE_IMPLEMENTATION, model_name=settings.llm_model),
+    }
+    node_start = time.monotonic()
+
     jira = JiraClient(settings)
 
     try:
@@ -151,6 +167,10 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
             previous_task_keys=implemented_tasks,
         )
 
+        input_tokens = _estimate_tokens(full_description)
+        output_tokens = _estimate_tokens(result.stdout) if (result and result.stdout) else 0
+        state = {**state, **record_tokens(state, STAGE_IMPLEMENTATION, input_tokens, output_tokens)}
+
         if result.success:
             logger.info(f"Container completed successfully for {current_task}")
 
@@ -164,6 +184,9 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
             # Track implemented tasks
             implemented = state.get("implemented_tasks", [])
             implemented.append(current_task)
+
+            machine_time = time.monotonic() - node_start
+            state = {**state, **record_stage_end(state, STAGE_IMPLEMENTATION, machine_time)}
 
             return update_state_timestamp(
                 {
@@ -186,6 +209,8 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
     except Exception as e:
         logger.error(f"Implementation failed for {current_task}: {e}")
         await notify_error(state, str(e), "implement_task")
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_IMPLEMENTATION, machine_time)}
         return {
             **state,
             "last_error": str(e),

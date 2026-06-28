@@ -5,6 +5,7 @@ import contextlib
 import logging
 import re
 import tempfile
+import time
 from pathlib import Path
 
 from langgraph.graph import END
@@ -15,9 +16,24 @@ from forge.models.workflow import ForgeLabel
 from forge.prompts import load_prompt
 from forge.sandbox import ContainerRunner
 from forge.workflow.bug.state import BugState
+from forge.workflow.stats import STAGE_PLANNING
+from forge.workflow.stats_utils import (
+    increment_revision,
+    record_stage_end,
+    record_stage_start,
+    record_tokens,
+)
 from forge.workflow.utils import set_paused, update_state_timestamp
 
 logger = logging.getLogger(__name__)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text length (approx. 4 chars per token)."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
 
 _MAX_PLAN_RETRIES = 3
 _MAX_COMMENT_CHARS = 25_000
@@ -59,6 +75,7 @@ async def regenerate_plan(state: BugState) -> BugState:
     Returns:
         Updated state with new plan_content, routed to plan_approval_gate.
     """
+    state = {**state, **increment_revision(state, STAGE_PLANNING)}
     result = await _run_plan_container(state, "regenerate-plan", retry_node="regenerate_plan")
     if result["current_node"] == "plan_approval_gate":
         return {
@@ -92,6 +109,11 @@ async def _run_plan_container(
     original_plan = state.get("plan_content") or ""
 
     settings = get_settings()
+    state = {**state, **record_stage_start(state, STAGE_PLANNING, model_name=settings.llm_model)}
+    if prompt_name == "regenerate-plan":
+        state = {**state, **increment_revision(state, STAGE_PLANNING)}
+    node_start = time.monotonic()
+
     jira = JiraClient()
 
     try:
@@ -140,6 +162,11 @@ async def _run_plan_container(
                 task_key=f"{ticket_key}-plan",
             )
 
+            # Record tokens
+            input_tokens = _estimate_tokens(task_description)
+            output_tokens = _estimate_tokens(result.stdout) if (result and result.stdout) else 0
+            state = {**state, **record_tokens(state, STAGE_PLANNING, input_tokens, output_tokens)}
+
             if not result.success:
                 raise RuntimeError(
                     f"Container failed with exit_code={result.exit_code}: {result.stderr}"
@@ -150,6 +177,9 @@ async def _run_plan_container(
         comment = _truncate_plan_comment(new_plan)
         await jira.add_comment(ticket_key, comment)
         await jira.set_workflow_label(ticket_key, ForgeLabel.PLAN_PENDING)
+
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_PLANNING, machine_time)}
 
         return update_state_timestamp(
             {
@@ -164,6 +194,8 @@ async def _run_plan_container(
     except Exception as e:
         logger.error(f"_run_plan_container ({prompt_name}) failed for {ticket_key}: {e}")
         new_retry = retry_count + 1
+        machine_time = time.monotonic() - node_start
+        state = {**state, **record_stage_end(state, STAGE_PLANNING, machine_time)}
         return {
             **state,
             "last_error": str(e),
