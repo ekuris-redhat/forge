@@ -105,171 +105,7 @@ Feature Ticket
   -> Human Review
 ```
 
-## Quick Start
-
-### 1. Prerequisites
-
-- Python 3.11+
-- Redis Stack (includes RediSearch module)
-- Podman (for code execution containers)
-- Jira Cloud account with API access
-- GitHub account with Personal Access Token
-- Anthropic API key (or Google Vertex AI)
-
-### 2. Installation
-
-```bash
-# Clone and install
-git clone https://github.com/your-org/forge.git
-cd forge
-uv sync
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your credentials (see Configuration section)
-
-# Build the container image
-podman build -t forge-dev:latest -f containers/Containerfile containers/
-```
-
-### 3. Start Services
-
-```bash
-# Terminal 1 — Redis (the only service that runs in Docker)
-docker compose up redis -d
-
-# Terminal 2 — API server
-uv run uvicorn forge.main:app --reload --port 8000 --host 0.0.0.0
-
-# Terminal 3 — Worker (must run on the host — it spawns Podman containers)
-uv run forge worker
-```
-
-### 4. Configure Webhooks
-
-Set up webhooks in Jira and GitHub pointing to your server:
-
-**Jira Webhook:**
-- URL: `https://your-server.com/api/v1/webhooks/jira`
-- Events: Issue created, updated, commented
-
-**GitHub Webhook:**
-- URL: `https://your-server.com/api/v1/webhooks/github`
-- Events: Pull requests, Pull request reviews, Check runs, Issue comments
-
-
-## Usage
-
-### Starting a Feature Workflow
-
-1. **Create a Jira Feature** with the label `forge:managed`
-2. Forge automatically generates a PRD and posts it to the ticket
-3. **Review and approve** by changing the label to `forge:prd-approved`
-4. Forge generates a behavioral specification
-5. Continue approving through Spec → Epics → Tasks → Implementation
-
-### Workflow Labels
-
-Use these labels in Jira to control the workflow:
-
-| Stage | Pending Label | Approved Label |
-|-------|--------------|----------------|
-| PRD | `forge:prd-pending` | `forge:prd-approved` |
-| Spec | `forge:spec-pending` | `forge:spec-approved` |
-| Plan | `forge:plan-pending` | `forge:plan-approved` |
-| Tasks | `forge:task-pending` | `forge:task-approved` |
-
-### Autonomous Mode (`forge:yolo`)
-
-> **⚠️ Warning:** Adding `forge:yolo` to a ticket removes all human approval checkpoints for planning artifacts. Forge will proceed from ticket creation straight through to implementation without pausing at the PRD, spec, plan, or task gates. Use this only when you trust the requirements and are comfortable with Forge making all planning decisions autonomously.
-
-Add `forge:yolo` to a ticket to enable autonomous mode:
-- Forge skips the PRD, spec, plan, and task approval gates
-- In the bug workflow, Forge auto-selects RCA option 1
-- **The code review gate is never skipped** — a human reviewer is always required on the implementation PR
-- `forge:yolo` can be added at ticket creation or while the workflow is already paused at a gate — Forge will immediately advance
-
-### Jira Comment Syntax
-
-Forge classifies Jira comments by their prefix:
-
-| Prefix | Type | What happens |
-|--------|------|--------------|
-| `!` | Revision request | Forge regenerates the current artifact with your feedback |
-| `?` or `@forge ask` | Question | Forge answers without advancing or regenerating |
-| `>option N` | RCA option selection | Selects a fix option (RCA Option Gate only) |
-| `/forge stats` | Stats request | Forge posts current workflow statistics as a comment |
-| `/forge stats retry` | Stats refresh | Re-posts stats comment with fresh data |
-| _(no prefix)_ | Informational | Ignored by the workflow |
-
-### Requesting Revisions
-
-Start your comment with `!` followed by your feedback. Forge will regenerate the current artifact incorporating your feedback.
-
-```
-! The PRD is missing non-functional requirements for latency
-```
-
-### Asking Questions (Q&A Mode)
-
-While reviewing a PRD or Spec, you can ask clarifying questions without triggering regeneration:
-
-- Start your comment with `?` — e.g., `? Why did you choose REST over GraphQL?`
-- Or use `@forge ask` — e.g., `@forge ask explain the auth approach`
-
-Forge will answer based on the artifact content and generation context, then keep the workflow paused for your approval decision. When you approve, a summary of Q&A exchanges is posted to the ticket for future reference.
-
-!!! note
-    Comments without a recognized prefix (`!`, `?`, `@forge ask`, `>option`) are treated as informational and do not trigger any workflow action.
-
-### Handling Failures
-
-When a workflow fails:
-1. Forge sets the `forge:blocked` label
-2. Forge posts a comment tagging the reporter and assignee
-3. To retry: Add the `forge:retry` label — Forge resumes from the exact node that failed, not from the beginning
-
-> **CI-specific:** If CI fix attempts are exhausted, adding `forge:retry` resets the attempt counter so Forge gets a fresh budget of retries.
-
-### Skipping CI Gates
-
-When a CI check fails due to infrastructure issues unrelated to your code (e.g. a cloud environment outage, quota exhaustion, or a flaky test runner), you can bypass it with a PR comment:
-
-```
-/forge skip-gate <check-name-substring>
-```
-
-**Examples:**
-```
-/forge skip-gate e2e-openstack-ovn
-/forge skip-gate e2e-openstack        ← skips all checks containing this substring
-```
-
-Forge will:
-1. Reply on the PR confirming the skip
-2. Post an audit comment on the Jira ticket
-3. Re-evaluate CI treating the skipped check as passing
-
-To remove a skip:
-```
-/forge unskip-gate e2e-openstack-ovn
-```
-
-Skips persist across pushes — if the infra check fails again on the next commit, it is still skipped. The check name is matched as a case-insensitive substring of the full check name.
-
-> **Note:** Certain checks (e.g. `tide`, Prow's merge-queue) are always pending and are permanently ignored. Configure with `CI_IGNORED_CHECKS` in `.env`.
-
-### Resolving Merge Conflicts
-
-When a PR falls behind `main` and develops merge conflicts, post a comment:
-
-```
-/forge rebase
-```
-
-Forge merges `main` into the PR branch, resolving any conflicts using AI. If the merge is clean, it pushes immediately. If there are conflicts, a container with Claude resolves them using the PR description as context, then force-pushes to the fork. This works from any workflow stage.
-
-See [PR Commands](docs/guide/pr-commands.md) for the full reference.
+At each planning stage, reviewers can approve, request revisions, or ask questions without advancing the workflow.
 
 ### Bug Workflow
 
@@ -329,6 +165,32 @@ Jira + GitHub Webhooks
 ```
 
 Jira and GitHub send webhooks to Forge. Forge queues events, resumes the right workflow state, runs the next node, and posts the result back to Jira or GitHub. Planning runs through the host orchestrator. Code implementation runs in short-lived containers. Agents generate artifacts and local code changes; Forge's workflow and integration layer decide when those outputs become Jira updates, branch pushes, or pull requests.
+
+## Quick Start
+
+To run Forge locally you need:
+
+- Python 3.11+
+- Redis Stack
+- Podman
+- Jira Cloud API access
+- GitHub access
+- LLM backend access through a direct model provider API or Google Vertex AI
+
+Then:
+
+```bash
+git clone https://github.com/Forge-sdlc/forge.git
+cd forge
+uv sync
+cp .env.example .env
+podman build -t forge-dev:latest -f containers/Containerfile containers/
+docker compose up redis -d
+uv run uvicorn forge.main:app --reload --port 8000 --host 0.0.0.0
+uv run forge worker
+```
+
+See [Getting Started](https://Forge-sdlc.github.io/forge/getting-started/) for the full setup path, including environment variables, webhooks, and local development options.
 
 ## Documentation
 
