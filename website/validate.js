@@ -895,6 +895,142 @@ import { JSDOM } from "jsdom";
       testContainerPlayback.remove();
     }
 
+    // --- Test 15: Verify TerminalSimulator Viewport Observer and Debounced Detection ---
+    console.log(
+      "\n[Test 15] Verifying TerminalSimulator Viewport Observer and Debounced Detection:",
+    );
+    const testContainerViewport = document.createElement("div");
+    testContainerViewport.id = "viewport-terminal-test";
+    document.body.appendChild(testContainerViewport);
+
+    // Mock IntersectionObserver in JSDOM
+    class MockIntersectionObserver {
+      constructor(callback, options) {
+        this.callback = callback;
+        this.options = options;
+        this.observedElements = [];
+        MockIntersectionObserver.instances.push(this);
+      }
+      observe(element) {
+        this.observedElements.push(element);
+      }
+      unobserve(element) {
+        this.observedElements = this.observedElements.filter((el) => el !== element);
+      }
+      disconnect() {
+        this.observedElements = [];
+      }
+      trigger(entries) {
+        this.callback(entries);
+      }
+    }
+    MockIntersectionObserver.instances = [];
+    window.IntersectionObserver = MockIntersectionObserver;
+
+    const viewportDelays = [];
+    const viewportCustomSetTimeout = (cb, delay) => {
+      viewportDelays.push(delay);
+      // Map 100ms debounce to 5ms, and pacing/others to 1ms to keep tests fast
+      const finalDelay = delay === 100 ? 5 : 1;
+      return setTimeout(cb, finalDelay);
+    };
+
+    try {
+      const viewportSim = new window.TerminalSimulator({
+        container: "#viewport-terminal-test",
+        useRealDelays: true,
+        minDelay: 100,
+        maxDelay: 200,
+        charDelay: 10,
+        restartDelay: 5000,
+        loop: false,
+        autoStart: false, // let observer handle it
+        setTimeout: viewportCustomSetTimeout,
+      });
+
+      assert(
+        viewportSim.viewportObserver instanceof MockIntersectionObserver,
+        "viewportObserver is instantiated as MockIntersectionObserver",
+      );
+      assert(
+        viewportSim.viewportObserver.observedElements.includes(viewportSim.terminalWindow),
+        "viewportObserver is observing the terminalWindow element",
+      );
+
+      // 1. Trigger visibility >= 10% (e.g. 0.1)
+      viewportSim.viewportObserver.trigger([{
+        intersectionRatio: 0.1,
+        target: viewportSim.terminalWindow,
+      }]);
+
+      assert(
+        viewportSim.wasVisible === undefined,
+        "Debounced callback has not run immediately on trigger",
+      );
+
+      // Wait for mapped 5ms debounce to fire
+      await new Promise((resolve) => setTimeout(resolve, 15));
+
+      assert(
+        viewportSim.wasVisible === true,
+        "Debounced callback executed and set wasVisible to true",
+      );
+      assert(
+        viewportSim.currentStep === 0 && !viewportSim.isPaused,
+        "Simulator automatically starts playing from step 1 when visibility is 10% or higher",
+      );
+      assert(
+        viewportDelays.includes(100),
+        "Scroll/intersection trigger callbacks are debounced by exactly 100ms",
+      );
+
+      // Wait a tiny bit for simulation progression
+      await new Promise((resolve) => setTimeout(resolve, 15));
+
+      // 2. Trigger visibility < 10% (e.g. 0.05)
+      viewportSim.viewportObserver.trigger([{
+        intersectionRatio: 0.05,
+        target: viewportSim.terminalWindow,
+      }]);
+
+      assert(
+        viewportSim.isPaused === false,
+        "Debounced callback has not run immediately on drop below 10%",
+      );
+
+      // Wait for mapped 5ms debounce to fire
+      await new Promise((resolve) => setTimeout(resolve, 15));
+
+      assert(
+        viewportSim.isPaused === true,
+        "Simulator pauses automatically when visibility drops below 10%",
+      );
+
+      // 3. Trigger visibility back to >= 10% (e.g. 0.12)
+      viewportSim.viewportObserver.trigger([{
+        intersectionRatio: 0.12,
+        target: viewportSim.terminalWindow,
+      }]);
+
+      assert(
+        viewportSim.isPaused === true,
+        "Debounced callback has not run immediately on visibility increase",
+      );
+
+      // Wait for mapped 5ms debounce to fire
+      await new Promise((resolve) => setTimeout(resolve, 15));
+
+      assert(
+        viewportSim.isPaused === false,
+        "Simulator automatically starts playing from step 1 again when visibility is 10% or higher",
+      );
+
+      viewportSim.destroy();
+    } finally {
+      testContainerViewport.remove();
+      delete window.IntersectionObserver;
+    }
+
     console.log("\n🎉 All Component Unit Tests passed successfully!");
   } catch (e) {
     console.error("\n❌ Component Unit Tests failed:");

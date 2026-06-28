@@ -67,6 +67,10 @@ export class TerminalSimulator {
     this.isPausedState = false;
     this.isCompletedState = false;
     this.controlsLayout = options.controlsLayout || "within"; // 'within' (inside chrome) or 'beneath' (outside chrome)
+    this.useViewportDetection = options.useViewportDetection !== undefined ? options.useViewportDetection : true;
+    this.wasVisible = undefined;
+    this.activeDebounceTimers = [];
+    this.viewportObserver = null;
 
     // Element references
     this.terminalWindow = null;
@@ -124,7 +128,9 @@ export class TerminalSimulator {
 
     this.bindEvents();
 
-    if (options.autoStart !== false) {
+    if (this.useViewportDetection && typeof window !== "undefined" && "IntersectionObserver" in window) {
+      this.setupViewportObserver();
+    } else if (options.autoStart !== false) {
       this.start();
     }
   }
@@ -214,6 +220,10 @@ export class TerminalSimulator {
     if (this.restartTimer) {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
+    }
+    if (this.activeDebounceTimers) {
+      this.activeDebounceTimers.forEach((t) => this.clearTimeout(t));
+      this.activeDebounceTimers = [];
     }
   }
 
@@ -446,8 +456,52 @@ export class TerminalSimulator {
     return this.currentLogIndex;
   }
 
+  setupViewportObserver() {
+    const elementToObserve = this.terminalWindow || this.container || document.querySelector(".terminal-window");
+    if (!elementToObserve) return;
+
+    const debouncedCallback = this.debounce((entries) => {
+      entries.forEach((entry) => {
+        const isNowVisible = entry.intersectionRatio >= 0.1;
+        if (isNowVisible !== this.wasVisible) {
+          this.wasVisible = isNowVisible;
+          if (isNowVisible) {
+            this.start();
+          } else {
+            this.pause();
+          }
+        }
+      });
+    }, 100);
+
+    this.viewportObserver = new IntersectionObserver((entries) => {
+      debouncedCallback(entries);
+    }, {
+      threshold: [0.0, 0.1, 0.2]
+    });
+
+    this.viewportObserver.observe(elementToObserve);
+  }
+
+  debounce(func, wait) {
+    let timeout;
+    return (...args) => {
+      this.clearTimeout(timeout);
+      timeout = this.setTimeout(() => {
+        func.apply(this, args);
+      }, wait);
+      if (this.activeDebounceTimers) {
+        this.activeDebounceTimers.push(timeout);
+      }
+    };
+  }
+
   destroy() {
     this.clearTimers();
+    if (this.viewportObserver) {
+      this.viewportObserver.disconnect();
+      this.viewportObserver = null;
+    }
     if (this.pauseBtn) {
       this.pauseBtn.removeEventListener("click", this.togglePlayPause);
     }
