@@ -4,7 +4,7 @@ Forge exposes a FastAPI server that receives webhooks and serves metrics.
 
 ## Base URL
 
-```
+```http
 http://localhost:8000
 ```
 
@@ -12,25 +12,21 @@ http://localhost:8000
 
 ### Health Check
 
-```http
-GET /api/v1/health
-```
+![GET](https://img.shields.io/badge/GET-green?style=flat-square) `/api/v1/health`
 
 Returns HTTP 200 when the API server is running. Does not check worker or Redis connectivity.
 
 **Response:**
 
 ```json
-{"status": "ok"}
+{ "status": "ok" }
 ```
 
 ---
 
 ### Early Access Waitlist
 
-```http
-POST /api/v1/waitlist
-```
+![POST](https://img.shields.io/badge/POST-blue?style=flat-square) `/api/v1/waitlist`
 
 Registers a new user to the early access waitlist. Validates format, blocks personal email domains, and enforces uniqueness of the business email address.
 
@@ -66,16 +62,14 @@ Registers a new user to the early access waitlist. Validates format, blocks pers
 
 ### Jira Webhook
 
-```http
-POST /api/v1/webhooks/jira
-```
+![POST](https://img.shields.io/badge/POST-blue?style=flat-square) `/api/v1/webhooks/jira`
 
 Receives Jira webhook events. Validates the signature and enqueues the event for async processing by the worker.
 
 **Required headers:**
 
-| Header | Description |
-|--------|-------------|
+| Header            | Description                                                  |
+| ----------------- | ------------------------------------------------------------ |
 | `X-Hub-Signature` | HMAC-SHA256 of the request body, using `JIRA_WEBHOOK_SECRET` |
 
 **Supported events:**
@@ -90,16 +84,14 @@ Returns HTTP 200 immediately. Processing is asynchronous.
 
 ### GitHub Webhook
 
-```http
-POST /api/v1/webhooks/github
-```
+![POST](https://img.shields.io/badge/POST-blue?style=flat-square) `/api/v1/webhooks/github`
 
 Receives GitHub webhook events. Validates the signature and enqueues for async processing.
 
 **Required headers:**
 
-| Header | Description |
-|--------|-------------|
+| Header                | Description                                                    |
+| --------------------- | -------------------------------------------------------------- |
 | `X-Hub-Signature-256` | HMAC-SHA256 of the request body, using `GITHUB_WEBHOOK_SECRET` |
 
 **Supported events:**
@@ -115,20 +107,18 @@ Returns HTTP 200 immediately. Processing is asynchronous.
 
 ### Prometheus Metrics
 
-```http
-GET /metrics
-```
+![GET](https://img.shields.io/badge/GET-green?style=flat-square) `/metrics`
 
 Exposes Prometheus-format metrics for the API server.
 
 **Key metrics:**
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `forge_workflows_started_total` | Counter | Workflows started, labeled by type |
-| `forge_workflows_completed_total` | Counter | Workflows completed |
-| `forge_ci_fix_attempts_total` | Counter | CI fix attempts |
-| `forge_agent_duration_seconds` | Histogram | Agent execution time |
+| Metric                            | Type      | Description                        |
+| --------------------------------- | --------- | ---------------------------------- |
+| `forge_workflows_started_total`   | Counter   | Workflows started, labeled by type |
+| `forge_workflows_completed_total` | Counter   | Workflows completed                |
+| `forge_ci_fix_attempts_total`     | Counter   | CI fix attempts                    |
+| `forge_agent_duration_seconds`    | Histogram | Agent execution time               |
 
 Worker metrics are available separately at `http://localhost:8001/metrics`.
 
