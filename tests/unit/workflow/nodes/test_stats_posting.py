@@ -176,8 +176,6 @@ class TestPostTerminalStats:
         mock_post = AsyncMock(return_value=True)
         mock_ensure = AsyncMock(return_value=True)
 
-        feature_state["last_error"] = "build failed"
-
         with (
             patch("forge.workflow.nodes.stats_posting.post_stats_comment", mock_post),
             patch("forge.workflow.nodes.stats_posting.ensure_stats_is_final_comment", mock_ensure),
@@ -187,8 +185,8 @@ class TestPostTerminalStats:
         mock_post.assert_awaited_once_with(
             ticket_key="FEAT-1",
             stats=feature_state,
-            outcome="Failed",
-            outcome_detail="build failed",
+            outcome="Completed",
+            outcome_detail=None,
         )
 
     @pytest.mark.asyncio
@@ -228,7 +226,7 @@ class TestPostTerminalStats:
 
     @pytest.mark.asyncio
     async def test_blocked_outcome_for_blocked_state(self, feature_state):
-        """Blocked outcome is passed when is_blocked is True."""
+        """Blocked outcome is skipped from posting."""
         feature_state["is_blocked"] = True
         feature_state["feedback_comment"] = "Waiting on legal approval"
 
@@ -241,13 +239,11 @@ class TestPostTerminalStats:
         ):
             await post_terminal_stats(feature_state)
 
-        call_kwargs = mock_post.call_args.kwargs
-        assert call_kwargs["outcome"] == "Blocked"
-        assert call_kwargs["outcome_detail"] == "Waiting on legal approval"
+        mock_post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_failed_outcome_for_error_state(self, feature_state):
-        """Failed outcome is passed when last_error is set."""
+        """Failed outcome is skipped from posting."""
         feature_state["last_error"] = "container exited with code 137"
 
         mock_post = AsyncMock(return_value=True)
@@ -259,9 +255,7 @@ class TestPostTerminalStats:
         ):
             await post_terminal_stats(feature_state)
 
-        call_kwargs = mock_post.call_args.kwargs
-        assert call_kwargs["outcome"] == "Failed"
-        assert call_kwargs["outcome_detail"] == "container exited with code 137"
+        mock_post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_handles_bug_state(self, bug_state):
@@ -278,10 +272,7 @@ class TestPostTerminalStats:
             result = await post_terminal_stats(bug_state)
 
         assert result == {}
-        call_kwargs = mock_post.call_args.kwargs
-        assert call_kwargs["ticket_key"] == "BUG-1"
-        assert call_kwargs["outcome"] == "Failed"
-        assert call_kwargs["outcome_detail"] == "triage failed"
+        mock_post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_non_blocking_on_post_stats_failure(self, feature_state):
@@ -360,7 +351,7 @@ class TestPostTerminalStats:
 
     @pytest.mark.asyncio
     async def test_uses_pre_set_workflow_outcome(self, feature_state):
-        """If workflow_outcome is already set in state it is forwarded unchanged."""
+        """If workflow_outcome is already set in state it is checked."""
         feature_state["workflow_outcome"] = "Blocked"
         feature_state["stats_outcome_reason"] = "Awaiting vendor API"
         feature_state["last_error"] = None  # would normally produce 'Completed'
@@ -374,6 +365,4 @@ class TestPostTerminalStats:
         ):
             await post_terminal_stats(feature_state)
 
-        call_kwargs = mock_post.call_args.kwargs
-        assert call_kwargs["outcome"] == "Blocked"
-        assert call_kwargs["outcome_detail"] == "Awaiting vendor API"
+        mock_post.assert_not_awaited()

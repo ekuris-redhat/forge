@@ -160,8 +160,8 @@ class TestBuildStageRow:
         # Should show em-dash in all metric columns, with spaces
         assert "PRD" in row
         assert "—" in row
-        # 6 dash columns (Iterations, Machine Time, Human Time, Input, Output, Cost)
-        assert row.count("—") == 6
+        # 5 dash columns (Iterations, Machine Time, Input, Output, Cost)
+        assert row.count("—") == 5
 
     def test_none_stage_has_spacing(self):
         row = _build_stage_row("PRD", None)
@@ -179,7 +179,6 @@ class TestBuildStageRow:
         assert "| PRD |" in row
         assert "| 2 |" in row
         assert "| 1m 30s |" in row
-        assert "| 1m 0s |" in row
         assert "| 1,000 |" in row
         assert "| 500 |" in row
 
@@ -383,7 +382,7 @@ class TestFormatStatsSummaryStructure:
     def test_contains_table_header_row_with_spacing(self):
         result = format_stats_summary(_minimal_stats(), "completed")
         assert (
-            "|| Stage || Iterations || Machine Time || Human Time ||"
+            "|| Stage || Iterations || Machine Time ||"
             " Input Tokens || Output Tokens || Cost ||" in result
         )
 
@@ -450,7 +449,6 @@ class TestFormatStatsSummaryStageData:
             stage_name="prd",
             iteration_count=3,
             machine_time_seconds=3661.0,
-            human_time_seconds=120.0,
             input_tokens=5000,
             output_tokens=1500,
         )
@@ -459,7 +457,6 @@ class TestFormatStatsSummaryStageData:
         assert "| PRD |" in result
         assert "| 3 |" in result
         assert "| 1h 1m 1s |" in result
-        assert "| 2m 0s |" in result
         assert "| 5,000 |" in result
         assert "| 1,500 |" in result
 

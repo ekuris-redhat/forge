@@ -28,7 +28,6 @@ def _state_with_stage(stage_name: str, **overrides) -> dict:
         "stage_name": stage_name,
         "iteration_count": 0,
         "machine_time_seconds": 0.0,
-        "human_time_seconds": 0.0,
         "input_tokens": 0,
         "output_tokens": 0,
         "started_at": "2024-01-01T00:00:00+00:00",
@@ -58,7 +57,6 @@ class TestRecordStageStart:
 
         assert stage["iteration_count"] == 0
         assert stage["machine_time_seconds"] == 0.0
-        assert stage["human_time_seconds"] == 0.0
         assert stage["input_tokens"] == 0
         assert stage["output_tokens"] == 0
 
@@ -150,18 +148,6 @@ class TestRecordStageEnd:
         assert result["stage_timestamps"]["implement"]["machine_time_seconds"] == pytest.approx(
             35.5
         )
-
-    def test_accumulates_human_time(self):
-        state = _state_with_stage("implement", human_time_seconds=100.0)
-        result = record_stage_end(state, "implement", machine_time=0.0, human_time=50.0)
-
-        assert result["stage_timestamps"]["implement"]["human_time_seconds"] == pytest.approx(150.0)
-
-    def test_human_time_defaults_to_zero(self):
-        state = _state_with_stage("implement")
-        result = record_stage_end(state, "implement", machine_time=10.0)
-
-        assert result["stage_timestamps"]["implement"]["human_time_seconds"] == pytest.approx(0.0)
 
     def test_handles_non_existent_stage(self):
         """Calling on a stage that was never started should not raise."""

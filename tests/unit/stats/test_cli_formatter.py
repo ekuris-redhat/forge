@@ -165,11 +165,10 @@ class TestColorize:
 
 class TestStageRowValues:
     def test_none_stage_returns_dashes(self):
-        label, itr, mt, ht, ti, to = _stage_row_values("PRD", None)
+        label, itr, mt, ti, to = _stage_row_values("PRD", None)
         assert label == "PRD"
         assert itr == _DASH
         assert mt == _DASH
-        assert ht == _DASH
         assert ti == _DASH
         assert to == _DASH
 
@@ -181,11 +180,10 @@ class TestStageRowValues:
             input_tokens=1000,
             output_tokens=500,
         )
-        label, itr, mt, ht, ti, to = _stage_row_values("PRD", stage)
+        label, itr, mt, ti, to = _stage_row_values("PRD", stage)
         assert label == "PRD"
         assert itr == "2"
         assert mt == "1m 30s"
-        assert ht == "30s"
         assert ti == "1,000"
         assert to == "500"
 
@@ -196,10 +194,9 @@ class TestStageRowValues:
 
     def test_missing_stage_fields_default_to_zero(self):
         stage: dict = {}
-        label, itr, mt, ht, ti, to = _stage_row_values("CI", stage)
+        label, itr, mt, ti, to = _stage_row_values("CI", stage)
         assert itr == "0"
         assert mt == "0s"
-        assert ht == "0s"
         assert ti == "0"
         assert to == "0"
 
@@ -211,11 +208,10 @@ class TestStageRowValues:
 
 class TestTotalsRowValues:
     def test_empty_stages_gives_zeros(self):
-        label, itr, mt, ht, ti, to = _totals_row_values({})
+        label, itr, mt, ti, to = _totals_row_values({})
         assert label == "TOTAL"
         assert itr == ""
         assert mt == "0s"
-        assert ht == "0s"
         assert ti == "0"
         assert to == "0"
 
@@ -234,10 +230,9 @@ class TestTotalsRowValues:
                 output_tokens=1000,
             ),
         }
-        label, _, mt, ht, ti, to = _totals_row_values(stages)
+        label, _, mt, ti, to = _totals_row_values(stages)
         assert label == "TOTAL"
         assert mt == "3m 0s"
-        assert ht == "1m 30s"
         assert ti == "3,000"
         assert to == "1,500"
 
@@ -298,7 +293,6 @@ class TestFormatStatsTableBasicStructure:
         assert "Stage" in result
         assert "Iterations" in result
         assert "Machine Time" in result
-        assert "Human Time" in result
         assert "Tokens In" in result
         assert "Tokens Out" in result
 
@@ -358,8 +352,8 @@ class TestFormatStatsTableUnexecutedStages:
         stats = _make_stats(stages={})
         result = format_stats_table(stats)
         count = result.count(_DASH)
-        # 7 feature stages × 5 metric columns = 35 dashes
-        assert count == 35
+        # 7 feature stages × 4 metric columns = 28 dashes
+        assert count == 28
 
 
 # ---------------------------------------------------------------------------
@@ -379,12 +373,6 @@ class TestFormatStatsTableMetrics:
         stats = _make_stats(stages={"prd": stage})
         result = format_stats_table(stats)
         assert "1h 1m 1s" in result
-
-    def test_human_time_displayed(self):
-        stage = _make_stage(human_time_seconds=90.0)
-        stats = _make_stats(stages={"prd": stage})
-        result = format_stats_table(stats)
-        assert "1m 30s" in result
 
     def test_input_tokens_displayed(self):
         stage = _make_stage(input_tokens=1_234_000)
@@ -684,7 +672,6 @@ class TestFormatStatsJsonFields:
         assert "stage_name" in prd
         assert "iteration_count" in prd
         assert "machine_time_seconds" in prd
-        assert "human_time_seconds" in prd
         assert "input_tokens" in prd
         assert "output_tokens" in prd
         assert "started_at" in prd
@@ -695,7 +682,6 @@ class TestFormatStatsJsonFields:
         assert isinstance(prd["stage_name"], str)
         assert isinstance(prd["iteration_count"], int)
         assert isinstance(prd["machine_time_seconds"], float)
-        assert isinstance(prd["human_time_seconds"], float)
         assert isinstance(prd["input_tokens"], int)
         assert isinstance(prd["output_tokens"], int)
         assert isinstance(prd["started_at"], str)
