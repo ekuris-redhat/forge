@@ -465,9 +465,6 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
 
         machine_time = time.monotonic() - node_start
         state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
-
-        machine_time = time.monotonic() - node_start
-        state = {**state, **record_stage_end(state, STAGE_CI, machine_time)}
         return update_state_timestamp(
             {
                 **state,
