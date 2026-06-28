@@ -22,6 +22,8 @@ graph TD
 
 - [Getting Started](getting-started.md) — Set up Forge in 10 minutes
 - [Feature Workflow](guide/feature-workflow.md) — How features flow through Forge
+- [Weekly Reporting Guide](guide/weekly-reporting.md) — Automated project-wide metrics and notifications
+- [CLI Reference](reference/cli.md) — Command-line interface documentation
 - [Developer Guide](developer-guide.md) — Full local development reference
 - [Skills System](skills/index.md) — Customize Forge for your stack
 - [Contributing](dev/contributing.md) — How to contribute

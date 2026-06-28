@@ -125,6 +125,42 @@ These variables are used by `docker-compose.yml`, `devtools/docker-compose.dev.y
 | `REDIS_HOST` | Redis host for standalone Grafana compose |
 | `REDIS_PORT` | Redis port for standalone Grafana compose |
 
+## Workflow Statistics and Weekly Reporting
+
+These settings configure resource tracking, cost metrics, cost alerting, and automated weekly reporting features within the Forge orchestrator.
+
+### Environment Variables and Pydantic Properties
+
+| Environment Variable | Settings Property | Type | Default Value | Description |
+|----------------------|-------------------|------|---------------|-------------|
+| `STATS_COST_ALERT_ENABLED` | `stats_cost_alert_enabled` | `bool` | `True` | Toggle to enable/disable cost alerts if token or dollar thresholds are exceeded. |
+| `STATS_COST_ALERT_THRESHOLD_TOKENS` | `stats_cost_alert_threshold_tokens` | `int` | `1,000,000` | Cumulative token limit threshold (input + output across all stages) for triggering warnings. |
+| `STATS_COST_ALERT_THRESHOLD_DOLLARS` | `stats_cost_alert_threshold_dollars` | `float \| None` | `None` | Optional monetary threshold in USD for triggering cost warnings. If set, cost warnings are triggered based on calculated costs instead of token counts. |
+| `LLM_PRICING` | `llm_pricing` | `dict[str, dict[str, float]]` | (JSON) | Pricing structure mapping LLM models or model substrings (longest match wins) to input and output token rates per million tokens. Configured as a JSON-encoded string when set via environment variables. |
+| `FORGE_WEEKLY_REPORT_NOTIFY` | `weekly_report_notify` | `str` | `""` | Global fallback notification recipients. Set to a comma-separated list of Jira account IDs (e.g. `abc123,def456`) or the special value `project-leads` to defer to the per-project property `forge.weekly-report.notify`. |
+
+The default JSON structure for `LLM_PRICING` rates (USD per million tokens) is as follows:
+
+```json
+{
+  "claude-opus-4": {"input": 15.00, "output": 75.00},
+  "claude-sonnet-4": {"input": 3.00, "output": 15.00},
+  "claude-haiku-3-5": {"input": 0.80, "output": 4.00},
+  "gemini-3.5-flash": {"input": 1.50, "output": 9.00},
+  "gemini-2.5-pro": {"input": 1.25, "output": 10.00},
+  "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
+  "gemini-2.0-flash": {"input": 0.10, "output": 0.40}
+}
+```
+
+### Jira Project Properties
+
+You can customize the notification list for a specific project. Setting this property via the Jira project properties REST API overrides or resolves the `FORGE_WEEKLY_REPORT_NOTIFY` setting:
+
+- **Property Name:** `forge.weekly-report.notify`
+- **Value:** A JSON array of Jira account IDs to be tagged/notified on weekly reports (e.g., `["account-id-1", "account-id-2"]`).
+
+
 ### MCP Servers
 
 MCP server configuration lives in `mcp-servers.json`, not `.env`. See the [MCP servers section](https://github.com/forge-sdlc/forge/blob/main/mcp-servers.json) of the repository.

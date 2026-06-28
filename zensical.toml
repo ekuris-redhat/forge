@@ -11,6 +11,7 @@ nav = [
   {"Getting Started" = "getting-started.md"},
   {"User Guide" = [
     {"Feature Workflow" = "guide/feature-workflow.md"},
+    {"Weekly Reporting" = "guide/weekly-reporting.md"},
     {"Bug Workflow" = "guide/bug-workflow.md"},
     {"Jira Labels" = "guide/labels.md"},
     {"PR Commands" = "guide/pr-commands.md"},
@@ -28,6 +29,7 @@ nav = [
   ]},
   {"Reference" = [
     {"API Endpoints" = "reference/api.md"},
+    {"CLI Reference" = "reference/cli.md"},
     {"Configuration" = "reference/config.md"},
     {"Proposals" = "reference/proposals.md"},
   ]},

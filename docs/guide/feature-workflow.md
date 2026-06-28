@@ -199,6 +199,52 @@ To retry, add the `forge:retry` label. Forge resumes from the exact node that fa
 !!! tip "CI retries"
     If CI fix attempts are exhausted, `forge:retry` resets the attempt counter for a fresh budget of retries.
 
+## Workflow Statistics
+
+At the end of a workflow execution (when the ticket reaches a terminal state), Forge aggregates execution data and posts a comprehensive summary on the Jira ticket. This helps teams track efficiency, analyze execution bottlenecks, and monitor LLM token costs.
+
+### Summary Format
+
+The summary is generated as a Markdown table with the following columns:
+
+| Column | Description |
+|---|---|
+| **Stage** | The name of the pipeline stage (e.g., PRD, Spec, Epics, Tasks, Implementation, CI, Review). |
+| **Iterations** | The number of attempts or iterations executed during that stage. |
+| **Machine Time** | Monotonic duration of active processing by Forge during that stage (formatted as `1h 2m 3s`). |
+| **Input Tokens** | Estimated number of LLM input tokens consumed during that stage. |
+| **Output Tokens** | Estimated number of LLM output tokens consumed during that stage. |
+| **Cost** | Calculated cost based on the stage's token consumption and LLM pricing mappings. |
+
+At the bottom of the table, a **Total** rollup row displays sum totals across all executed stages.
+
+### Cost Alerting
+
+If the cumulative resource consumption exceeds specified safety thresholds, a prominent warning alert is appended to the statistics summary comment.
+
+Alert thresholds are defined globally (or can be customized in the configuration):
+- **Token Threshold:** Triggers if cumulative input + output tokens exceed a specified value (default: `1,000,000` tokens).
+- **Dollar Threshold:** Triggers if cumulative calculated cost exceeds a specified monetary value (default: disabled/`None`).
+
+When triggered, a cost warning similar to the following is displayed directly below the summary table:
+
+```text
+⚠️ WARNING: This workflow run exceeded the configured cost/token limits!
+Please review the resource usage details above for potential optimizations.
+```
+
+---
+
+## On-Demand Stats Commands
+
+In addition to automatic summary posting at the end of a successful workflow run, team members can request or force-refresh stats at any time using Jira comment commands.
+
+| Command | Action | Description |
+|---|---|---|
+| `/forge stats` | Request Stats | Generates the current statistics table and posts it as a comment on the Jira ticket, reflecting metrics up to the current stage of execution. |
+| `/forge stats retry` | Refresh Stats | Forces a fresh recalculation of statistics and re-posts the summary table. This ensures the stats comment remains updated as the final comment on the Jira issue. |
+
+
 ## Labels Summary
 
 See [Jira Labels](labels.md) for the complete reference.
