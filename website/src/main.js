@@ -152,6 +152,39 @@ document.addEventListener("DOMContentLoaded", () => {
   const visNodes = document.querySelectorAll(".vis-node");
   const visPaths = document.querySelectorAll(".vis-path");
 
+  const phaseDetails = {
+    "1": {
+      phase: "Phase 1",
+      title: "Jira Ticket",
+      desc: "Forge listens for Jira issue events and automatically triggers when the <code>forge:managed</code> label is added. It parses the issue description and comments to initialize the development workflow."
+    },
+    "2": {
+      phase: "Phase 2",
+      title: "Human-Gated Plan",
+      desc: "The system conducts a thorough root cause analysis and generates a step-by-step implementation plan. This plan remains gated, requiring explicit developer approval before any code is modified."
+    },
+    "3": {
+      phase: "Phase 3",
+      title: "Containerized Implementation",
+      desc: "Once approved, an ephemeral, secure sandbox container is spun up via Podman/Docker. A deep developer agent implements the planned changes in this isolated filesystem."
+    },
+    "4": {
+      phase: "Phase 4",
+      title: "GitHub PR",
+      desc: "After writing the code, the agent automatically runs code quality checks, lints files, and opens a pull request. The PR description is fully synchronized with Jira ticket context."
+    },
+    "5": {
+      phase: "Phase 5",
+      title: "CI Self-Healing",
+      desc: "If CI/CD pipelines fail due to testing or compilation errors, Forge's self-healing agent acts. It analyzes the failure logs and pushes targeted hotfixes autonomously to recover the build."
+    },
+    "6": {
+      phase: "Phase 6",
+      title: "Human Review",
+      desc: "The completed pull request undergoes thorough human review for security and style compliance. Merging the PR signals completion, closing out the issue and updating the status."
+    }
+  };
+
   const activateStep = (stepNum) => {
     // Activate step button
     stepButtons.forEach((btn) => {
@@ -181,6 +214,39 @@ document.addEventListener("DOMContentLoaded", () => {
         path.classList.remove("active");
       }
     });
+
+    // Update node status labels dynamically
+    visNodes.forEach((node) => {
+      const currentStep = node.getAttribute("data-step");
+      if (currentStep) {
+        const statusElement = node.querySelector(".node-status");
+        if (statusElement) {
+          if (currentStep === stepNum) {
+            statusElement.textContent = "Active";
+            statusElement.className = "node-status status-active";
+          } else if (parseInt(currentStep, 10) < parseInt(stepNum, 10)) {
+            statusElement.textContent = "Completed";
+            statusElement.className = "node-status status-completed";
+          } else {
+            statusElement.textContent = "Pending";
+            statusElement.className = "node-status status-pending";
+          }
+        }
+      }
+    });
+
+    // Update dynamic description block
+    const descBlock = document.getElementById("workflow-description-block");
+    if (descBlock && phaseDetails[stepNum]) {
+      const details = phaseDetails[stepNum];
+      descBlock.innerHTML = `
+        <div class="description-card">
+          <span class="description-badge">${details.phase}</span>
+          <h3 class="description-title">${details.title}</h3>
+          <p class="description-text">${details.desc}</p>
+        </div>
+      `;
+    }
   };
 
   stepButtons.forEach((btn) => {
@@ -189,6 +255,9 @@ document.addEventListener("DOMContentLoaded", () => {
       activateStep(stepNum);
     });
   });
+
+  // Highlight step 1 on load
+  activateStep("1");
 
   // --- Terminal Simulation Logic ---
   const terminalBody = document.getElementById("terminal-body");

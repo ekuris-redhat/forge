@@ -227,82 +227,99 @@
       <section id="workflow" class="section workflow-section">
         <div class="container">
           <div class="section-grid workflow-grid">
-            <!-- Left: Description and Step Selectors -->
-            <div class="workflow-content">
-              <span class="badge">Orchestration</span>
+            <div class="workflow-header-block">
+              <span class="badge">Orchestration Flow</span>
               <h2 class="section-title text-left">Interactive Workflow</h2>
               <p class="section-description">
-                Forge acts as an autonomous workforce of specialized AI agents. Select a step below to see how Claude, LangGraph, and isolated Podman containers coordinate to resolve tickets.
+                Forge coordinates an autonomous workforce of specialized AI agents. Click any of the 6 phase nodes below to visualize the end-to-end SDLC automation.
               </p>
-              <div class="workflow-steps">
-                <button class="workflow-step-btn active" data-step="1">
-                  <span class="step-num">01</span>
-                  <div class="step-text">
-                    <h4 class="step-title">Jira Webhook Trigger</h4>
-                    <p class="step-desc">A ticket is labeled with <code>forge:managed</code>, triggering LangGraph.</p>
+            </div>
+            
+            <div class="workflow-visualization-container">
+              <!-- Timeline Track Line -->
+              <div class="workflow-timeline-track">
+                <!-- SVG Connecting Lines for Test Compatibility & Animation -->
+                <svg class="vis-lines" width="100%" height="100%" preserveAspectRatio="none">
+                  <path id="line-1-2" class="vis-path" d="" />
+                  <path id="line-2-3" class="vis-path" d="" />
+                  <path id="line-3-4" class="vis-path" d="" />
+                  <path id="line-4-5" class="vis-path" d="" />
+                  <path id="line-5-6" class="vis-path" d="" />
+                </svg>
+              </div>
+
+              <!-- 6 Sequential Nodes Grid -->
+              <div class="workflow-nodes-grid">
+                <!-- Node 1: Jira Ticket -->
+                <button class="workflow-step-btn vis-node active" id="node-1" data-step="1" aria-label="Step 1: Jira Ticket">
+                  <div class="node-number-badge">1</div>
+                  <div class="node-icon">🎫</div>
+                  <div class="node-content-wrap">
+                    <h4 class="node-title">Jira Ticket</h4>
+                    <span class="node-status status-active">Active</span>
                   </div>
                 </button>
-                <button class="workflow-step-btn" data-step="2">
-                  <span class="step-num">02</span>
-                  <div class="step-text">
-                    <h4 class="step-title">RCA & Plan Generation</h4>
-                    <p class="step-desc">The planning agent conducts root cause analysis and proposes a solution.</p>
+
+                <!-- Node 2: Human-Gated Plan -->
+                <button class="workflow-step-btn vis-node" id="node-2" data-step="2" aria-label="Step 2: Human-Gated Plan">
+                  <div class="node-number-badge">2</div>
+                  <div class="node-icon">🧠</div>
+                  <div class="node-content-wrap">
+                    <h4 class="node-title">Human-Gated Plan</h4>
+                    <span class="node-status status-pending">Pending</span>
                   </div>
                 </button>
-                <button class="workflow-step-btn" data-step="3">
-                  <span class="step-num">03</span>
-                  <div class="step-text">
-                    <h4 class="step-title">Isolated Code Implementation</h4>
-                    <p class="step-desc">A deep agent modifies files in an ephemeral secure sandboxed container.</p>
+
+                <!-- Node 3: Containerized Implementation -->
+                <button class="workflow-step-btn vis-node" id="node-3" data-step="3" aria-label="Step 3: Containerized Implementation">
+                  <div class="node-number-badge">3</div>
+                  <div class="node-icon">📦</div>
+                  <div class="node-content-wrap">
+                    <h4 class="node-title">Containerized Implementation</h4>
+                    <span class="node-status status-pending">Pending</span>
                   </div>
                 </button>
-                <button class="workflow-step-btn" data-step="4">
-                  <span class="step-num">04</span>
-                  <div class="step-text">
-                    <h4 class="step-title">Automated PR & Review</h4>
-                    <p class="step-desc">The agent runs formatters, triggers tests, and submits the GitHub PR.</p>
+
+                <!-- Node 4: GitHub PR -->
+                <button class="workflow-step-btn vis-node" id="node-4" data-step="4" aria-label="Step 4: GitHub PR">
+                  <div class="node-number-badge">4</div>
+                  <div class="node-icon">🚀</div>
+                  <div class="node-content-wrap">
+                    <h4 class="node-title">GitHub PR</h4>
+                    <span class="node-status status-pending">Pending</span>
+                  </div>
+                </button>
+
+                <!-- Node 5: CI Self-Healing -->
+                <button class="workflow-step-btn vis-node" id="node-5" data-step="5" aria-label="Step 5: CI Self-Healing">
+                  <div class="node-number-badge">5</div>
+                  <div class="node-icon">🩹</div>
+                  <div class="node-content-wrap">
+                    <h4 class="node-title">CI Self-Healing</h4>
+                    <span class="node-status status-pending">Pending</span>
+                  </div>
+                </button>
+
+                <!-- Node 6: Human Review -->
+                <button class="workflow-step-btn vis-node" id="node-6" data-step="6" aria-label="Step 6: Human Review">
+                  <div class="node-number-badge">6</div>
+                  <div class="node-icon">👀</div>
+                  <div class="node-content-wrap">
+                    <h4 class="node-title">Human Review</h4>
+                    <span class="node-status status-pending">Pending</span>
                   </div>
                 </button>
               </div>
             </div>
-            <!-- Right: Interactive Visualization Graphics -->
-            <div class="workflow-visualization">
-              <div class="vis-canvas">
-                <!-- SVG Connecting Lines -->
-                <svg class="vis-lines" width="100%" height="100%">
-                  <path id="line-1-2" class="vis-path" d="M 50%,15% L 50%,38%" />
-                  <path id="line-2-3" class="vis-path" d="M 50%,38% L 50%,61%" />
-                  <path id="line-3-4" class="vis-path" d="M 50%,61% L 50%,85%" />
-                </svg>
-                <!-- Nodes -->
-                <div class="vis-node active" id="node-1">
-                  <div class="node-icon">🎫</div>
-                  <div class="node-details">
-                    <h4 class="node-title">Jira Ticket</h4>
-                    <span class="node-status">Received webhook event</span>
-                  </div>
-                </div>
-                <div class="vis-node" id="node-2">
-                  <div class="node-icon">🧠</div>
-                  <div class="node-details">
-                    <h4 class="node-title">AI Planning</h4>
-                    <span class="node-status">Formulating RCA & task plan</span>
-                  </div>
-                </div>
-                <div class="vis-node" id="node-3">
-                  <div class="node-icon">📦</div>
-                  <div class="node-details">
-                    <h4 class="node-title">Sandbox Runner</h4>
-                    <span class="node-status">Executing task inside Podman</span>
-                  </div>
-                </div>
-                <div class="vis-node" id="node-4">
-                  <div class="node-icon">🚀</div>
-                  <div class="node-details">
-                    <h4 class="node-title">GitHub PR</h4>
-                    <span class="node-status">Submitting pull request</span>
-                  </div>
-                </div>
+
+            <!-- Dynamic Descriptions Block -->
+            <div class="workflow-description-block" id="workflow-description-block">
+              <div class="description-card">
+                <span class="description-badge">Phase 1</span>
+                <h3 class="description-title">Jira Ticket</h3>
+                <p class="description-text">
+                  Forge listens for Jira issue events and automatically triggers when the <code>forge:managed</code> label is added. It parses the issue description and comments to initialize the development workflow.
+                </p>
               </div>
             </div>
           </div>
