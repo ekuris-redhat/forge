@@ -232,14 +232,14 @@ class TestBuildStageRow:
 class TestBuildTotalsRow:
     def test_empty_stages(self):
         row = _build_totals_row({})
-        assert "| *Total* |" in row
-        assert "*0*" in row
+        assert "| **Total** |" in row
+        assert "**0**" in row
 
     def test_single_stage(self):
         stages = {"prd": _make_stage(input_tokens=100, output_tokens=50)}
         row = _build_totals_row(stages)
-        assert "*100*" in row
-        assert "*50*" in row
+        assert "**100**" in row
+        assert "**50**" in row
 
     def test_multiple_stages_summed(self):
         stages = {
@@ -247,8 +247,8 @@ class TestBuildTotalsRow:
             "spec": _make_stage(input_tokens=2000, output_tokens=800),
         }
         row = _build_totals_row(stages)
-        assert "*3,000*" in row
-        assert "*1,300*" in row
+        assert "**3,000**" in row
+        assert "**1,300**" in row
 
     def test_no_pricing_shows_cost_unavailable(self):
         stages = {"prd": _make_stage(input_tokens=100, output_tokens=50)}
@@ -303,7 +303,7 @@ class TestBuildTotalsRow:
 
     def test_has_spacing(self):
         row = _build_totals_row({})
-        assert "| *Total* |" in row
+        assert "| **Total** |" in row
 
 
 # ---------------------------------------------------------------------------
@@ -377,13 +377,12 @@ class TestFormatStatsSummaryStructure:
 
     def test_contains_header(self):
         result = format_stats_summary(_minimal_stats(), "completed")
-        assert "h3. Workflow Statistics" in result
+        assert "### Workflow Statistics" in result
 
     def test_contains_table_header_row_with_spacing(self):
         result = format_stats_summary(_minimal_stats(), "completed")
         assert (
-            "|| Stage || Iterations || Machine Time ||"
-            " Input Tokens || Output Tokens || Cost ||" in result
+            "| Stage | Iterations | Machine Time | Input Tokens | Output Tokens | Cost |" in result
         )
 
     def test_contains_all_feature_stages(self):
@@ -399,8 +398,9 @@ class TestFormatStatsSummaryStructure:
             line
             for line in lines
             if line.startswith("|")
-            and not line.startswith("||")
-            and not line.startswith("| *Total*")
+            and not line.startswith("| Stage")
+            and not line.startswith("| ---")
+            and not line.startswith("| **Total**")
         ]
         assert len(stage_rows) == 7  # 7 feature stages
         for row in stage_rows:
@@ -408,16 +408,16 @@ class TestFormatStatsSummaryStructure:
 
     def test_contains_totals_row(self):
         result = format_stats_summary(_minimal_stats(), "completed")
-        assert "| *Total* |" in result
+        assert "| **Total** |" in result
 
     def test_contains_ci_cycles(self):
         stats = _minimal_stats(stats_ci_cycles=3)
         result = format_stats_summary(stats, "completed")
-        assert "*CI Cycles:* 3" in result
+        assert "**CI Cycles:** 3" in result
 
     def test_contains_outcome(self):
         result = format_stats_summary(_minimal_stats(), "completed")
-        assert "*Outcome:* Completed" in result
+        assert "**Outcome:** Completed" in result
 
 
 class TestFormatStatsSummaryPRLinks:
@@ -428,8 +428,10 @@ class TestFormatStatsSummaryPRLinks:
     def test_single_pr_included(self):
         stats = _minimal_stats(stats_pr_urls=["https://github.com/org/repo/pull/1"])
         result = format_stats_summary(stats, "completed")
-        assert "*Pull Requests*" in result
-        assert "* [https://github.com/org/repo/pull/1|https://github.com/org/repo/pull/1]" in result
+        assert "**Pull Requests**" in result
+        assert (
+            "* [https://github.com/org/repo/pull/1](https://github.com/org/repo/pull/1)" in result
+        )
 
     def test_multiple_prs_all_included(self):
         urls = [
@@ -438,9 +440,9 @@ class TestFormatStatsSummaryPRLinks:
         ]
         stats = _minimal_stats(stats_pr_urls=urls)
         result = format_stats_summary(stats, "completed")
-        assert "*Pull Requests*" in result
+        assert "**Pull Requests**" in result
         for url in urls:
-            assert f"* [{url}|{url}]" in result
+            assert f"* [{url}]({url})" in result
 
 
 class TestFormatStatsSummaryStageData:
@@ -474,18 +476,18 @@ class TestFormatStatsSummaryStageData:
         }
         stats = _minimal_stats(stage_timestamps=stages)
         result = format_stats_summary(stats, "completed")
-        assert "*13,000*" in result
-        assert "*5,300*" in result
+        assert "**13,000**" in result
+        assert "**5,300**" in result
 
     def test_empty_stages_totals_zero(self):
         result = format_stats_summary(_minimal_stats(), "completed")
-        assert "*0*" in result
+        assert "**0**" in result
 
 
 class TestFormatStatsSummaryOutcome:
     def test_completed_outcome(self):
         result = format_stats_summary(_minimal_stats(), "completed")
-        assert "*Outcome:* Completed" in result
+        assert "**Outcome:** Completed" in result
 
     def test_blocked_outcome_with_reason(self):
         result = format_stats_summary(
@@ -493,11 +495,11 @@ class TestFormatStatsSummaryOutcome:
             "blocked",
             outcome_detail="Waiting for approval",
         )
-        assert "*Outcome:* Blocked: Waiting for approval" in result
+        assert "**Outcome:** Blocked: Waiting for approval" in result
 
     def test_blocked_outcome_no_reason(self):
         result = format_stats_summary(_minimal_stats(), "blocked")
-        assert "*Outcome:* Blocked" in result
+        assert "**Outcome:** Blocked" in result
 
     def test_failed_outcome_with_error(self):
         result = format_stats_summary(
@@ -505,11 +507,11 @@ class TestFormatStatsSummaryOutcome:
             "failed",
             outcome_detail="Unhandled exception",
         )
-        assert "*Outcome:* Failed: Unhandled exception" in result
+        assert "**Outcome:** Failed: Unhandled exception" in result
 
     def test_failed_outcome_no_error(self):
         result = format_stats_summary(_minimal_stats(), "failed")
-        assert "*Outcome:* Failed" in result
+        assert "**Outcome:** Failed" in result
 
     def test_long_detail_truncated(self):
         long_reason = "z" * 300
@@ -519,17 +521,17 @@ class TestFormatStatsSummaryOutcome:
             outcome_detail=long_reason,
         )
         expected_detail = "z" * 200 + "..."
-        assert f"*Outcome:* Blocked: {expected_detail}" in result
+        assert f"**Outcome:** Blocked: {expected_detail}" in result
 
     def test_exactly_200_char_detail_not_truncated(self):
         reason = "a" * 200
         result = format_stats_summary(_minimal_stats(), "blocked", outcome_detail=reason)
-        assert f"*Outcome:* Blocked: {reason}" in result
+        assert f"**Outcome:** Blocked: {reason}" in result
         assert "..." not in result
 
     def test_outcome_case_insensitive(self):
         result = format_stats_summary(_minimal_stats(), "Completed")
-        assert "*Outcome:* Completed" in result
+        assert "**Outcome:** Completed" in result
 
 
 class TestFormatStatsSummaryMissingFields:
@@ -539,13 +541,13 @@ class TestFormatStatsSummaryMissingFields:
         """A completely empty dict should produce valid output without errors."""
         result = format_stats_summary({}, "completed")
         assert isinstance(result, str)
-        assert "*CI Cycles:* 0" in result
-        assert "*Outcome:* Completed" in result
+        assert "**CI Cycles:** 0" in result
+        assert "**Outcome:** Completed" in result
 
     def test_none_stage_timestamps(self):
         stats = _minimal_stats(stage_timestamps=None)
         result = format_stats_summary(stats, "completed")
-        assert "| *Total* |" in result
+        assert "| **Total** |" in result
 
     def test_none_pr_urls(self):
         stats = _minimal_stats(stats_pr_urls=None)
@@ -555,7 +557,7 @@ class TestFormatStatsSummaryMissingFields:
     def test_none_ci_cycles(self):
         stats = _minimal_stats(stats_ci_cycles=None)
         result = format_stats_summary(stats, "completed")
-        assert "*CI Cycles:* 0" in result
+        assert "**CI Cycles:** 0" in result
 
 
 # ---------------------------------------------------------------------------
@@ -568,7 +570,7 @@ class TestCostColumn:
 
     def test_cost_column_in_header(self):
         result = format_stats_summary(_minimal_stats(), "completed")
-        assert "|| Cost ||" in result
+        assert " Cost |" in result
 
     def test_cost_unavailable_when_no_pricing(self):
         stage = _make_stage(
@@ -663,14 +665,13 @@ class TestCostAlert:
     def test_alert_panel_markup_present(self):
         stats = _stats_with_tokens(input_tokens=800_000, output_tokens=300_000)
         result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
-        assert "{panel:" in result
-        assert "{panel}" in result
+        assert "> **⚠️ COST ALERT**" in result
 
     def test_alert_appears_after_outcome(self):
         """Cost alert should be appended after the outcome line."""
         stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
         result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
-        outcome_pos = result.index("*Outcome:*")
+        outcome_pos = result.index("**Outcome:**")
         alert_pos = result.index("COST ALERT")
         assert alert_pos > outcome_pos
 
@@ -744,12 +745,12 @@ class TestCostAlert:
     def test_alert_threshold_label_present(self):
         stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
         result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
-        assert "*Threshold:*" in result
+        assert "**Threshold:**" in result
 
     def test_alert_actual_usage_label_present(self):
         stats = _stats_with_tokens(input_tokens=600_000, output_tokens=500_000)
         result = format_stats_summary(stats, "completed", token_threshold=1_000_000)
-        assert "*Actual usage:*" in result
+        assert "**Actual usage:**" in result
 
 
 # ---------------------------------------------------------------------------
@@ -895,4 +896,4 @@ class TestDollarCostAlert:
             dollar_threshold=10.00,
             pricing=_SAMPLE_PRICING,
         )
-        assert "*Actual cost:*" in result
+        assert "**Actual cost:**" in result

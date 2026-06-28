@@ -137,8 +137,8 @@ def _build_totals_row(
     cost_str = _build_total_cost_str(stages, pricing)
 
     return (
-        f"| *Total* | — | — |"
-        f" *{_fmt_tokens(total_input)}* | *{_fmt_tokens(total_output)}* | {cost_str} |"
+        f"| **Total** | — | — |"
+        f" **{_fmt_tokens(total_input)}** | **{_fmt_tokens(total_output)}** | {cost_str} |"
     )
 
 
@@ -225,11 +225,10 @@ def _build_cost_alert(
     """
     return [
         "",
-        "{panel:title=⚠️ COST ALERT|borderColor=#FF0000|titleBGColor=#FF0000|titleColor=#FFFFFF|bgColor=#FFF0F0}",
-        "Token usage has exceeded the configured threshold.",
-        f"*Threshold:* {_fmt_tokens(threshold)} tokens",
-        f"*Actual usage:* {_fmt_tokens(total_tokens)} tokens",
-        "{panel}",
+        "> **⚠️ COST ALERT**",
+        "> Token usage has exceeded the configured threshold.",
+        f"> **Threshold:** {_fmt_tokens(threshold)} tokens",
+        f"> **Actual usage:** {_fmt_tokens(total_tokens)} tokens",
     ]
 
 
@@ -251,11 +250,10 @@ def _build_dollar_cost_alert(
     """
     return [
         "",
-        "{panel:title=⚠️ COST ALERT|borderColor=#FF0000|titleBGColor=#FF0000|titleColor=#FFFFFF|bgColor=#FFF0F0}",
-        "LLM cost has exceeded the configured threshold.",
-        f"*Threshold:* {_fmt_cost(threshold)}",
-        f"*Actual cost:* {_fmt_cost(total_cost)}",
-        "{panel}",
+        "> **⚠️ COST ALERT**",
+        "> LLM cost has exceeded the configured threshold.",
+        f"> **Threshold:** {_fmt_cost(threshold)}",
+        f"> **Actual cost:** {_fmt_cost(total_cost)}",
     ]
 
 
@@ -312,11 +310,10 @@ def format_stats_summary(
     # ------------------------------------------------------------------
     # Stage metrics table
     # ------------------------------------------------------------------
-    lines.append("h3. Workflow Statistics")
+    lines.append("### Workflow Statistics")
     lines.append("")
-    lines.append(
-        "|| Stage || Iterations || Machine Time || Input Tokens || Output Tokens || Cost ||"
-    )
+    lines.append("| Stage | Iterations | Machine Time | Input Tokens | Output Tokens | Cost |")
+    lines.append("| --- | --- | --- | --- | --- | --- |")
 
     # Detect workflow type: prefer bug stage ordering when any bug-only stage
     # key is present in the recorded data.
@@ -336,22 +333,22 @@ def format_stats_summary(
     # ------------------------------------------------------------------
     if pr_urls:
         lines.append("")
-        lines.append("*Pull Requests*")
+        lines.append("**Pull Requests**")
         for url in pr_urls:
-            lines.append(f"* [{url}|{url}]")
+            lines.append(f"* [{url}]({url})")
 
     # ------------------------------------------------------------------
     # CI cycles
     # ------------------------------------------------------------------
     lines.append("")
-    lines.append(f"*CI Cycles:* {ci_cycles}")
+    lines.append(f"**CI Cycles:** {ci_cycles}")
 
     # ------------------------------------------------------------------
     # Outcome
     # ------------------------------------------------------------------
     lines.append("")
     outcome_str = _build_outcome_str(outcome, outcome_detail)
-    lines.append(f"*Outcome:* {outcome_str}")
+    lines.append(f"**Outcome:** {outcome_str}")
 
     # ------------------------------------------------------------------
     # Cost alert (only when threshold is configured and exceeded)
