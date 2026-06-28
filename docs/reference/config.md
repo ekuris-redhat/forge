@@ -85,6 +85,12 @@ Use these to skip the Jira project property requirement during local development
 | `CI_IGNORED_CHECKS` | Comma-separated list of check name substrings to permanently ignore (e.g., `tide,queue`) |
 | `CI_MAX_FIX_ATTEMPTS` | Maximum CI fix attempts before blocking (default: `5`) |
 
+## Waitlist Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WAITLIST_DB_PATH` | `waitlist.db` | Path to the SQLite database for early access waitlist registrations |
+
 ## Container Execution
 
 | Variable | Description |

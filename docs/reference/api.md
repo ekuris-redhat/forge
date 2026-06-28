@@ -26,6 +26,44 @@ Returns HTTP 200 when the API server is running. Does not check worker or Redis 
 
 ---
 
+### Early Access Waitlist
+
+```http
+POST /api/v1/waitlist
+```
+
+Registers a new user to the early access waitlist. Validates format, blocks personal email domains, and enforces uniqueness of the business email address.
+
+**Request Body:**
+
+```json
+{
+  "name": "Jane Doe",
+  "business_email": "jane@company.com",
+  "company_size": "51-200",
+  "role": "Platform Engineer"
+}
+```
+
+**Responses:**
+
+- **201 Created**: Successfully registered for the waitlist.
+  ```json
+  {
+    "id": 1,
+    "name": "Jane Doe",
+    "business_email": "jane@company.com",
+    "company_size": "51-200",
+    "role": "Platform Engineer",
+    "timestamp": "2026-06-28T14:59:00.000000"
+  }
+  ```
+- **400 Bad Request**: Invalid payload or personal email domain is used.
+- **409 Conflict**: Email is already registered.
+- **422 Unprocessable Entity**: Input validation failed.
+
+---
+
 ### Jira Webhook
 
 ```http
