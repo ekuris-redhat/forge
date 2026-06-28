@@ -122,8 +122,33 @@ try {
   // Mock scrollIntoView in JSDOM environment
   window.Element.prototype.scrollIntoView = function () {};
 
+  // Read and execute terminal.js script
+  const terminalJsPath = path.join(websiteDir, "src", "terminal.js");
+  let terminalCode = fs.readFileSync(terminalJsPath, "utf8");
+  // Strip ES export keywords so it can be evaluated as a global class/variable
+  terminalCode = terminalCode
+    .replace(/export\s+const/g, "const")
+    .replace(/export\s+class/g, "class");
+  terminalCode += "\nwindow.TerminalSimulator = TerminalSimulator;\nwindow.DEFAULT_LOGS = DEFAULT_LOGS;\n";
+  window.eval(terminalCode);
+
+  // Intercept TerminalSimulator init to set delays to 0 for tests
+  window.eval(`
+    const originalInit = TerminalSimulator.prototype.init;
+    TerminalSimulator.prototype.init = function(options) {
+      options = options || {};
+      options.minDelay = 0;
+      options.maxDelay = 0;
+      this.minDelay = 0;
+      this.maxDelay = 0;
+      originalInit.call(this, options);
+    };
+  `);
+
   // Read and execute main.js script in the JSDOM window context
-  const jsCode = fs.readFileSync(mainJsPath, "utf8");
+  let jsCode = fs.readFileSync(mainJsPath, "utf8");
+  // Strip import statements
+  jsCode = jsCode.replace(/import\s+\{\s*TerminalSimulator\s*\}\s+from\s+["'].\/terminal\.js["'];?/g, "");
   window.eval(jsCode);
 
   // Dispatch DOMContentLoaded to trigger script initialization
@@ -498,6 +523,25 @@ try {
   assert(waitForm.style.display === "block", "Form is displayed again after clicking register another");
   assert(fSuccess.style.display === "none", "Success state is hidden again");
   assert(nameIn.value === "", "Name input was reset");
+
+  // --- Test 12: Verify TerminalSimulator Component Reusability and Controls Layout Options ---
+  console.log("\n[Test 12] Verifying TerminalSimulator Reusability and Layouts:");
+  const testContainer = document.createElement("div");
+  testContainer.id = "dynamic-terminal-test";
+  document.body.appendChild(testContainer);
+
+  const dynamicSim = new window.TerminalSimulator({
+    container: "#dynamic-terminal-test",
+    controlsLayout: "beneath",
+    autoStart: false
+  });
+
+  assert(testContainer.querySelector(".terminal-window"), "Dynamic terminal-window rendered successfully");
+  assert(testContainer.querySelector(".terminal-controls.external"), "Controls rendered beneath the terminal chrome when layout is set to 'beneath'");
+  assert(!testContainer.querySelector(".terminal-window .terminal-controls"), "No controls rendered inside the terminal chrome when layout is set to 'beneath'");
+
+  dynamicSim.destroy();
+  testContainer.remove();
 
   console.log("\n🎉 All Component Unit Tests passed successfully!");
 } catch (e) {

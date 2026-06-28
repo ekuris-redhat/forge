@@ -1,4 +1,6 @@
 // Forge Marketing Website JavaScript Entrypoint
+import { TerminalSimulator } from "./terminal.js";
+
 document.addEventListener("DOMContentLoaded", () => {
   console.log("Forge Marketing Website initialized successfully!");
 
@@ -270,67 +272,11 @@ document.addEventListener("DOMContentLoaded", () => {
   activateStep("1");
 
   // --- Terminal Simulation Logic ---
-  const terminalBody = document.getElementById("terminal-body");
-  const terminalOutput = document.getElementById("terminal-output");
-  const triggerSimBtn = document.getElementById("btn-trigger-simulation");
-  const resetTerminalBtn = document.getElementById("terminal-reset");
-
-  const simulationLogs = [
-    { type: "log-info", text: "[INFO] Redis Streams consumer connected" },
-    { type: "log-info", text: "[INFO] Queue worker active. Listening on stream: forge:events" },
-    { type: "log-info", text: "[INFO] Received ticket: AISOS-1965 (Develop responsive section grids)" },
-    { type: "log-info", text: "[INFO] Planning task: Develop responsive section grids..." },
-    { type: "log-success", text: "[SUCCESS] Task plan generated successfully" },
-    { type: "log-text", text: "[INFO] Spawning container sandbox (forge-AISOS-1965-sandbox)..." },
-    { type: "log-text", text: "[INFO] Modifying index.html and main.css..." },
-    { type: "log-text", text: "[INFO] Running validation tests (npm run test)..." },
-    { type: "log-success", text: "[SUCCESS] All unit tests passed cleanly!" },
-    { type: "log-success", text: "[SUCCESS] Task complete. Pull request #14 opened successfully! 🚀" }
-  ];
-
-  let simTimer = null;
-
-  const runTerminalSimulation = () => {
-    if (!terminalOutput) return;
-    // Clear previous logs
-    terminalOutput.innerHTML = "";
-    if (simTimer) {
-      clearTimeout(simTimer);
-    }
-
-    let currentLogIndex = 0;
-
-    const printNextLog = () => {
-      if (currentLogIndex < simulationLogs.length) {
-        const log = simulationLogs[currentLogIndex];
-        const logDiv = document.createElement("div");
-        logDiv.className = log.type;
-        logDiv.innerText = log.text;
-        terminalOutput.appendChild(logDiv);
-        currentLogIndex++;
-
-        // Auto scroll terminal to bottom
-        if (terminalBody) {
-          terminalBody.scrollTop = terminalBody.scrollHeight;
-        }
-
-        // Schedule next log
-        simTimer = setTimeout(printNextLog, 800 + Math.random() * 400);
-      }
-    };
-
-    printNextLog();
-  };
-
-  if (triggerSimBtn) {
-    triggerSimBtn.addEventListener("click", runTerminalSimulation);
-  }
-  if (resetTerminalBtn) {
-    resetTerminalBtn.addEventListener("click", runTerminalSimulation);
-  }
-
-  // Auto run simulation once on load
-  runTerminalSimulation();
+  const terminalSimulator = new TerminalSimulator({
+    autoStart: true,
+    minDelay: 800,
+    maxDelay: 1200
+  });
 
   // --- Waitlist Form Logic ---
   const waitlistForm = document.getElementById("waitlist-form");
