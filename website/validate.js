@@ -1412,6 +1412,138 @@ import { JSDOM } from "jsdom";
         "Form is displayed again after resetting",
       );
       assert(t17Name.value === "", "Name input is cleared after resetting");
+
+      // --- Test 17 Extended: 409 Conflict Error Handling ---
+      t17Name.value = "Jane Doe";
+      t17Email.value = "jane@acme.com";
+      t17Company.value = "1-10";
+      t17Role.value = "Backend Engineer";
+
+      let fetchPromise409Resolve;
+      const fetchPromise409 = new Promise((res) => {
+        fetchPromise409Resolve = res;
+      });
+
+      window.fetch = () => fetchPromise409;
+
+      stateTransitions = [];
+      const submitEvt409 = new window.Event("submit", { cancelable: true });
+      test17Form.dispatchEvent(submitEvt409);
+
+      fetchPromise409Resolve({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          detail: "Email address is already registered on the waitlist.",
+        }),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      assert(
+        form17.state === "ERROR",
+        "409 Conflict transitions state machine to ERROR state",
+      );
+      assert(
+        t17Email.parentElement.classList.contains("has-error"),
+        "409 Conflict applies error class to field",
+      );
+      assert(
+        t17EmailError.textContent.includes("already registered"),
+        "409 Conflict parses and shows duplicate email warning clearly",
+      );
+      assert(
+        form17.submitBtn.innerHTML.includes("Retry Submission"),
+        "State machine displays retry option on submission failure",
+      );
+
+      // --- Test 17 Extended: 422 Validation Error Mapping ---
+      // Clear fields/errors first
+      form17.clearFieldError(t17Email);
+      t17Name.value = "Jane Doe";
+      t17Email.value = "jane@acme.com";
+      t17Company.value = "1-10";
+      t17Role.value = "Backend Engineer";
+
+      let fetchPromise422Resolve;
+      const fetchPromise422 = new Promise((res) => {
+        fetchPromise422Resolve = res;
+      });
+
+      window.fetch = () => fetchPromise422;
+
+      const submitEvt422 = new window.Event("submit", { cancelable: true });
+      test17Form.dispatchEvent(submitEvt422);
+
+      fetchPromise422Resolve({
+        ok: false,
+        status: 422,
+        json: async () => ({
+          detail: [
+            {
+              loc: ["body", "business_email"],
+              msg: "Value error, Personal email domains are not allowed. Please use a business email.",
+              type: "value_error",
+            },
+          ],
+        }),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      assert(
+        form17.state === "ERROR",
+        "422 Validation error transitions state machine to ERROR state",
+      );
+      assert(
+        t17Email.parentElement.classList.contains("has-error"),
+        "422 Validation error applies error class to matching field",
+      );
+      assert(
+        t17EmailError.textContent.includes("business email"),
+        "422 Validation error successfully maps error payload back into specific field error message",
+      );
+
+      // --- Test 17 Extended: 500 Server Error Retry Option ---
+      form17.clearFieldError(t17Email);
+      t17Name.value = "Jane Doe";
+      t17Email.value = "jane@acme.com";
+      t17Company.value = "1-10";
+      t17Role.value = "Backend Engineer";
+
+      let fetchPromise500Resolve;
+      const fetchPromise500 = new Promise((res) => {
+        fetchPromise500Resolve = res;
+      });
+
+      window.fetch = () => fetchPromise500;
+
+      const submitEvt500 = new window.Event("submit", { cancelable: true });
+      test17Form.dispatchEvent(submitEvt500);
+
+      fetchPromise500Resolve({
+        ok: false,
+        status: 500,
+        json: async () => ({
+          detail: "Internal Server Error",
+        }),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      assert(
+        form17.state === "ERROR",
+        "500 Internal Server Error transitions state machine to ERROR state",
+      );
+      assert(
+        form17.submitBtn.innerHTML.includes("Retry Submission"),
+        "500 Internal Server Error retains retry option",
+      );
+      assert(
+        t17EmailError.textContent.includes("Server Error") ||
+          t17EmailError.textContent.includes("unexpected server error"),
+        "500 Internal Server Error displays retry warning",
+      );
     } finally {
       // Clean up Test 17
       document.getElementById = origGetElementById;

@@ -78,9 +78,15 @@ export class WaitlistForm {
       // Clear inline error on typing or field modification
       input.addEventListener("input", () => {
         this.clearFieldError(input);
+        if (this.submitBtn && this.state === FormState.ERROR) {
+          this.submitBtn.innerHTML = this.originalBtnContent;
+        }
       });
       input.addEventListener("change", () => {
         this.clearFieldError(input);
+        if (this.submitBtn && this.state === FormState.ERROR) {
+          this.submitBtn.innerHTML = this.originalBtnContent;
+        }
       });
       // Active inline validation feedback on field blur
       input.addEventListener("blur", () => {
@@ -176,7 +182,7 @@ export class WaitlistForm {
         });
         if (this.submitBtn) {
           this.submitBtn.disabled = false;
-          this.submitBtn.innerHTML = this.originalBtnContent;
+          this.submitBtn.innerHTML = "Retry Submission 🔄";
         }
         if (this.form) {
           this.form.style.display = "block";
@@ -378,21 +384,65 @@ export class WaitlistForm {
       } else if (response.status === 409) {
         this.transitionTo(FormState.ERROR);
         // Duplicate email domain/address
+        const errData = await response.json().catch(() => ({}));
+        const message =
+          typeof errData.detail === "string"
+            ? errData.detail
+            : "This email address is already registered on the waitlist.";
         if (emailInput) {
-          this.showFieldError(
-            emailInput,
-            "This email address is already registered on the waitlist.",
-          );
+          this.showFieldError(emailInput, message);
+        }
+        if (this.onSubmitError) {
+          this.onSubmitError(response);
+        }
+      } else if (response.status === 422 || response.status === 400) {
+        this.transitionTo(FormState.ERROR);
+        const errData = await response.json().catch(() => ({}));
+        if (Array.isArray(errData.detail)) {
+          let hasMappedError = false;
+          errData.detail.forEach((err) => {
+            const field = err.loc && err.loc[err.loc.length - 1];
+            let inputEl = null;
+            if (field === "name") inputEl = nameInput;
+            else if (field === "business_email") inputEl = emailInput;
+            else if (field === "company_size") inputEl = companyInput;
+            else if (field === "role") inputEl = roleInput;
+
+            if (inputEl) {
+              let msg = err.msg || "Invalid value.";
+              if (msg.startsWith("Value error, ")) {
+                msg = msg.substring("Value error, ".length);
+              }
+              this.showFieldError(inputEl, msg);
+              hasMappedError = true;
+            }
+          });
+          if (!hasMappedError && emailInput) {
+            this.showFieldError(
+              emailInput,
+              "Input validation failed. Please check your entries.",
+            );
+          }
+        } else {
+          const detail =
+            typeof errData.detail === "string"
+              ? errData.detail
+              : "Registration failed. Please try again.";
+          if (emailInput) {
+            this.showFieldError(emailInput, detail);
+          }
         }
         if (this.onSubmitError) {
           this.onSubmitError(response);
         }
       } else {
         this.transitionTo(FormState.ERROR);
-        // Other API/validation errors
+        // Other API/validation errors (like 500 Server Error)
         const errData = await response.json().catch(() => ({}));
         const detail =
-          errData.detail || "Registration failed. Please try again.";
+          typeof errData.detail === "string"
+            ? errData.detail
+            : "An unexpected server error occurred. Please try again later.";
         if (emailInput) {
           this.showFieldError(emailInput, detail);
         }
