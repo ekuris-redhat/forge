@@ -29,6 +29,12 @@ class Settings(BaseSettings):
         description="Redis connection URL for state persistence and message queue",
     )
 
+    # Waitlist Configuration
+    waitlist_db_path: str = Field(
+        default="waitlist.db",
+        description="Path to waitlist SQLite database",
+    )
+
     # Jira Configuration
     jira_base_url: str = Field(
         description="Jira instance URL (e.g., https://company.atlassian.net)"

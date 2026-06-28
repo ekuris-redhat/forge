@@ -2,6 +2,7 @@
 
 from forge.models.artifacts import Epic, Feature, Task
 from forge.models.events import EventSource, EventStatus, WebhookEvent
+from forge.models.waitlist import WaitlistDatabase, WaitlistRequest
 from forge.models.workflow import (
     ForgeLabel,
     JiraStatus,
@@ -27,4 +28,7 @@ __all__ = [
     "WebhookEvent",
     "EventSource",
     "EventStatus",
+    # Waitlist models
+    "WaitlistRequest",
+    "WaitlistDatabase",
 ]
