@@ -3,6 +3,7 @@ jira-export
 workflows-plan
 LLD*
 .ruff_cache
+.mypy_cache/
 specs/
 docs/github-app-setup.md
 
