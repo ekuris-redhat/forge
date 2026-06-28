@@ -56,8 +56,9 @@
         <nav class="site-nav">
           <ul class="nav-list">
             <li><a href="#features" class="nav-link">Features</a></li>
-            <li><a href="#tech-stack" class="nav-link">Tech Stack</a></li>
             <li><a href="#workflow" class="nav-link">Workflow</a></li>
+            <li><a href="#terminal" class="nav-link">Terminal</a></li>
+            <li><a href="#get-started" class="nav-link">Waitlist</a></li>
           </ul>
         </nav>
         <div class="header-actions">
@@ -105,8 +106,9 @@
       <nav class="drawer-nav">
         <ul class="drawer-nav-list">
           <li><a href="#features" class="drawer-nav-link">Features</a></li>
-          <li><a href="#tech-stack" class="drawer-nav-link">Tech Stack</a></li>
           <li><a href="#workflow" class="drawer-nav-link">Workflow</a></li>
+          <li><a href="#terminal" class="drawer-nav-link">Terminal</a></li>
+          <li><a href="#get-started" class="drawer-nav-link">Waitlist</a></li>
         </ul>
       </nav>
       <div class="drawer-actions">
@@ -125,23 +127,58 @@
     <main class="site-main">
       <!-- Hero Section -->
       <section class="hero-section">
-        <div class="container hero-container">
-          <h1 class="hero-title">
-            Automate Your SDLC From
-            <span class="text-gradient">Ticket to PR</span>
-          </h1>
-          <p class="hero-subtitle">
-            Forge is an AI-powered SDLC orchestrator that autonomously plans,
-            implements, and reviews code changes based on Jira issues and GitHub
-            webhooks.
-          </p>
-          <div class="hero-actions">
-            <a href="#get-started" class="btn btn-primary btn-lg"
-              >Deploy Forge</a
-            >
-            <a href="#features" class="btn btn-secondary btn-lg"
-              >Explore Features</a
-            >
+        <div class="container">
+          <div class="section-grid hero-grid">
+            <!-- Left: Hero Content -->
+            <div class="hero-content">
+              <h1 class="hero-title">
+                Automate Your SDLC From
+                <span class="text-gradient">Ticket to PR</span>
+              </h1>
+              <p class="hero-subtitle">
+                Forge is an AI-powered SDLC orchestrator that autonomously plans,
+                implements, and reviews code changes based on Jira issues and GitHub
+                webhooks.
+              </p>
+              <div class="hero-actions">
+                <a href="#get-started" class="btn btn-primary btn-lg">Deploy Forge</a>
+                <a href="#workflow" class="btn btn-secondary btn-lg">See Workflow</a>
+              </div>
+            </div>
+            <!-- Right: Hero Visual -->
+            <div class="hero-visual">
+              <div class="dashboard-preview-card">
+                <div class="dashboard-header">
+                  <span class="dashboard-title">forge-orchestrator-v1.0</span>
+                  <div class="status-indicator">
+                    <span class="pulse-dot"></span>
+                    <span class="status-text">Active Workforce</span>
+                  </div>
+                </div>
+                <div class="dashboard-body">
+                  <div class="dashboard-metric-row">
+                    <div class="metric-card">
+                      <span class="metric-value">04</span>
+                      <span class="metric-label">Active Agents</span>
+                    </div>
+                    <div class="metric-card">
+                      <span class="metric-value">98.4%</span>
+                      <span class="metric-label">Success Rate</span>
+                    </div>
+                  </div>
+                  <div class="agent-activity-feed">
+                    <div class="activity-item">
+                      <span class="activity-time">Just now</span>
+                      <span class="activity-text">Agent <strong class="text-indigo">#01</strong> committed fix for AISOS-1965</span>
+                    </div>
+                    <div class="activity-item">
+                      <span class="activity-time">2m ago</span>
+                      <span class="activity-text">Testing sandbox generated successfully in Docker</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -186,19 +223,213 @@
         </div>
       </section>
 
-      <!-- Call to Action Section -->
-      <section id="get-started" class="cta-section">
-        <div class="container cta-container">
-          <h2 class="cta-title">Ready to Orchestrate Your Development?</h2>
-          <p class="cta-description">
-            Deploy Forge using Podman, FastAPI, and Redis to transform your
-            engineering productivity.
-          </p>
-          <a
-            href="https://github.com/forge-sdlc/forge"
-            class="btn btn-primary btn-lg"
-            >Get Started on GitHub</a
-          >
+      <!-- Interactive Workflow Visualization Section -->
+      <section id="workflow" class="section workflow-section">
+        <div class="container">
+          <div class="section-grid workflow-grid">
+            <!-- Left: Description and Step Selectors -->
+            <div class="workflow-content">
+              <span class="badge">Orchestration</span>
+              <h2 class="section-title text-left">Interactive Workflow</h2>
+              <p class="section-description">
+                Forge acts as an autonomous workforce of specialized AI agents. Select a step below to see how Claude, LangGraph, and isolated Podman containers coordinate to resolve tickets.
+              </p>
+              <div class="workflow-steps">
+                <button class="workflow-step-btn active" data-step="1">
+                  <span class="step-num">01</span>
+                  <div class="step-text">
+                    <h4 class="step-title">Jira Webhook Trigger</h4>
+                    <p class="step-desc">A ticket is labeled with <code>forge:managed</code>, triggering LangGraph.</p>
+                  </div>
+                </button>
+                <button class="workflow-step-btn" data-step="2">
+                  <span class="step-num">02</span>
+                  <div class="step-text">
+                    <h4 class="step-title">RCA & Plan Generation</h4>
+                    <p class="step-desc">The planning agent conducts root cause analysis and proposes a solution.</p>
+                  </div>
+                </button>
+                <button class="workflow-step-btn" data-step="3">
+                  <span class="step-num">03</span>
+                  <div class="step-text">
+                    <h4 class="step-title">Isolated Code Implementation</h4>
+                    <p class="step-desc">A deep agent modifies files in an ephemeral secure sandboxed container.</p>
+                  </div>
+                </button>
+                <button class="workflow-step-btn" data-step="4">
+                  <span class="step-num">04</span>
+                  <div class="step-text">
+                    <h4 class="step-title">Automated PR & Review</h4>
+                    <p class="step-desc">The agent runs formatters, triggers tests, and submits the GitHub PR.</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+            <!-- Right: Interactive Visualization Graphics -->
+            <div class="workflow-visualization">
+              <div class="vis-canvas">
+                <!-- SVG Connecting Lines -->
+                <svg class="vis-lines" width="100%" height="100%">
+                  <path id="line-1-2" class="vis-path" d="M 50%,15% L 50%,38%" />
+                  <path id="line-2-3" class="vis-path" d="M 50%,38% L 50%,61%" />
+                  <path id="line-3-4" class="vis-path" d="M 50%,61% L 50%,85%" />
+                </svg>
+                <!-- Nodes -->
+                <div class="vis-node active" id="node-1">
+                  <div class="node-icon">🎫</div>
+                  <div class="node-details">
+                    <h4 class="node-title">Jira Ticket</h4>
+                    <span class="node-status">Received webhook event</span>
+                  </div>
+                </div>
+                <div class="vis-node" id="node-2">
+                  <div class="node-icon">🧠</div>
+                  <div class="node-details">
+                    <h4 class="node-title">AI Planning</h4>
+                    <span class="node-status">Formulating RCA & task plan</span>
+                  </div>
+                </div>
+                <div class="vis-node" id="node-3">
+                  <div class="node-icon">📦</div>
+                  <div class="node-details">
+                    <h4 class="node-title">Sandbox Runner</h4>
+                    <span class="node-status">Executing task inside Podman</span>
+                  </div>
+                </div>
+                <div class="vis-node" id="node-4">
+                  <div class="node-icon">🚀</div>
+                  <div class="node-details">
+                    <h4 class="node-title">GitHub PR</h4>
+                    <span class="node-status">Submitting pull request</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Terminal Simulation Section -->
+      <section id="terminal" class="section terminal-section">
+        <div class="container">
+          <div class="section-grid terminal-grid">
+            <!-- Left: Terminal Simulation Graphic -->
+            <div class="terminal-simulation">
+              <div class="terminal-window">
+                <div class="terminal-header">
+                  <div class="terminal-dots">
+                    <span class="dot red"></span>
+                    <span class="dot yellow"></span>
+                    <span class="dot green"></span>
+                  </div>
+                  <span class="terminal-title">forge@sandbox:~/.forge</span>
+                  <div class="terminal-action-icons">
+                    <span class="icon-refresh" id="terminal-reset" title="Restart Simulation">🔄</span>
+                  </div>
+                </div>
+                <div class="terminal-body" id="terminal-body">
+                  <div class="terminal-line"><span class="prompt-symbol">$</span> <span class="typed-command">forge worker start</span></div>
+                  <div class="terminal-output typing" id="terminal-output">
+                    <!-- Typing outputs will be inserted here by main.js -->
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Right: Content -->
+            <div class="terminal-content">
+              <span class="badge">Simulation</span>
+              <h2 class="section-title text-left">Real-time Sandbox Execution</h2>
+              <p class="section-description">
+                Experience full observability. Forge starts ephemeral container sandboxes, checks syntax, executes tests, and verifies code formatting before committing.
+              </p>
+              <ul class="terminal-highlights">
+                <li>
+                  <strong>🔒 Secure Execution:</strong> Running changes in isolated Docker/Podman environments.
+                </li>
+                <li>
+                  <strong>🛠️ Native Tooling:</strong> Leverages standard linters, test runners, and build systems.
+                </li>
+                <li>
+                  <strong>📋 Detailed Logging:</strong> Logs every command and validation step directly to Jira/GitHub comments.
+                </li>
+              </ul>
+              <button class="btn btn-primary" id="btn-trigger-simulation">Simulate Deployment</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Waitlist Form Section -->
+      <section id="get-started" class="section waitlist-section">
+        <div class="container">
+          <div class="section-grid waitlist-grid">
+            <!-- Left: Content -->
+            <div class="waitlist-content">
+              <span class="badge">Join Beta</span>
+              <h2 class="section-title text-left">Accelerate Your Engineering Velocity</h2>
+              <p class="section-description">
+                Join the exclusive private beta to deploy Forge within your organization's infrastructure. Automate manual code scaffolding and keep developers focused on high-level architecture.
+              </p>
+              <div class="waitlist-perks">
+                <div class="perk-item">
+                  <span class="perk-icon">⚡</span>
+                  <span class="perk-text">10x faster Jira to PR turnarounds</span>
+                </div>
+                <div class="perk-item">
+                  <span class="perk-icon">🛡️</span>
+                  <span class="perk-text">Deploy inside your secure VPC boundary</span>
+                </div>
+                <div class="perk-item">
+                  <span class="perk-icon">🤝</span>
+                  <span class="perk-text">Direct core-engineering slack channel support</span>
+                </div>
+              </div>
+            </div>
+            <!-- Right: Form -->
+            <div class="waitlist-form-container">
+              <div class="form-card">
+                <h3 class="form-title">Request Early Access</h3>
+                <form id="waitlist-form" novalidate>
+                  <div class="form-group">
+                    <label for="user-name" class="form-label">Full Name</label>
+                    <input type="text" id="user-name" class="form-input" placeholder="Alex Johnson" required />
+                    <span class="error-msg" id="name-error">Please enter your name.</span>
+                  </div>
+                  <div class="form-group">
+                    <label for="user-email" class="form-label">Work Email</label>
+                    <input type="email" id="user-email" class="form-input" placeholder="alex@company.com" required />
+                    <span class="error-msg" id="email-error">Please enter a valid email address.</span>
+                  </div>
+                  <div class="form-group">
+                    <label for="user-company" class="form-label">Company Name</label>
+                    <input type="text" id="user-company" class="form-input" placeholder="Acme Corp" required />
+                    <span class="error-msg" id="company-error">Please enter your company name.</span>
+                  </div>
+                  <div class="form-group">
+                    <label for="user-role" class="form-label">Primary Role</label>
+                    <select id="user-role" class="form-input select-input" required>
+                      <option value="" disabled selected>Select your role...</option>
+                      <option value="Frontend Engineer">Frontend Engineer</option>
+                      <option value="Backend Engineer">Backend Engineer</option>
+                      <option value="Fullstack Engineer">Fullstack Engineer</option>
+                      <option value="Engineering Manager">Engineering Manager</option>
+                      <option value="DevOps/Platform Engineer">DevOps/Platform Engineer</option>
+                    </select>
+                    <span class="error-msg" id="role-error">Please select your primary role.</span>
+                  </div>
+                  <button type="submit" class="btn btn-primary form-btn">Secure My Spot 🚀</button>
+                </form>
+                <div class="form-success-state" id="form-success" aria-hidden="true" style="display: none;">
+                  <div class="success-icon">🎉</div>
+                  <h3 class="success-title">You're on the list!</h3>
+                  <p class="success-desc">
+                    Thank you for your interest. We will review your application and reach out to <strong id="submitted-email" class="text-indigo"></strong> shortly.
+                  </p>
+                  <button class="btn btn-secondary" id="btn-reset-form">Register another email</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </main>

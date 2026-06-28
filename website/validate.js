@@ -334,6 +334,110 @@ try {
     'site-header does not have "scrolled" class when scrolled <= 20px',
   );
 
+  // --- Test 8: Verify Core Sections and Grids ---
+  console.log("\n[Test 8] Verifying Core Section Structures and Grids:");
+  const heroSection = document.querySelector(".hero-section");
+  const workflowSection = document.getElementById("workflow");
+  const terminalSection = document.getElementById("terminal");
+  const waitlistSection = document.getElementById("get-started");
+
+  assert(heroSection, "Hero Section exists in DOM");
+  assert(workflowSection, "Interactive Workflow Visualization Section exists in DOM with id='workflow'");
+  assert(terminalSection, "Terminal Simulation Section exists in DOM with id='terminal'");
+  assert(waitlistSection, "Waitlist Form Section exists in DOM with id='get-started'");
+
+  // Grid structures
+  const sectionGrids = document.querySelectorAll(".section-grid");
+  assert(sectionGrids.length >= 4, "At least 4 fluid-responsive section grids are defined in HTML");
+
+  // --- Test 9: Verify Interactive Workflow Interactivity ---
+  console.log("\n[Test 9] Verifying Interactive Workflow steps and node activation:");
+  const firstStepBtn = document.querySelector('.workflow-step-btn[data-step="1"]');
+  const secondStepBtn = document.querySelector('.workflow-step-btn[data-step="2"]');
+  const node1 = document.getElementById("node-1");
+  const node2 = document.getElementById("node-2");
+  const line12 = document.getElementById("line-1-2");
+
+  assert(firstStepBtn && secondStepBtn, "Workflow step buttons exist in DOM");
+  assert(node1 && node2, "Workflow visualization nodes exist in DOM");
+
+  // Click step 2 button
+  secondStepBtn.click();
+  assert(secondStepBtn.classList.contains("active"), "Step 2 button becomes active on click");
+  assert(!firstStepBtn.classList.contains("active"), "Step 1 button is deactivated");
+  assert(node2.classList.contains("active"), "Node 2 visualization card is activated");
+  assert(!node1.classList.contains("active"), "Node 1 visualization card is deactivated");
+  assert(line12.classList.contains("active"), "Connecting line path 1-2 is activated");
+
+  // --- Test 10: Verify Terminal Simulation Output ---
+  console.log("\n[Test 10] Verifying Terminal Simulation outputs on trigger:");
+  const terminalResetBtn = document.getElementById("terminal-reset");
+  const simTriggerBtn = document.getElementById("btn-trigger-simulation");
+  const tOutput = document.getElementById("terminal-output");
+
+  assert(terminalResetBtn, "Terminal reset/refresh button exists");
+  assert(simTriggerBtn, "Simulation trigger button exists");
+  assert(tOutput, "Terminal output container exists");
+
+  // Trigger terminal simulation manually
+  simTriggerBtn.click();
+  // Verify that elements are inserted into the terminal output
+  assert(tOutput.children.length > 0, "Terminal simulation inserts logs into the terminal window");
+
+  // --- Test 11: Verify Waitlist Form and Validations ---
+  console.log("\n[Test 11] Verifying Waitlist Form and dynamic validations:");
+  const waitForm = document.getElementById("waitlist-form");
+  const nameIn = document.getElementById("user-name");
+  const emailIn = document.getElementById("user-email");
+  const companyIn = document.getElementById("user-company");
+  const roleIn = document.getElementById("user-role");
+  const fSuccess = document.getElementById("form-success");
+  const fResetBtn = document.getElementById("btn-reset-form");
+
+  assert(waitForm, "Waitlist form exists in DOM");
+  assert(nameIn && emailIn && companyIn && roleIn, "Form input fields exist (name, email, company, role)");
+  assert(fSuccess, "Form success state element exists");
+
+  // Test Submission with Invalid Form (blank fields)
+  nameIn.value = "";
+  emailIn.value = "";
+  companyIn.value = "";
+  roleIn.value = "";
+  
+  const submitEvent = new window.Event("submit", { cancelable: true });
+  waitForm.dispatchEvent(submitEvent);
+
+  assert(nameIn.parentElement.classList.contains("has-error"), "Name input container has-error on blank submit");
+  assert(emailIn.parentElement.classList.contains("has-error"), "Email input container has-error on blank submit");
+  assert(companyIn.parentElement.classList.contains("has-error"), "Company input container has-error on blank submit");
+  assert(roleIn.parentElement.classList.contains("has-error"), "Role select container has-error on blank submit");
+
+  // Test Dynamic Error Clearance on Input
+  nameIn.value = "John Doe";
+  const nameInputEvent = new window.Event("input");
+  nameIn.dispatchEvent(nameInputEvent);
+  assert(!nameIn.parentElement.classList.contains("has-error"), "Error state cleared on key/input typing");
+
+  // Test Valid Form Submission
+  emailIn.value = "john@example.com";
+  companyIn.value = "Vercel";
+  roleIn.value = "Fullstack Engineer";
+  
+  waitForm.dispatchEvent(submitEvent);
+
+  assert(waitForm.style.display === "none", "Waitlist form is hidden on successful validation");
+  assert(fSuccess.style.display === "flex", "Form success state is displayed");
+  
+  const subEmail = document.getElementById("submitted-email");
+  assert(subEmail && subEmail.innerText === "john@example.com", "Submitted email matches the input email");
+
+  // Test Form Reset
+  assert(fResetBtn, "Reset form button exists in success state");
+  fResetBtn.click();
+  assert(waitForm.style.display === "block", "Form is displayed again after clicking register another");
+  assert(fSuccess.style.display === "none", "Success state is hidden again");
+  assert(nameIn.value === "", "Name input was reset");
+
   console.log("\n🎉 All Component Unit Tests passed successfully!");
 } catch (e) {
   console.error("\n❌ Component Unit Tests failed:");
