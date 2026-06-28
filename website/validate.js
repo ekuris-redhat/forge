@@ -134,6 +134,20 @@ import { JSDOM } from "jsdom";
       "\nwindow.TerminalSimulator = TerminalSimulator;\nwindow.DEFAULT_LOGS = DEFAULT_LOGS;\n";
     window.eval(terminalCode);
 
+    // Read and execute WaitlistForm.js script
+    const waitlistFormJsPath = path.join(
+      websiteDir,
+      "src",
+      "components",
+      "WaitlistForm.js",
+    );
+    let waitlistFormCode = fs.readFileSync(waitlistFormJsPath, "utf8");
+    waitlistFormCode = waitlistFormCode
+      .replace(/export\s+const/g, "const")
+      .replace(/export\s+class/g, "class");
+    waitlistFormCode += "\nwindow.WaitlistForm = WaitlistForm;\n";
+    window.eval(waitlistFormCode);
+
     // Intercept TerminalSimulator init to set delays to 0 for tests
     window.eval(`
     const originalInit = TerminalSimulator.prototype.init;
@@ -153,10 +167,15 @@ import { JSDOM } from "jsdom";
     // Read and execute main.js script in the JSDOM window context
     let jsCode = fs.readFileSync(mainJsPath, "utf8");
     // Strip import statements
-    jsCode = jsCode.replace(
-      /import\s+\{\s*TerminalSimulator\s*\}\s+from\s+["'].\/terminal\.js["'];?/g,
-      "",
-    );
+    jsCode = jsCode
+      .replace(
+        /import\s+\{\s*TerminalSimulator\s*\}\s+from\s+["'].\/terminal\.js["'];?/g,
+        "",
+      )
+      .replace(
+        /import\s+\{\s*WaitlistForm\s*\}\s+from\s+["'].\/components\/WaitlistForm\.js["'];?/g,
+        "",
+      );
     window.eval(jsCode);
 
     // Dispatch DOMContentLoaded to trigger script initialization
@@ -915,7 +934,9 @@ import { JSDOM } from "jsdom";
         this.observedElements.push(element);
       }
       unobserve(element) {
-        this.observedElements = this.observedElements.filter((el) => el !== element);
+        this.observedElements = this.observedElements.filter(
+          (el) => el !== element,
+        );
       }
       disconnect() {
         this.observedElements = [];
@@ -953,15 +974,19 @@ import { JSDOM } from "jsdom";
         "viewportObserver is instantiated as MockIntersectionObserver",
       );
       assert(
-        viewportSim.viewportObserver.observedElements.includes(viewportSim.terminalWindow),
+        viewportSim.viewportObserver.observedElements.includes(
+          viewportSim.terminalWindow,
+        ),
         "viewportObserver is observing the terminalWindow element",
       );
 
       // 1. Trigger visibility >= 10% (e.g. 0.1)
-      viewportSim.viewportObserver.trigger([{
-        intersectionRatio: 0.1,
-        target: viewportSim.terminalWindow,
-      }]);
+      viewportSim.viewportObserver.trigger([
+        {
+          intersectionRatio: 0.1,
+          target: viewportSim.terminalWindow,
+        },
+      ]);
 
       assert(
         viewportSim.wasVisible === undefined,
@@ -988,10 +1013,12 @@ import { JSDOM } from "jsdom";
       await new Promise((resolve) => setTimeout(resolve, 15));
 
       // 2. Trigger visibility < 10% (e.g. 0.05)
-      viewportSim.viewportObserver.trigger([{
-        intersectionRatio: 0.05,
-        target: viewportSim.terminalWindow,
-      }]);
+      viewportSim.viewportObserver.trigger([
+        {
+          intersectionRatio: 0.05,
+          target: viewportSim.terminalWindow,
+        },
+      ]);
 
       assert(
         viewportSim.isPaused === false,
@@ -1007,10 +1034,12 @@ import { JSDOM } from "jsdom";
       );
 
       // 3. Trigger visibility back to >= 10% (e.g. 0.12)
-      viewportSim.viewportObserver.trigger([{
-        intersectionRatio: 0.12,
-        target: viewportSim.terminalWindow,
-      }]);
+      viewportSim.viewportObserver.trigger([
+        {
+          intersectionRatio: 0.12,
+          target: viewportSim.terminalWindow,
+        },
+      ]);
 
       assert(
         viewportSim.isPaused === true,
@@ -1030,6 +1059,90 @@ import { JSDOM } from "jsdom";
       testContainerViewport.remove();
       delete window.IntersectionObserver;
     }
+
+    // --- Test 16: Verify Waitlist Form Accessibility and Screen Reader ARIA Attributes ---
+    console.log(
+      "\n[Test 16] Verifying Waitlist Form Accessibility & ARIA Attributes:",
+    );
+    const formNameInput = document.getElementById("user-name");
+    const formEmailInput = document.getElementById("user-email");
+    const formCompanyInput = document.getElementById("user-company");
+    const formRoleInput = document.getElementById("user-role");
+
+    // 1. Verify semantic <label> tags exist and map properly
+    const labelForName = document.querySelector('label[for="user-name"]');
+    const labelForEmail = document.querySelector('label[for="user-email"]');
+    const labelForCompany = document.querySelector('label[for="user-company"]');
+    const labelForRole = document.querySelector('label[for="user-role"]');
+
+    assert(labelForName, "Semantic label for Full Name exists in DOM");
+    assert(labelForEmail, "Semantic label for Business Email exists in DOM");
+    assert(labelForCompany, "Semantic label for Company Size exists in DOM");
+    assert(labelForRole, "Semantic label for Primary Role exists in DOM");
+
+    // 2. Verify screen reader ARIA attributes are set correctly
+    assert(
+      formNameInput.getAttribute("aria-required") === "true",
+      "Full Name input has aria-required='true'",
+    );
+    assert(
+      formEmailInput.getAttribute("aria-required") === "true",
+      "Business Email input has aria-required='true'",
+    );
+    assert(
+      formCompanyInput.getAttribute("aria-required") === "true",
+      "Company Size select has aria-required='true'",
+    );
+    assert(
+      formRoleInput.getAttribute("aria-required") === "true",
+      "Primary Role select has aria-required='true'",
+    );
+
+    assert(
+      formNameInput.getAttribute("aria-labelledby") === "label-name",
+      "Full Name input has correct aria-labelledby attribute",
+    );
+    assert(
+      formEmailInput.getAttribute("aria-labelledby") === "label-email",
+      "Business Email input has correct aria-labelledby attribute",
+    );
+    assert(
+      formCompanyInput.getAttribute("aria-labelledby") === "label-company",
+      "Company Size select has correct aria-labelledby attribute",
+    );
+    assert(
+      formRoleInput.getAttribute("aria-labelledby") === "label-role",
+      "Primary Role select has correct aria-labelledby attribute",
+    );
+
+    // 3. Verify error describedby mappings and error-msg container accessibility
+    assert(
+      formNameInput.getAttribute("aria-describedby") === "name-error",
+      "Full Name input has correct aria-describedby attribute mapping to error msg",
+    );
+    assert(
+      formEmailInput.getAttribute("aria-describedby") === "email-error",
+      "Business Email input has correct aria-describedby attribute mapping to error msg",
+    );
+
+    const nameErrorSpan = document.getElementById("name-error");
+    assert(
+      nameErrorSpan.getAttribute("aria-live") === "polite",
+      "Error message span has aria-live='polite' for real-time announcements",
+    );
+
+    // 4. Verify input focus accessibility (native focus management)
+    formNameInput.focus();
+    assert(
+      document.activeElement === formNameInput,
+      "Full Name input receives focus correctly and is the activeElement",
+    );
+
+    formEmailInput.focus();
+    assert(
+      document.activeElement === formEmailInput,
+      "Business Email input receives focus correctly and is the activeElement",
+    );
 
     console.log("\n🎉 All Component Unit Tests passed successfully!");
   } catch (e) {

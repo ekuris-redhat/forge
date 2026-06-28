@@ -67,7 +67,10 @@ export class TerminalSimulator {
     this.isPausedState = false;
     this.isCompletedState = false;
     this.controlsLayout = options.controlsLayout || "within"; // 'within' (inside chrome) or 'beneath' (outside chrome)
-    this.useViewportDetection = options.useViewportDetection !== undefined ? options.useViewportDetection : true;
+    this.useViewportDetection =
+      options.useViewportDetection !== undefined
+        ? options.useViewportDetection
+        : true;
     this.wasVisible = undefined;
     this.activeDebounceTimers = [];
     this.viewportObserver = null;
@@ -128,7 +131,11 @@ export class TerminalSimulator {
 
     this.bindEvents();
 
-    if (this.useViewportDetection && typeof window !== "undefined" && "IntersectionObserver" in window) {
+    if (
+      this.useViewportDetection &&
+      typeof window !== "undefined" &&
+      "IntersectionObserver" in window
+    ) {
       this.setupViewportObserver();
     } else if (options.autoStart !== false) {
       this.start();
@@ -457,7 +464,10 @@ export class TerminalSimulator {
   }
 
   setupViewportObserver() {
-    const elementToObserve = this.terminalWindow || this.container || document.querySelector(".terminal-window");
+    const elementToObserve =
+      this.terminalWindow ||
+      this.container ||
+      document.querySelector(".terminal-window");
     if (!elementToObserve) return;
 
     const debouncedCallback = this.debounce((entries) => {
@@ -474,11 +484,14 @@ export class TerminalSimulator {
       });
     }, 100);
 
-    this.viewportObserver = new IntersectionObserver((entries) => {
-      debouncedCallback(entries);
-    }, {
-      threshold: [0.0, 0.1, 0.2]
-    });
+    this.viewportObserver = new IntersectionObserver(
+      (entries) => {
+        debouncedCallback(entries);
+      },
+      {
+        threshold: [0.0, 0.1, 0.2],
+      },
+    );
 
     this.viewportObserver.observe(elementToObserve);
   }
