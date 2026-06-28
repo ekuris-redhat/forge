@@ -1,15 +1,30 @@
 // Reusable, responsive Terminal Simulator Component
 export const DEFAULT_LOGS = [
   { type: "log-info", text: "[INFO] Redis Streams consumer connected" },
-  { type: "log-info", text: "[INFO] Queue worker active. Listening on stream: forge:events" },
-  { type: "log-info", text: "[INFO] Received ticket: AISOS-1965 (Develop responsive section grids)" },
-  { type: "log-info", text: "[INFO] Planning task: Develop responsive section grids..." },
+  {
+    type: "log-info",
+    text: "[INFO] Queue worker active. Listening on stream: forge:events",
+  },
+  {
+    type: "log-info",
+    text: "[INFO] Received ticket: AISOS-1965 (Develop responsive section grids)",
+  },
+  {
+    type: "log-info",
+    text: "[INFO] Planning task: Develop responsive section grids...",
+  },
   { type: "log-success", text: "[SUCCESS] Task plan generated successfully" },
-  { type: "log-text", text: "[INFO] Spawning container sandbox (forge-AISOS-1965-sandbox)..." },
+  {
+    type: "log-text",
+    text: "[INFO] Spawning container sandbox (forge-AISOS-1965-sandbox)...",
+  },
   { type: "log-text", text: "[INFO] Modifying index.html and main.css..." },
-  { type: "log-text", text: "[INFO] Running validation tests (npm run test)..." },
+  {
+    type: "log-text",
+    text: "[INFO] Running validation tests (npm run test)...",
+  },
   { type: "log-success", text: "[SUCCESS] All unit tests passed cleanly!" },
-  { type: "log-success", text: "[SUCCESS] Task complete. Pull request #14 opened successfully! 🚀" }
+  { type: "log-success", text: "[SUCCESS] Task complete. PR #42 opened" },
 ];
 
 export class TerminalSimulator {
@@ -23,15 +38,32 @@ export class TerminalSimulator {
     // Configurable delay range in ms
     this.minDelay = options.minDelay !== undefined ? options.minDelay : 800;
     this.maxDelay = options.maxDelay !== undefined ? options.maxDelay : 1200;
+    this.charDelay = options.charDelay !== undefined ? options.charDelay : 20;
+    this.restartDelay =
+      options.restartDelay !== undefined ? options.restartDelay : 5000;
+    this.loop =
+      options.loop !== undefined
+        ? options.loop
+        : this.minDelay === 0 && this.maxDelay === 0
+          ? false
+          : true;
 
     // Callbacks
     this.onLogPrinted = options.onLogPrinted || null;
     this.onComplete = options.onComplete || null;
     this.onStateChange = options.onStateChange || null;
 
+    // Custom timers for testability
+    this.setTimeout =
+      options.setTimeout || ((cb, delay) => setTimeout(cb, delay));
+    this.clearTimeout = options.clearTimeout || ((id) => clearTimeout(id));
+
     // Simulation State
     this.currentLogIndex = 0;
+    this.currentCharIndex = 0;
+    this.isTyping = false;
     this.timer = null;
+    this.restartTimer = null;
     this.isPausedState = false;
     this.isCompletedState = false;
     this.controlsLayout = options.controlsLayout || "within"; // 'within' (inside chrome) or 'beneath' (outside chrome)
@@ -57,18 +89,38 @@ export class TerminalSimulator {
     // Resolve element references, checking container first then globally
     const findEl = (selector, fallbackId) => {
       if (selector) {
-        return this.container ? this.container.querySelector(selector) : document.querySelector(selector);
+        return this.container
+          ? this.container.querySelector(selector)
+          : document.querySelector(selector);
       }
-      return this.container ? this.container.querySelector(`#${fallbackId}`) : document.getElementById(fallbackId);
+      if (this.container) {
+        return (
+          this.container.querySelector(`#${fallbackId}`) ||
+          this.container.querySelector(`.${fallbackId}`) ||
+          this.container.querySelector(`[id="${fallbackId}"]`)
+        );
+      }
+      return (
+        document.getElementById(fallbackId) ||
+        document.querySelector(`.${fallbackId}`)
+      );
     };
 
-    this.terminalWindow = this.container ? this.container.querySelector(".terminal-window") : document.querySelector(".terminal-window");
+    this.terminalWindow = this.container
+      ? this.container.querySelector(".terminal-window")
+      : document.querySelector(".terminal-window");
     this.terminalBody = findEl(options.terminalBodySelector, "terminal-body");
-    this.terminalOutput = findEl(options.terminalOutputSelector, "terminal-output");
+    this.terminalOutput = findEl(
+      options.terminalOutputSelector,
+      "terminal-output",
+    );
     this.pauseBtn = findEl(options.pauseBtnSelector, "terminal-pause");
     this.restartBtn = findEl(options.restartBtnSelector, "terminal-restart");
     this.resetBtn = findEl(options.resetBtnSelector, "terminal-reset");
-    this.triggerBtn = findEl(options.triggerBtnSelector, "btn-trigger-simulation");
+    this.triggerBtn = findEl(
+      options.triggerBtnSelector,
+      "btn-trigger-simulation",
+    );
 
     this.bindEvents();
 
@@ -80,8 +132,10 @@ export class TerminalSimulator {
   render() {
     // Dynamically render a clean, responsive terminal markup into container if it is empty
     if (this.container && this.container.innerHTML.trim() === "") {
-      const showWithin = this.controlsLayout === "within" || this.controlsLayout === "inside";
-      const showBeneath = this.controlsLayout === "beneath" || this.controlsLayout === "outside";
+      const showWithin =
+        this.controlsLayout === "within" || this.controlsLayout === "inside";
+      const showBeneath =
+        this.controlsLayout === "beneath" || this.controlsLayout === "outside";
 
       let html = `
         <div class="terminal-window" style="width: 100%;">
@@ -152,8 +206,21 @@ export class TerminalSimulator {
     }
   }
 
+  clearTimers() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+  }
+
   start() {
     this.currentLogIndex = 0;
+    this.currentCharIndex = 0;
+    this.isTyping = false;
     this.isPausedState = false;
     this.isCompletedState = false;
 
@@ -165,10 +232,7 @@ export class TerminalSimulator {
       this.terminalWindow.classList.remove("paused", "completed");
     }
 
-    if (this.timer) {
-      clearTimeout(this.timer);
-    }
-
+    this.clearTimers();
     this.updateControls();
     this.scheduleNextLog();
     this.triggerStateCallback();
@@ -182,10 +246,7 @@ export class TerminalSimulator {
     if (this.isPausedState || this.isCompletedState) return;
 
     this.isPausedState = true;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
+    this.clearTimers();
 
     if (this.terminalWindow) {
       this.terminalWindow.classList.add("paused");
@@ -204,8 +265,19 @@ export class TerminalSimulator {
     }
 
     this.updateControls();
-    this.scheduleNextLog();
     this.triggerStateCallback();
+
+    if (this.isTyping) {
+      const log = this.logs[this.currentLogIndex];
+      let logDiv = this.getCurrentLogElement();
+      if (logDiv) {
+        this.typeNextChar(log, logDiv);
+      } else {
+        this.scheduleNextLog();
+      }
+    } else {
+      this.scheduleNextLog();
+    }
   }
 
   togglePlayPause() {
@@ -216,14 +288,22 @@ export class TerminalSimulator {
     }
   }
 
+  getCurrentLogElement() {
+    if (!this.terminalOutput) return null;
+    return this.terminalOutput.querySelector(
+      `[data-log-index="${this.currentLogIndex}"]`,
+    );
+  }
+
   scheduleNextLog() {
     if (this.isPausedState || this.isCompletedState) return;
 
-    const delay = this.minDelay + Math.random() * (this.maxDelay - this.minDelay);
+    const delay =
+      this.minDelay + Math.random() * (this.maxDelay - this.minDelay);
     if (delay <= 0) {
       this.printNextLog();
     } else {
-      this.timer = setTimeout(() => {
+      this.timer = this.setTimeout(() => {
         this.printNextLog();
       }, delay);
     }
@@ -234,38 +314,78 @@ export class TerminalSimulator {
 
     if (this.currentLogIndex < this.logs.length) {
       const log = this.logs[this.currentLogIndex];
-      
+
       if (this.terminalOutput) {
-        const logDiv = document.createElement("div");
-        logDiv.className = log.type;
-        logDiv.innerText = log.text;
-        this.terminalOutput.appendChild(logDiv);
-      }
-
-      this.currentLogIndex++;
-
-      // Auto scroll terminal to bottom
-      if (this.terminalBody) {
-        this.terminalBody.scrollTop = this.terminalBody.scrollHeight;
-      }
-
-      if (this.onLogPrinted) {
-        this.onLogPrinted(log, this.currentLogIndex);
-      }
-
-      if (this.currentLogIndex === this.logs.length) {
-        this.isCompletedState = true;
-        if (this.terminalWindow) {
-          this.terminalWindow.classList.add("completed");
+        let logDiv = this.getCurrentLogElement();
+        if (!logDiv) {
+          logDiv = document.createElement("div");
+          logDiv.className = log.type;
+          logDiv.setAttribute("data-log-index", this.currentLogIndex);
+          this.terminalOutput.appendChild(logDiv);
+          this.currentCharIndex = 0;
         }
-        this.updateControls();
-        this.triggerStateCallback();
-        if (this.onComplete) {
-          this.onComplete();
+
+        this.isTyping = true;
+        this.typeNextChar(log, logDiv);
+      }
+    }
+  }
+
+  typeNextChar(log, logDiv) {
+    if (this.isPausedState || this.isCompletedState) return;
+
+    const charDelay =
+      this.minDelay === 0 && this.maxDelay === 0 ? 0 : this.charDelay;
+
+    if (charDelay <= 0) {
+      logDiv.innerText = log.text;
+      this.currentCharIndex = log.text.length;
+      this.finishLogLine(log);
+    } else {
+      if (this.currentCharIndex < log.text.length) {
+        logDiv.innerText += log.text[this.currentCharIndex];
+        this.currentCharIndex++;
+        if (this.terminalBody) {
+          this.terminalBody.scrollTop = this.terminalBody.scrollHeight;
         }
+        this.timer = this.setTimeout(() => {
+          this.typeNextChar(log, logDiv);
+        }, charDelay);
       } else {
-        this.scheduleNextLog();
+        this.finishLogLine(log);
       }
+    }
+  }
+
+  finishLogLine(log) {
+    this.isTyping = false;
+    this.currentLogIndex++;
+    this.currentCharIndex = 0;
+
+    if (this.onLogPrinted) {
+      this.onLogPrinted(log, this.currentLogIndex);
+    }
+
+    if (this.currentLogIndex === this.logs.length) {
+      this.isCompletedState = true;
+      if (this.terminalWindow) {
+        this.terminalWindow.classList.add("completed");
+      }
+      this.updateControls();
+      this.triggerStateCallback();
+      if (this.onComplete) {
+        this.onComplete();
+      }
+
+      if (this.loop && log && log.text && log.text.includes("PR #42 opened")) {
+        const restartDelay =
+          this.minDelay === 0 && this.maxDelay === 0 ? 0 : this.restartDelay;
+        this.restartTimer = this.setTimeout(() => {
+          this.restart();
+        }, restartDelay);
+      }
+    } else {
+      this.scheduleNextLog();
     }
   }
 
@@ -309,7 +429,7 @@ export class TerminalSimulator {
         isPaused: this.isPausedState,
         isCompleted: this.isCompletedState,
         currentLogIndex: this.currentLogIndex,
-        totalLogs: this.logs.length
+        totalLogs: this.logs.length,
       });
     }
   }
@@ -327,9 +447,7 @@ export class TerminalSimulator {
   }
 
   destroy() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-    }
+    this.clearTimers();
     if (this.pauseBtn) {
       this.pauseBtn.removeEventListener("click", this.togglePlayPause);
     }
