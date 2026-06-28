@@ -1455,6 +1455,133 @@ textarea {
   margin-bottom: var(--spacing-6);
 }
 
+/* Waitlist Success Card Styling */
+.waitlist-status-card {
+  width: 100%;
+  background: rgba(9, 13, 22, 0.6);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-4) var(--spacing-6);
+  margin-bottom: var(--spacing-6);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: all var(--transition-normal);
+}
+
+.waitlist-label {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-semibold);
+}
+
+.waitlist-number {
+  font-size: var(--font-size-4xl);
+  font-weight: var(--font-weight-extrabold);
+  color: var(--color-accent);
+  margin: var(--spacing-2) 0;
+  text-shadow: 0 0 10px rgba(192, 132, 252, 0.4);
+}
+
+.waitlist-ref {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.sharing-section {
+  width: 100%;
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-5);
+  margin-top: var(--spacing-2);
+}
+
+.share-prompt {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-3);
+  text-align: center;
+}
+
+.share-buttons {
+  display: flex;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-4);
+  width: 100%;
+}
+
+.btn-share {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  border-radius: var(--radius-md);
+  color: #ffffff;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.btn-twitter {
+  background-color: #1d9bf0;
+}
+
+.btn-twitter:hover {
+  background-color: #0c7abf;
+  transform: translateY(-2px);
+}
+
+.btn-linkedin {
+  background-color: #0a66c2;
+}
+
+.btn-linkedin:hover {
+  background-color: #004182;
+  transform: translateY(-2px);
+}
+
+.copy-link-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.btn-copy {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-copy.copied {
+  background-color: #10b981;
+  border-color: #34d399;
+  color: #ffffff;
+}
+
+.copy-toast {
+  position: absolute;
+  bottom: -32px;
+  background-color: #10b981;
+  color: #ffffff;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  pointer-events: none;
+}
+
 /* --------------------------------------------------------------------------
    12. Footer Layout Shell
    -------------------------------------------------------------------------- */

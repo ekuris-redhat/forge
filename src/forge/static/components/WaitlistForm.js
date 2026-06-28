@@ -1,4 +1,6 @@
 // Modular, accessible Waitlist Form Component with State Machine and Domain Validation
+import { WaitlistSuccess } from "./WaitlistSuccess.js";
+
 export const BLOCKED_DOMAINS = new Set([
   "gmail.com",
   "yahoo.com",
@@ -157,10 +159,9 @@ export class WaitlistForm {
         if (this.successState) {
           this.successState.style.display = "flex";
           this.successState.setAttribute("aria-hidden", "false");
-        }
-        if (this.emailDisplay && data.business_email) {
-          this.emailDisplay.innerText = data.business_email;
-          this.emailDisplay.textContent = data.business_email;
+
+          // Instantiate and render the WaitlistSuccess component
+          new WaitlistSuccess(this.successState, data, this);
         }
         // Enable fields so they are ready if user resets
         allControls.forEach((ctrl) => {
@@ -347,9 +348,10 @@ export class WaitlistForm {
     // If we're under test mode and require synchronous submission for the legacy JSDOM validate.js test
     if (this.isTest && !window.__TEST_ASYNC_FORM__) {
       this.transitionTo(FormState.SUBMITTING);
-      this.transitionTo(FormState.SUCCESS, payload);
+      const successData = { ...payload, id: payload.id || 42 };
+      this.transitionTo(FormState.SUCCESS, successData);
       if (this.onSubmitSuccess) {
-        this.onSubmitSuccess(payload);
+        this.onSubmitSuccess(successData);
       }
       return;
     }
@@ -367,9 +369,11 @@ export class WaitlistForm {
       });
 
       if (response.ok || response.status === 201) {
-        this.transitionTo(FormState.SUCCESS, payload);
+        const responseData = await response.json().catch(() => ({}));
+        const successData = { ...payload, ...responseData };
+        this.transitionTo(FormState.SUCCESS, successData);
         if (this.onSubmitSuccess) {
-          this.onSubmitSuccess(payload);
+          this.onSubmitSuccess(successData);
         }
       } else if (response.status === 409) {
         this.transitionTo(FormState.ERROR);

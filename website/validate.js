@@ -134,6 +134,20 @@ import { JSDOM } from "jsdom";
       "\nwindow.TerminalSimulator = TerminalSimulator;\nwindow.DEFAULT_LOGS = DEFAULT_LOGS;\n";
     window.eval(terminalCode);
 
+    // Read and execute WaitlistSuccess.js script
+    const waitlistSuccessJsPath = path.join(
+      websiteDir,
+      "src",
+      "components",
+      "WaitlistSuccess.js",
+    );
+    let waitlistSuccessCode = fs.readFileSync(waitlistSuccessJsPath, "utf8");
+    waitlistSuccessCode = waitlistSuccessCode
+      .replace(/export\s+const/g, "const")
+      .replace(/export\s+class/g, "class");
+    waitlistSuccessCode += "\nwindow.WaitlistSuccess = WaitlistSuccess;\n";
+    window.eval(waitlistSuccessCode);
+
     // Read and execute WaitlistForm.js script
     const waitlistFormJsPath = path.join(
       websiteDir,
@@ -143,6 +157,10 @@ import { JSDOM } from "jsdom";
     );
     let waitlistFormCode = fs.readFileSync(waitlistFormJsPath, "utf8");
     waitlistFormCode = waitlistFormCode
+      .replace(
+        /import\s+\{\s*WaitlistSuccess\s*\}\s+from\s+["'].\/WaitlistSuccess\.js["'];?/g,
+        "",
+      )
       .replace(/export\s+const/g, "const")
       .replace(/export\s+class/g, "class");
     waitlistFormCode += "\nwindow.WaitlistForm = WaitlistForm;\n";
@@ -1401,6 +1419,145 @@ import { JSDOM } from "jsdom";
       test17Success.remove();
       delete window.__TEST_ASYNC_FORM__;
       delete window.fetch;
+    }
+
+    // --- Test 18: Verify Waitlist Success View and Copy Link Interaction ---
+    console.log(
+      "\n[Test 18] Verifying Waitlist Success Feedback & Social Sharing Component:",
+    );
+
+    const test18Container = document.createElement("div");
+    test18Container.id = "test18-success-container";
+    document.body.appendChild(test18Container);
+
+    try {
+      const mockPayload = {
+        id: 12345,
+        business_email: "test@acme.com",
+        name: "Test User",
+      };
+
+      // Instantiate WaitlistSuccess directly
+      const successView = new window.WaitlistSuccess(
+        test18Container,
+        mockPayload,
+      );
+
+      // 1. Success card rendering and container content
+      assert(
+        test18Container.querySelector(".waitlist-status-card") !== null,
+        "Success card renders status card",
+      );
+
+      // 2. Waitlist position or reference ID dynamically rendered based on API payload
+      const posElement = test18Container.querySelector(".waitlist-number");
+      assert(
+        posElement && posElement.textContent.includes("12345"),
+        "Waitlist position displays correct dynamic ID from payload",
+      );
+
+      const refElement = test18Container.querySelector(".waitlist-ref span");
+      assert(
+        refElement && refElement.textContent === "12345",
+        "Reference ID displays correct dynamic ID from payload",
+      );
+
+      // 3. Social share buttons present with descriptive, pre-filled texts
+      const twitterBtn = test18Container.querySelector(".btn-twitter");
+      assert(
+        twitterBtn && twitterBtn.href.includes("twitter.com/intent/tweet"),
+        "Twitter share button exists with correct link type",
+      );
+      assert(
+        twitterBtn.href.includes("Forge") && twitterBtn.href.includes("12345"),
+        "Twitter share link has pre-filled text and referral ID",
+      );
+
+      const linkedinBtn = test18Container.querySelector(".btn-linkedin");
+      assert(
+        linkedinBtn &&
+          linkedinBtn.href.includes("linkedin.com/sharing/share-offsite"),
+        "LinkedIn share button exists with correct link type",
+      );
+
+      // 4. "Copy Waitlist Link" button copies referral URL to clipboard and triggers toast
+      const copyBtn = test18Container.querySelector(".btn-copy");
+      assert(copyBtn !== null, "Copy Waitlist Link button exists");
+
+      // Mock navigator.clipboard.writeText using Object.defineProperty
+      let clipboardText = "";
+      const origClipboard = window.navigator.clipboard;
+      Object.defineProperty(window.navigator, "clipboard", {
+        value: {
+          writeText: async (text) => {
+            clipboardText = text;
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+
+      // Mock document.execCommand for fallback copying
+      let commandCopiedText = "";
+      const origExecCommand = document.execCommand;
+      document.execCommand = (command) => {
+        if (command === "copy") {
+          const active = document.activeElement;
+          if (active && active.tagName === "TEXTAREA") {
+            commandCopiedText = active.value;
+          }
+          return true;
+        }
+        return false;
+      };
+
+      const toast = test18Container.querySelector(".copy-toast");
+      assert(toast !== null, "Copy toast container exists");
+      assert(toast.style.display === "none", "Toast is initially hidden");
+
+      // Click copy button
+      copyBtn.click();
+
+      // Wait for async execution of handleCopy
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      // Check text was copied
+      assert(
+        clipboardText.includes("ref=12345") ||
+          commandCopiedText.includes("ref=12345"),
+        "Copying waitlist link copies referral URL to clipboard containing the ID",
+      );
+
+      // Toast is triggered visually
+      assert(
+        toast.style.display === "block",
+        "Toast is triggered and displayed upon copying",
+      );
+      assert(
+        copyBtn.textContent.includes("Copied"),
+        "Copy button changes its text visually on successful copy",
+      );
+
+      // Clean up clipboard and execCommand mocks
+      if (origClipboard) {
+        Object.defineProperty(window.navigator, "clipboard", {
+          value: origClipboard,
+          configurable: true,
+          writable: true,
+        });
+      } else {
+        delete window.navigator.clipboard;
+      }
+      document.execCommand = origExecCommand;
+
+      console.log(
+        "✅ Success view renders with dynamic position and sharing buttons",
+      );
+      console.log(
+        "✅ Copy Waitlist Link copies correct referral link to clipboard and shows toast",
+      );
+    } finally {
+      test18Container.remove();
     }
 
     console.log("\n🎉 All Component Unit Tests passed successfully!");
