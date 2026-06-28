@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from forge.models.workflow import TicketType
+from forge.workflow.feature.state import create_initial_feature_state as create_initial_state
 from forge.workflow.gates import route_prd_approval
 from forge.workflow.nodes import regenerate_prd_with_feedback
-from forge.workflow.feature.state import create_initial_feature_state as create_initial_state
 
 
 class TestPrdRejectedOnce:
@@ -54,6 +54,7 @@ Initial PRD content without user personas.
         mock_jira = MagicMock()
         mock_jira.update_description = AsyncMock()
         mock_jira.add_comment = AsyncMock()
+        mock_jira.add_structured_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
         mock_agent = MagicMock()
@@ -94,6 +95,7 @@ Revised PRD with user personas.
         mock_jira = MagicMock()
         mock_jira.update_description = AsyncMock()
         mock_jira.add_comment = AsyncMock()
+        mock_jira.add_structured_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
         mock_agent = MagicMock()
@@ -163,9 +165,7 @@ class TestPrdRejectedMultiple:
 
         mock_agent = MagicMock()
         # Simulate error to increment retry count
-        mock_agent.regenerate_with_feedback = AsyncMock(
-            side_effect=Exception("Simulated error")
-        )
+        mock_agent.regenerate_with_feedback = AsyncMock(side_effect=Exception("Simulated error"))
         mock_agent.close = AsyncMock()
 
         with patch("forge.workflow.nodes.prd_generation.JiraClient", return_value=mock_jira):
@@ -202,6 +202,7 @@ class TestPrdRevisionPreservesContext:
         mock_jira = MagicMock()
         mock_jira.update_description = AsyncMock()
         mock_jira.add_comment = AsyncMock()
+        mock_jira.add_structured_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
         mock_agent = MagicMock()
@@ -222,6 +223,7 @@ class TestPrdRevisionPreservesContext:
         mock_jira = MagicMock()
         mock_jira.update_description = AsyncMock()
         mock_jira.add_comment = AsyncMock()
+        mock_jira.add_structured_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
         mock_agent = MagicMock()

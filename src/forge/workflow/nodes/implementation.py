@@ -122,7 +122,7 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
         await post_status_comment(
             jira,
             current_task,
-            f"🔨 Forge started implementing [{current_task}]: {task_summary}",
+            "🔨 Forge is implementing this task.",
         )
 
         # Get guardrails context
