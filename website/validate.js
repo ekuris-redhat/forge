@@ -356,9 +356,10 @@ try {
   const secondStepBtn = document.querySelector('.workflow-step-btn[data-step="2"]');
   const node1 = document.getElementById("node-1");
   const node2 = document.getElementById("node-2");
+  const node3 = document.getElementById("node-3");
   const line12 = document.getElementById("line-1-2");
 
-  assert(firstStepBtn && secondStepBtn, "Workflow step buttons exist in DOM");
+  assert(firstStepBtn && secondStepBtn && node3, "Workflow step buttons exist in DOM");
   assert(node1 && node2, "Workflow visualization nodes exist in DOM");
 
   // Click step 2 button
@@ -368,6 +369,66 @@ try {
   assert(node2.classList.contains("active"), "Node 2 visualization card is activated");
   assert(!node1.classList.contains("active"), "Node 1 visualization card is deactivated");
   assert(line12.classList.contains("active"), "Connecting line path 1-2 is activated");
+
+  // Reset back to Step 1
+  firstStepBtn.click();
+  assert(node1.getAttribute("aria-expanded") === "true", 'Node 1 has aria-expanded="true" when active');
+  assert(node2.getAttribute("aria-expanded") === "false", 'Node 2 has aria-expanded="false" when inactive');
+
+  // Let's click every node, check its active state highlighting, description update, and aria-expanded attributes
+  const allNodes = document.querySelectorAll(".workflow-step-btn");
+  const descriptionTextEl = () => document.querySelector(".description-text");
+
+  // Let's verify all 6 nodes
+  assert(allNodes.length === 6, "Found exactly 6 workflow step nodes");
+
+  allNodes.forEach((node) => {
+    const stepNum = node.getAttribute("data-step");
+    node.click();
+    assert(node.classList.contains("active"), `Node ${stepNum} is active on click`);
+    assert(node.getAttribute("aria-expanded") === "true", `Node ${stepNum} has aria-expanded="true"`);
+    
+    // Check other nodes are inactive and have aria-expanded="false"
+    allNodes.forEach((otherNode) => {
+      if (otherNode !== node) {
+        assert(!otherNode.classList.contains("active"), `Node ${otherNode.getAttribute("data-step")} is inactive`);
+        assert(otherNode.getAttribute("aria-expanded") === "false", `Node ${otherNode.getAttribute("data-step")} has aria-expanded="false"`);
+      }
+    });
+
+    // Check description text switches successfully
+    const descText = descriptionTextEl().textContent.trim();
+    assert(descText.length > 0, `Node ${stepNum} displays description text`);
+
+    if (stepNum === "3") {
+      const expectedText = "Forge executes agent instructions within completely isolated, sandboxed containers. This ensures untrusted code never runs directly on your primary systems.";
+      assert(descText === expectedText, "Node 3 displays the exact specification text");
+    }
+  });
+
+  // --- Verify Keyboard Triggers (Enter and Space) on focused nodes ---
+  // Reset back to Node 1
+  firstStepBtn.click();
+  
+  // Trigger space keydown on Node 2
+  const wfSpaceEvent = new window.KeyboardEvent("keydown", {
+    key: " ",
+    bubbles: true,
+  });
+  node2.dispatchEvent(wfSpaceEvent);
+  assert(node2.classList.contains("active"), "Node 2 becomes active via Space keydown trigger");
+  assert(node2.getAttribute("aria-expanded") === "true", "Node 2 has aria-expanded=true after Space");
+  assert(node1.getAttribute("aria-expanded") === "false", "Node 1 has aria-expanded=false after Space");
+
+  // Trigger enter keydown on Node 3
+  const wfEnterEvent = new window.KeyboardEvent("keydown", {
+    key: "Enter",
+    bubbles: true,
+  });
+  node3.dispatchEvent(wfEnterEvent);
+  assert(node3.classList.contains("active"), "Node 3 becomes active via Enter keydown trigger");
+  assert(node3.getAttribute("aria-expanded") === "true", "Node 3 has aria-expanded=true after Enter");
+  assert(node2.getAttribute("aria-expanded") === "false", "Node 2 has aria-expanded=false after Enter");
 
   // --- Test 10: Verify Terminal Simulation Output ---
   console.log("\n[Test 10] Verifying Terminal Simulation outputs on trigger:");

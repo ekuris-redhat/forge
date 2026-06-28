@@ -166,7 +166,7 @@ document.addEventListener("DOMContentLoaded", () => {
     "3": {
       phase: "Phase 3",
       title: "Containerized Implementation",
-      desc: "Once approved, an ephemeral, secure sandbox container is spun up via Podman/Docker. A deep developer agent implements the planned changes in this isolated filesystem."
+      desc: "Forge executes agent instructions within completely isolated, sandboxed containers. This ensures untrusted code never runs directly on your primary systems."
     },
     "4": {
       phase: "Phase 4",
@@ -200,8 +200,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const nodeIndex = index + 1;
       if (nodeIndex === parseInt(stepNum, 10)) {
         node.classList.add("active");
+        node.setAttribute("aria-expanded", "true");
       } else {
         node.classList.remove("active");
+        node.setAttribute("aria-expanded", "false");
       }
     });
 
@@ -253,6 +255,14 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.addEventListener("click", () => {
       const stepNum = btn.getAttribute("data-step");
       activateStep(stepNum);
+    });
+
+    btn.addEventListener("keydown", (e) => {
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        const stepNum = btn.getAttribute("data-step");
+        activateStep(stepNum);
+      }
     });
   });
 
