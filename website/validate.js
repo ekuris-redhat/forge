@@ -1144,6 +1144,265 @@ import { JSDOM } from "jsdom";
       "Business Email input receives focus correctly and is the activeElement",
     );
 
+    // --- Test 17: Verify Waitlist Form State Machine & Custom Validations ---
+    console.log(
+      "\n[Test 17] Verifying Waitlist Form State Machine, Character Limits, Blur Validation, & Async Submit:",
+    );
+
+    // Prepare container for Test 17 to avoid interfering with current state
+    const test17Form = document.createElement("form");
+    test17Form.id = "test17-waitlist-form";
+    test17Form.innerHTML = `
+      <div class="form-group">
+        <input id="user-name" class="form-input" value="" />
+        <span class="error-msg" id="name-error"></span>
+      </div>
+      <div class="form-group">
+        <input id="user-email" class="form-input" value="" />
+        <span class="error-msg" id="email-error"></span>
+      </div>
+      <div class="form-group">
+        <select id="user-company" class="form-input">
+          <option value=""></option>
+          <option value="1-10">1-10</option>
+        </select>
+        <span class="error-msg" id="company-error"></span>
+      </div>
+      <div class="form-group">
+        <select id="user-role" class="form-input">
+          <option value=""></option>
+          <option value="Backend Engineer">Backend</option>
+        </select>
+        <span class="error-msg" id="role-error"></span>
+      </div>
+      <button type="submit">Submit</button>
+    `;
+    const test17Success = document.createElement("div");
+    test17Success.id = "test17-success";
+    const test17Email = document.createElement("strong");
+    test17Email.id = "test17-submitted-email";
+    test17Success.appendChild(test17Email);
+
+    document.body.appendChild(test17Form);
+    document.body.appendChild(test17Success);
+
+    const t17Name = test17Form.querySelectorAll(".form-input")[0];
+    const t17Email = test17Form.querySelectorAll(".form-input")[1];
+    const t17Company = test17Form.querySelectorAll(".form-input")[2];
+    const t17Role = test17Form.querySelectorAll(".form-input")[3];
+    const t17NameError = t17Name.parentElement.querySelector(".error-msg");
+    const t17EmailError = t17Email.parentElement.querySelector(".error-msg");
+    const t17CompanyError =
+      t17Company.parentElement.querySelector(".error-msg");
+    const t17RoleError = t17Role.parentElement.querySelector(".error-msg");
+
+    // Mock document.getElementById for Test 17 fields because WaitlistForm uses document.getElementById
+    const origGetElementById = document.getElementById;
+    document.getElementById = (id) => {
+      if (id === "user-name") return t17Name;
+      if (id === "user-email") return t17Email;
+      if (id === "user-company") return t17Company;
+      if (id === "user-role") return t17Role;
+      if (id === "name-error") return t17NameError;
+      if (id === "email-error") return t17EmailError;
+      if (id === "company-error") return t17CompanyError;
+      if (id === "role-error") return t17RoleError;
+      if (id === "waitlist-form") return test17Form;
+      if (id === "form-success") return test17Success;
+      if (id === "submitted-email") return test17Email;
+      return origGetElementById.call(document, id);
+    };
+
+    try {
+      let stateTransitions = [];
+      const form17 = new window.WaitlistForm({
+        formId: "waitlist-form",
+        successId: "form-success",
+        emailDisplayId: "submitted-email",
+        isTest: false, // force async submission
+        onStateChange: (oldS, newS) => {
+          stateTransitions.push(newS);
+        },
+      });
+
+      assert(form17.state === "IDLE", "State machine starts in IDLE state");
+
+      // Verify Blur Validation
+      // Trigger blur on empty name
+      t17Name.dispatchEvent(new window.Event("blur"));
+      assert(
+        t17Name.parentElement.classList.contains("has-error"),
+        "Blurring empty Name input triggers validation feedback",
+      );
+
+      // Fix Name
+      t17Name.value = "Jane Doe";
+      t17Name.dispatchEvent(new window.Event("input"));
+      assert(
+        !t17Name.parentElement.classList.contains("has-error"),
+        "Inline error is cleared on typing in Name input",
+      );
+
+      // Verify character limits validation
+      t17Name.value = "a".repeat(101);
+      t17Name.dispatchEvent(new window.Event("blur"));
+      assert(
+        t17Name.parentElement.classList.contains("has-error"),
+        "Exceeding 100 character limit on Name triggers error",
+      );
+
+      t17Name.value = "Jane Doe";
+      t17Name.dispatchEvent(new window.Event("blur"));
+
+      // Verify Blocked personal email domains
+      t17Email.value = "jane.doe@gmail.com";
+      t17Email.dispatchEvent(new window.Event("blur"));
+      assert(
+        t17Email.parentElement.classList.contains("has-error"),
+        "Personal/blocked email domains (gmail.com) are rejected inline",
+      );
+
+      t17Email.value = "jane.doe@outlook.com";
+      t17Email.dispatchEvent(new window.Event("blur"));
+      assert(
+        t17Email.parentElement.classList.contains("has-error"),
+        "Personal/blocked email domains (outlook.com) are rejected inline",
+      );
+
+      t17Email.value = "jane@acme.com";
+      t17Email.dispatchEvent(new window.Event("input"));
+      assert(
+        !t17Email.parentElement.classList.contains("has-error"),
+        "Valid corporate email address clears inline errors on input",
+      );
+
+      // Mock fetch
+      window.__TEST_ASYNC_FORM__ = true; // allow async branch
+      let fetchPromiseResolve;
+      let fetchPromiseReject;
+      const mockFetchPromise = new Promise((res, rej) => {
+        fetchPromiseResolve = res;
+        fetchPromiseReject = rej;
+      });
+
+      window.fetch = (url, opts) => {
+        assert(
+          url === "/api/v1/waitlist",
+          "Fetch requests POST to correct url /api/v1/waitlist",
+        );
+        assert(opts.method === "POST", "Fetch uses POST method");
+        const body = JSON.parse(opts.body);
+        assert(
+          body.name === "Jane Doe",
+          "Payload contains correct registrant name",
+        );
+        assert(
+          body.business_email === "jane@acme.com",
+          "Payload contains correct business email",
+        );
+        return mockFetchPromise;
+      };
+
+      t17Company.value = "1-10";
+      t17Role.value = "Backend Engineer";
+
+      // Trigger submit
+      stateTransitions = [];
+      const submitEvt = new window.Event("submit", { cancelable: true });
+      test17Form.dispatchEvent(submitEvt);
+
+      // Assert that state transitions: IDLE -> VALIDATING -> SUBMITTING
+      assert(
+        stateTransitions.includes("VALIDATING"),
+        "State machine transitioned through VALIDATING state",
+      );
+      assert(
+        stateTransitions.includes("SUBMITTING"),
+        "State machine transitioned through SUBMITTING state",
+      );
+      assert(
+        form17.state === "SUBMITTING",
+        "Form is currently in SUBMITTING state during fetch",
+      );
+
+      // Verify Submitting state disables all input elements, form fields, and the submit button
+      assert(
+        t17Name.disabled === true,
+        "Name input is disabled during SUBMITTING state",
+      );
+      assert(
+        t17Email.disabled === true,
+        "Email input is disabled during SUBMITTING state",
+      );
+      assert(
+        t17Company.disabled === true,
+        "Company select is disabled during SUBMITTING state",
+      );
+      assert(
+        t17Role.disabled === true,
+        "Role select is disabled during SUBMITTING state",
+      );
+      assert(
+        form17.submitBtn.disabled === true,
+        "Submit button is disabled during SUBMITTING state",
+      );
+      assert(
+        form17.submitBtn.innerHTML.includes("Securing spot..."),
+        "Submit button exhibits active loading state",
+      );
+
+      // Resolve the fetch mock as successful
+      fetchPromiseResolve({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          id: 42,
+          name: "Jane Doe",
+          business_email: "jane@acme.com",
+        }),
+      });
+
+      // Wait for async execution
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      assert(
+        stateTransitions.includes("SUCCESS"),
+        "State machine transitioned to SUCCESS state",
+      );
+      assert(
+        form17.state === "SUCCESS",
+        "Form state machine is in SUCCESS state",
+      );
+      assert(test17Form.style.display === "none", "Form is hidden on success");
+      assert(
+        test17Success.style.display === "flex",
+        "Success message is displayed",
+      );
+      assert(
+        test17Email.textContent === "jane@acme.com",
+        "Email is correctly displayed on success screen",
+      );
+
+      // Reset the form
+      form17.resetForm();
+      assert(
+        form17.state === "IDLE",
+        "Resetting form transitions back to IDLE state",
+      );
+      assert(
+        test17Form.style.display === "block",
+        "Form is displayed again after resetting",
+      );
+      assert(t17Name.value === "", "Name input is cleared after resetting");
+    } finally {
+      // Clean up Test 17
+      document.getElementById = origGetElementById;
+      test17Form.remove();
+      test17Success.remove();
+      delete window.__TEST_ASYNC_FORM__;
+      delete window.fetch;
+    }
+
     console.log("\n🎉 All Component Unit Tests passed successfully!");
   } catch (e) {
     console.error("\n❌ Component Unit Tests failed:");
