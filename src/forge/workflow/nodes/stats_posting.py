@@ -122,14 +122,6 @@ async def post_terminal_stats(state: FeatureState | BugState) -> dict:
         return {}
 
     outcome = _determine_outcome(state)
-    if outcome != "Completed":
-        logger.info(
-            "post_terminal_stats: skipping stats post for ticket=%s because outcome is %s",
-            ticket_key,
-            outcome,
-        )
-        return {}
-
     outcome_detail = _extract_outcome_detail(state, outcome)
 
     logger.info(

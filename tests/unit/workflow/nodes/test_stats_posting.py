@@ -226,7 +226,7 @@ class TestPostTerminalStats:
 
     @pytest.mark.asyncio
     async def test_blocked_outcome_for_blocked_state(self, feature_state):
-        """Blocked outcome is skipped from posting."""
+        """Blocked outcome posts stats."""
         feature_state["is_blocked"] = True
         feature_state["feedback_comment"] = "Waiting on legal approval"
 
@@ -239,11 +239,16 @@ class TestPostTerminalStats:
         ):
             await post_terminal_stats(feature_state)
 
-        mock_post.assert_not_awaited()
+        mock_post.assert_awaited_once_with(
+            ticket_key="FEAT-1",
+            stats=feature_state,
+            outcome="Blocked",
+            outcome_detail="Waiting on legal approval",
+        )
 
     @pytest.mark.asyncio
     async def test_failed_outcome_for_error_state(self, feature_state):
-        """Failed outcome is skipped from posting."""
+        """Failed outcome posts stats."""
         feature_state["last_error"] = "container exited with code 137"
 
         mock_post = AsyncMock(return_value=True)
@@ -255,7 +260,12 @@ class TestPostTerminalStats:
         ):
             await post_terminal_stats(feature_state)
 
-        mock_post.assert_not_awaited()
+        mock_post.assert_awaited_once_with(
+            ticket_key="FEAT-1",
+            stats=feature_state,
+            outcome="Failed",
+            outcome_detail="container exited with code 137",
+        )
 
     @pytest.mark.asyncio
     async def test_handles_bug_state(self, bug_state):
@@ -272,7 +282,12 @@ class TestPostTerminalStats:
             result = await post_terminal_stats(bug_state)
 
         assert result == {}
-        mock_post.assert_not_awaited()
+        mock_post.assert_awaited_once_with(
+            ticket_key="BUG-1",
+            stats=bug_state,
+            outcome="Failed",
+            outcome_detail="triage failed",
+        )
 
     @pytest.mark.asyncio
     async def test_non_blocking_on_post_stats_failure(self, feature_state):
@@ -365,4 +380,9 @@ class TestPostTerminalStats:
         ):
             await post_terminal_stats(feature_state)
 
-        mock_post.assert_not_awaited()
+        mock_post.assert_awaited_once_with(
+            ticket_key="FEAT-1",
+            stats=feature_state,
+            outcome="Blocked",
+            outcome_detail="Awaiting vendor API",
+        )
