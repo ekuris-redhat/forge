@@ -111,6 +111,13 @@ async def local_review_changes(state: WorkflowState) -> WorkflowState:
     workspace_path = state.get("workspace_path")
     ticket_type = state.get("ticket_type")
 
+    from forge.workflow.utils.gate_skip import is_skip_gate_active, post_github_skip_comment
+
+    if await is_skip_gate_active(state):
+        logger.info(f"Bypassing code quality local review for {ticket_key} as skip-gate is active")
+        await post_github_skip_comment(state, "code-quality")
+        return update_state_timestamp({**state, "current_node": "create_pr"})
+
     if not workspace_path:
         logger.info(f"No workspace for local review on {ticket_key}, skipping")
         return update_state_timestamp({**state, "current_node": "create_pr"})

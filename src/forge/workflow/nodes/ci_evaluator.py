@@ -101,6 +101,9 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
                 logger.info(
                     f"CI gate skipped by persistent database override for {repo_full} PR #{pr_number}"
                 )
+                from forge.workflow.utils.gate_skip import post_github_skip_comment
+
+                await post_github_skip_comment(state, "ci")
                 _any_skipped = True
                 continue
 

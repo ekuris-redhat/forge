@@ -279,6 +279,27 @@ class GitHubClient:
         response.raise_for_status()
         return response.json()
 
+    async def get_issue_comments(
+        self, owner: str, repo: str, issue_number: int
+    ) -> list[dict[str, Any]]:
+        """Get comments on an issue/PR.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            issue_number: Issue/PR number.
+
+        Returns:
+            List of comments.
+        """
+        client = await self._get_client()
+        response = await client.get(
+            f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+            params={"per_page": 100},
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def create_issue_comment(
         self, owner: str, repo: str, issue_number: int, body: str
     ) -> dict[str, Any]:

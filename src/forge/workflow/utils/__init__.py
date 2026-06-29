@@ -11,6 +11,7 @@ from forge.workflow.utils.comment_classifier import (
     extract_prefix_character,
     strip_comment_prefix,
 )
+from forge.workflow.utils.gate_skip import is_skip_gate_active, post_github_skip_comment
 from forge.workflow.utils.jira_status import (
     post_status_comment,
     remove_implementing_label,
@@ -88,6 +89,8 @@ __all__ = [
     "classify_comment",
     "strip_comment_prefix",
     "extract_prefix_character",
+    "is_skip_gate_active",
+    "post_github_skip_comment",
     "post_qa_summary_if_needed",
     "post_status_comment",
     "remove_implementing_label",

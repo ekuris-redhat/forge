@@ -33,6 +33,15 @@ async def update_documentation(state: WorkflowState) -> WorkflowState:
     ticket_key = state["ticket_key"]
     workspace_path = state.get("workspace_path")
 
+    from forge.workflow.utils.gate_skip import is_skip_gate_active, post_github_skip_comment
+
+    if await is_skip_gate_active(state):
+        logger.info(
+            f"Bypassing documentation freshness check for {ticket_key} as skip-gate is active"
+        )
+        await post_github_skip_comment(state, "documentation")
+        return update_state_timestamp({**state, "current_node": "create_pr"})
+
     if not workspace_path:
         logger.info(f"No workspace for doc update on {ticket_key}, skipping")
         return update_state_timestamp({**state, "current_node": "create_pr"})
