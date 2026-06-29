@@ -20,6 +20,7 @@ Everything you need to run Forge locally, test it, observe what it's doing, and 
 10. [Debugging Tools](#10-debugging-tools)
 11. [Common Workflows](#11-common-workflows)
 12. [Service Reference](#12-service-reference)
+13. [Frontend / Marketing Website](#13-frontend--marketing-website)
 
 ---
 
@@ -879,3 +880,39 @@ FORGE_REQUIRE_PROJECT_CONFIG=false
 GITHUB_KNOWN_REPOS=acme/backend,acme/frontend
 GITHUB_DEFAULT_REPO=acme/backend
 ```
+
+---
+
+## 13. Frontend / Marketing Website
+
+Forge includes a clean, performant, and responsive marketing and landing website located in the `website/` directory.
+
+### Quick Start Instructions
+
+To run the marketing website locally:
+
+```bash
+# 1. Navigate to the website directory
+cd website
+
+# 2. Install dependencies (Vite, JSDOM)
+npm install
+
+# 3. Start the Vite development server
+npm run dev
+```
+
+The site will be available at [http://localhost:5173](http://localhost:5173).
+
+To build the optimized static assets for production:
+
+```bash
+npm run build
+```
+
+The compiled assets will be written to `website/dist/`.
+
+### In-Depth Documentation & Validation
+
+For comprehensive technical details, file structure descriptions, interactive component layouts (`TerminalSimulator`, `WaitlistForm`, and `WaitlistSuccess`), and frontend validation or unit test instructions, please refer to the dedicated **[Marketing Website Developer Guide](../website/README.md)**.
+
