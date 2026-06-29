@@ -147,9 +147,19 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
         # Generate Epic breakdown using Claude - primary operation
         epics_data = await agent.generate_epics(spec_content, context)
 
-        # Record tokens
-        input_tokens = _estimate_tokens(spec_content)
-        output_tokens = _estimate_tokens(str(epics_data)) if epics_data else 0
+        # Record tokens (using actual agent metadata if available, else falling back to heuristic)
+        last_in = getattr(agent, "last_input_tokens", 0)
+        last_out = getattr(agent, "last_output_tokens", 0)
+        if isinstance(last_in, int) and not isinstance(last_in, bool) and last_in > 0:
+            input_tokens = last_in
+        else:
+            input_tokens = _estimate_tokens(spec_content)
+
+        if isinstance(last_out, int) and not isinstance(last_out, bool) and last_out > 0:
+            output_tokens = last_out
+        else:
+            output_tokens = _estimate_tokens(str(epics_data)) if epics_data else 0
+
         state = {**state, **record_tokens(state, STAGE_EPICS, input_tokens, output_tokens)}
 
         if not epics_data:

@@ -240,9 +240,19 @@ async def generate_prd(state: WorkflowState) -> WorkflowState:
         # Generate PRD using Claude - primary operation
         prd_content = await agent.generate_prd(raw_requirements, context)
 
-        # Record token usage (estimated from content length)
-        input_tokens = _estimate_tokens(raw_requirements)
-        output_tokens = _estimate_tokens(prd_content)
+        # Record token usage (using actual agent metadata if available, else falling back to heuristic)
+        last_in = getattr(agent, "last_input_tokens", 0)
+        last_out = getattr(agent, "last_output_tokens", 0)
+        if isinstance(last_in, int) and not isinstance(last_in, bool) and last_in > 0:
+            input_tokens = last_in
+        else:
+            input_tokens = _estimate_tokens(raw_requirements)
+
+        if isinstance(last_out, int) and not isinstance(last_out, bool) and last_out > 0:
+            output_tokens = last_out
+        else:
+            output_tokens = _estimate_tokens(prd_content)
+
         state = {**state, **record_tokens(state, STAGE_PRD, input_tokens, output_tokens)}
 
         # Publish PRD - either as GitHub PR or Jira update

@@ -331,8 +331,19 @@ async def _generate_tasks_for_epic(
         context=context,
     )
 
-    input_tokens = _estimate_tokens(prompt)
-    output_tokens = _estimate_tokens(result) if result else 0
+    # Record tokens (using actual agent metadata if available, else falling back to heuristic)
+    last_in = getattr(agent, "last_input_tokens", 0)
+    last_out = getattr(agent, "last_output_tokens", 0)
+    if isinstance(last_in, int) and not isinstance(last_in, bool) and last_in > 0:
+        input_tokens = last_in
+    else:
+        input_tokens = _estimate_tokens(prompt)
+
+    if isinstance(last_out, int) and not isinstance(last_out, bool) and last_out > 0:
+        output_tokens = last_out
+    else:
+        output_tokens = _estimate_tokens(result) if result else 0
+
     return _parse_tasks_response(result), input_tokens, output_tokens
 
 

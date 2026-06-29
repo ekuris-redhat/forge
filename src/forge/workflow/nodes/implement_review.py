@@ -201,8 +201,25 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
             repo_name=current_repo,
         )
 
-        input_tokens_1 = _estimate_tokens(analysis_prompt)
-        output_tokens_1 = _estimate_tokens(result_phase1.stdout) if result_phase1.stdout else 0
+        # Record tokens (using actual container metrics if available, else falling back to heuristic)
+        if (
+            result_phase1
+            and isinstance(getattr(result_phase1, "input_tokens", None), int)
+            and result_phase1.input_tokens > 0
+        ):
+            input_tokens_1 = result_phase1.input_tokens
+        else:
+            input_tokens_1 = _estimate_tokens(analysis_prompt)
+
+        if (
+            result_phase1
+            and isinstance(getattr(result_phase1, "output_tokens", None), int)
+            and result_phase1.output_tokens > 0
+        ):
+            output_tokens_1 = result_phase1.output_tokens
+        else:
+            output_tokens_1 = _estimate_tokens(result_phase1.stdout) if result_phase1.stdout else 0
+
         state = {**state, **record_tokens(state, STAGE_REVIEW, input_tokens_1, output_tokens_1)}
 
         # ── Check for objections ──────────────────────────────────────────────
@@ -249,10 +266,26 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
                 repo_name=current_repo,
             )
 
-            input_tokens_2 = _estimate_tokens(fix_prompt)
-            output_tokens_2 = (
-                _estimate_tokens(result_fix.stdout) if (result_fix and result_fix.stdout) else 0
-            )
+            # Record tokens (using actual container metrics if available, else falling back to heuristic)
+            if (
+                result_fix
+                and isinstance(getattr(result_fix, "input_tokens", None), int)
+                and result_fix.input_tokens > 0
+            ):
+                input_tokens_2 = result_fix.input_tokens
+            else:
+                input_tokens_2 = _estimate_tokens(fix_prompt)
+
+            if (
+                result_fix
+                and isinstance(getattr(result_fix, "output_tokens", None), int)
+                and result_fix.output_tokens > 0
+            ):
+                output_tokens_2 = result_fix.output_tokens
+            else:
+                output_tokens_2 = (
+                    _estimate_tokens(result_fix.stdout) if (result_fix and result_fix.stdout) else 0
+                )
             state = {**state, **record_tokens(state, STAGE_REVIEW, input_tokens_2, output_tokens_2)}
 
             # Commit any uncommitted changes the container left

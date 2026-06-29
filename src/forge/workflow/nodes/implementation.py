@@ -167,8 +167,25 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
             previous_task_keys=implemented_tasks,
         )
 
-        input_tokens = _estimate_tokens(full_description)
-        output_tokens = _estimate_tokens(result.stdout) if (result and result.stdout) else 0
+        # Record tokens (using actual container metrics if available, else falling back to heuristic)
+        if (
+            result
+            and isinstance(getattr(result, "input_tokens", None), int)
+            and result.input_tokens > 0
+        ):
+            input_tokens = result.input_tokens
+        else:
+            input_tokens = _estimate_tokens(full_description)
+
+        if (
+            result
+            and isinstance(getattr(result, "output_tokens", None), int)
+            and result.output_tokens > 0
+        ):
+            output_tokens = result.output_tokens
+        else:
+            output_tokens = _estimate_tokens(result.stdout) if (result and result.stdout) else 0
+
         state = {**state, **record_tokens(state, STAGE_IMPLEMENTATION, input_tokens, output_tokens)}
 
         if result.success:

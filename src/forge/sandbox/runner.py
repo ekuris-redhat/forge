@@ -47,6 +47,8 @@ class ContainerResult:
     stderr: str
     tests_passed: bool | None = None  # None if tests were skipped
     error_message: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
 
     @property
     def tests_failed(self) -> bool:
@@ -446,6 +448,20 @@ class ContainerRunner:
 
             logger.info(f"Container exited with code {exit_code}")
 
+            # Parse metrics.json if written by entrypoint.py
+            input_tokens = 0
+            output_tokens = 0
+            metrics_file = workspace_path / ".forge" / "metrics.json"
+            if metrics_file.exists():
+                try:
+                    metrics_data = json.loads(metrics_file.read_text())
+                    input_tokens = int(metrics_data.get("input_tokens", 0) or 0)
+                    output_tokens = int(metrics_data.get("output_tokens", 0) or 0)
+                except Exception as e:
+                    logger.warning(f"Failed to parse metrics.json in sandbox runner: {e}")
+                finally:
+                    metrics_file.unlink(missing_ok=True)
+
             # Log container output
             if exit_code != EXIT_SUCCESS:
                 # Failure: stderr at INFO, stdout at DEBUG
@@ -474,6 +490,8 @@ class ContainerRunner:
                     stdout=stdout_str,
                     stderr=stderr_str,
                     tests_passed=True,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
                 )
             elif exit_code == EXIT_TESTS_FAILED:
                 return ContainerResult(
@@ -483,6 +501,8 @@ class ContainerRunner:
                     stderr=stderr_str,
                     tests_passed=False,
                     error_message="Tests failed after max retries",
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
                 )
             else:
                 return ContainerResult(
@@ -491,6 +511,8 @@ class ContainerRunner:
                     stdout=stdout_str,
                     stderr=stderr_str,
                     error_message=f"Task failed with exit code {exit_code}",
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
                 )
 
         finally:

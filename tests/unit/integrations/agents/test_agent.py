@@ -97,3 +97,49 @@ def test_get_skill_paths_returns_default_without_ticket_key():
 
     mock_resolver.assert_called_once_with("", ANY)
     assert result == ["skills/default/"]
+
+
+@pytest.mark.asyncio
+async def test_run_agent_token_aggregation():
+    """_run_agent aggregates token counts from AIMessage usage_metadata."""
+    agent = ForgeAgent()
+
+    class AIMessage:
+        def __init__(self, content, usage_metadata):
+            self.content = content
+            self.usage_metadata = usage_metadata
+
+    msg1 = AIMessage("Hello", {"input_tokens": 10, "output_tokens": 5})
+    msg2 = AIMessage("World", {"input_tokens": 20, "output_tokens": 15})
+
+    mock_agent = AsyncMock()
+    mock_agent.ainvoke.return_value = {"messages": [msg1, msg2]}
+
+    with patch.object(agent, "_create_agent_async", return_value=mock_agent):
+        text, in_tokens, out_tokens = await agent._run_agent(
+            prompt="test prompt",
+            system_prompt="system prompt",
+        )
+
+    assert text == "Hello\nWorld"
+    assert in_tokens == 30
+    assert out_tokens == 20
+
+    await agent.close()
+
+
+@pytest.mark.asyncio
+async def test_run_task_populates_last_tokens():
+    """run_task updates the last_input_tokens and last_output_tokens attributes on ForgeAgent."""
+    agent = ForgeAgent()
+
+    with patch.object(agent, "_run_agent", new_callable=AsyncMock) as mock_run:
+        mock_run.return_value = ("Final response", 123, 456)
+        with patch("forge.integrations.agents.agent.load_prompt", return_value="system prompt"):
+            res = await agent.run_task(task="test-task", prompt="input prompt")
+
+    assert res == "Final response"
+    assert agent.last_input_tokens == 123
+    assert agent.last_output_tokens == 456
+
+    await agent.close()

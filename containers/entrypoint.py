@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 if os.environ.get("LANGCHAIN_VERBOSE", "").lower() in ("true", "1", "yes"):
     try:
         from langchain_core.globals import set_debug, set_verbose
+
         set_verbose(True)
         set_debug(True)
         logger.info("LangChain verbose/debug mode enabled")
@@ -304,7 +305,9 @@ async def run_agent_task(
         previous_task_keys: List of previously implemented task keys for handoff context.
     """
     # Support both new (LLM_MODEL) and legacy (CLAUDE_MODEL) env var names
-    model_name = os.environ.get("LLM_MODEL") or os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5@20250929")
+    model_name = os.environ.get("LLM_MODEL") or os.environ.get(
+        "CLAUDE_MODEL", "claude-sonnet-4-5@20250929"
+    )
     logger.info(f"Implementing task: {task_summary}")
     logger.info(f"Model: {model_name}")
 
@@ -442,9 +445,7 @@ async def run_agent_task(
 
         # Run the agent (with Langfuse session context if enabled)
         initial_message = {
-            "messages": [
-                {"role": "user", "content": f"Implement this task:\n\n{task_description}"}
-            ]
+            "messages": [{"role": "user", "content": f"Implement this task:\n\n{task_description}"}]
         }
 
         if langfuse_enabled:
@@ -456,6 +457,54 @@ async def run_agent_task(
                 result = await agent.ainvoke(initial_message, config=config)
         else:
             result = await agent.ainvoke(initial_message, config=config)
+
+        # Extract and aggregate tokens from usage_metadata
+        try:
+            total_input_tokens = 0
+            total_output_tokens = 0
+            messages = result.get("messages", []) if isinstance(result, dict) else []
+            for message in messages:
+                msg_type = type(message).__name__
+                if msg_type in ("AIMessage", "AIMessageChunk"):
+                    usage = getattr(message, "usage_metadata", None)
+                    if not usage:
+                        resp_metadata = getattr(message, "response_metadata", {})
+                        if isinstance(resp_metadata, dict):
+                            usage = resp_metadata.get("token_usage") or resp_metadata.get("usage")
+
+                    if isinstance(usage, dict):
+                        total_input_tokens += (
+                            usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0) or 0
+                        )
+                        total_output_tokens += (
+                            usage.get("output_tokens", 0) or usage.get("completion_tokens", 0) or 0
+                        )
+                    elif usage is not None:
+                        total_input_tokens += (
+                            getattr(usage, "input_tokens", 0)
+                            or getattr(usage, "prompt_tokens", 0)
+                            or 0
+                        )
+                        total_output_tokens += (
+                            getattr(usage, "output_tokens", 0)
+                            or getattr(usage, "completion_tokens", 0)
+                            or 0
+                        )
+
+            metrics_dir = workspace / ".forge"
+            metrics_dir.mkdir(parents=True, exist_ok=True)
+            metrics_file = metrics_dir / "metrics.json"
+            metrics_file.write_text(
+                json.dumps(
+                    {"input_tokens": total_input_tokens, "output_tokens": total_output_tokens},
+                    indent=2,
+                )
+            )
+            logger.info(
+                f"Saved container metrics to {metrics_file}: input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record token usage inside sandbox: {e}")
 
         # Flush Langfuse traces before exit
         if langfuse_enabled:
@@ -592,13 +641,18 @@ def main():
     # Ensure changes are committed (agent should have done this, but as fallback).
     # Skip if workspace is not a git repo — analysis tasks (RCA, reflection) write
     # artifacts to .forge/ without needing a commit.
-    is_git_repo = subprocess.run(
-        ["git", "rev-parse", "--is-inside-work-tree"],
-        cwd=workspace,
-        capture_output=True,
-    ).returncode == 0
+    is_git_repo = (
+        subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=workspace,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
     if is_git_repo:
-        fallback_message = f"[{task_key}] {task_summary}\n\nAuto-committed by Forge container fallback."
+        fallback_message = (
+            f"[{task_key}] {task_summary}\n\nAuto-committed by Forge container fallback."
+        )
         if not git_commit(workspace, fallback_message):
             logger.error("Failed to commit changes")
             sys.exit(EXIT_TASK_FAILED)

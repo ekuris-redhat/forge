@@ -120,6 +120,8 @@ class ForgeAgent:
         self._ensure_api_key()
         self._checkpointer = MemorySaver()
         self._current_repo: str = ""  # Set per-task for dynamic MCP URLs
+        self.last_input_tokens: int = 0
+        self.last_output_tokens: int = 0
 
         # Set prompt version from config
         set_default_version(self.settings.prompt_version)
@@ -573,7 +575,7 @@ class ForgeAgent:
         ticket_key: str | None = None,
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
-    ) -> str:
+    ) -> tuple[str, int, int]:
         """Run the agent with the given prompt.
 
         Implements exponential backoff retry for rate limit errors.
@@ -663,10 +665,37 @@ class ForgeAgent:
         response_text = []
         messages = result.get("messages", []) if isinstance(result, dict) else []
 
+        total_input_tokens = 0
+        total_output_tokens = 0
+
         for message in messages:
             # Check if it's an AI/Assistant message (LangChain message object)
             msg_type = type(message).__name__
             if msg_type in ("AIMessage", "AIMessageChunk"):
+                # Extract and aggregate tokens from usage_metadata (if present)
+                usage = getattr(message, "usage_metadata", None)
+                if not usage:
+                    resp_metadata = getattr(message, "response_metadata", {})
+                    if isinstance(resp_metadata, dict):
+                        usage = resp_metadata.get("token_usage") or resp_metadata.get("usage")
+
+                if isinstance(usage, dict):
+                    total_input_tokens += (
+                        usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0) or 0
+                    )
+                    total_output_tokens += (
+                        usage.get("output_tokens", 0) or usage.get("completion_tokens", 0) or 0
+                    )
+                elif usage is not None:
+                    total_input_tokens += (
+                        getattr(usage, "input_tokens", 0) or getattr(usage, "prompt_tokens", 0) or 0
+                    )
+                    total_output_tokens += (
+                        getattr(usage, "output_tokens", 0)
+                        or getattr(usage, "completion_tokens", 0)
+                        or 0
+                    )
+
                 content = message.content
                 if isinstance(content, str):
                     response_text.append(content)
@@ -677,7 +706,7 @@ class ForgeAgent:
                         elif hasattr(block, "text"):
                             response_text.append(block.text)
 
-        return "\n".join(response_text)
+        return "\n".join(response_text), total_input_tokens, total_output_tokens
 
     @staticmethod
     def _strip_preamble(text: str) -> str:
@@ -765,7 +794,7 @@ class ForgeAgent:
         }
         trace_tags, trace_metadata = resolve_trace_fields(trace_state)
 
-        result = await self._run_agent(
+        result, in_tokens, out_tokens = await self._run_agent(
             prompt=prompt,
             system_prompt=system_prompt,
             include_tools=include_tools,
@@ -775,6 +804,8 @@ class ForgeAgent:
             tags=trace_tags or None,
             metadata=trace_metadata or None,
         )
+        self.last_input_tokens = in_tokens
+        self.last_output_tokens = out_tokens
         observe_agent_duration(task_type=task, duration=time.monotonic() - _start)
 
         logger.info(f"Task '{task}' completed ({len(result)} chars)")

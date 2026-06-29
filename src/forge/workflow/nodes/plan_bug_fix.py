@@ -162,9 +162,24 @@ async def _run_plan_container(
                 task_key=f"{ticket_key}-plan",
             )
 
-            # Record tokens
-            input_tokens = _estimate_tokens(task_description)
-            output_tokens = _estimate_tokens(result.stdout) if (result and result.stdout) else 0
+            # Record tokens (using actual container metrics if available, else falling back to heuristic)
+            if (
+                result
+                and isinstance(getattr(result, "input_tokens", None), int)
+                and result.input_tokens > 0
+            ):
+                input_tokens = result.input_tokens
+            else:
+                input_tokens = _estimate_tokens(task_description)
+
+            if (
+                result
+                and isinstance(getattr(result, "output_tokens", None), int)
+                and result.output_tokens > 0
+            ):
+                output_tokens = result.output_tokens
+            else:
+                output_tokens = _estimate_tokens(result.stdout) if (result and result.stdout) else 0
             state = {**state, **record_tokens(state, STAGE_PLANNING, input_tokens, output_tokens)}
 
             if not result.success:

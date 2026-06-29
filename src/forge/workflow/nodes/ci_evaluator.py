@@ -364,8 +364,25 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
             repo_name=state.get("current_repo", ""),
         )
 
-        input_tokens_1 = _estimate_tokens(analysis_prompt)
-        output_tokens_1 = _estimate_tokens(result_phase1.stdout) if result_phase1.stdout else 0
+        # Record tokens (using actual container metrics if available, else falling back to heuristic)
+        if (
+            result_phase1
+            and isinstance(getattr(result_phase1, "input_tokens", None), int)
+            and result_phase1.input_tokens > 0
+        ):
+            input_tokens_1 = result_phase1.input_tokens
+        else:
+            input_tokens_1 = _estimate_tokens(analysis_prompt)
+
+        if (
+            result_phase1
+            and isinstance(getattr(result_phase1, "output_tokens", None), int)
+            and result_phase1.output_tokens > 0
+        ):
+            output_tokens_1 = result_phase1.output_tokens
+        else:
+            output_tokens_1 = _estimate_tokens(result_phase1.stdout) if result_phase1.stdout else 0
+
         state = {**state, **record_tokens(state, STAGE_CI, input_tokens_1, output_tokens_1)}
 
         if not fix_plan_file.exists():
@@ -398,8 +415,25 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
             repo_name=state.get("current_repo", ""),
         )
 
-        input_tokens_2 = _estimate_tokens(fix_prompt)
-        output_tokens_2 = _estimate_tokens(result_phase2.stdout) if result_phase2.stdout else 0
+        # Record tokens (using actual container metrics if available, else falling back to heuristic)
+        if (
+            result_phase2
+            and isinstance(getattr(result_phase2, "input_tokens", None), int)
+            and result_phase2.input_tokens > 0
+        ):
+            input_tokens_2 = result_phase2.input_tokens
+        else:
+            input_tokens_2 = _estimate_tokens(fix_prompt)
+
+        if (
+            result_phase2
+            and isinstance(getattr(result_phase2, "output_tokens", None), int)
+            and result_phase2.output_tokens > 0
+        ):
+            output_tokens_2 = result_phase2.output_tokens
+        else:
+            output_tokens_2 = _estimate_tokens(result_phase2.stdout) if result_phase2.stdout else 0
+
         state = {**state, **record_tokens(state, STAGE_CI, input_tokens_2, output_tokens_2)}
 
         workspace = Workspace(

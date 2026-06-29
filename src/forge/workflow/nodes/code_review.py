@@ -87,8 +87,25 @@ async def run_post_change_review(
         )
 
         if state is not None:
-            input_tokens = _estimate_tokens(task_description)
-            output_tokens = _estimate_tokens(result.stdout) if result.stdout else 0
+            # Record tokens (using actual container metrics if available, else falling back to heuristic)
+            if (
+                result
+                and isinstance(getattr(result, "input_tokens", None), int)
+                and result.input_tokens > 0
+            ):
+                input_tokens = result.input_tokens
+            else:
+                input_tokens = _estimate_tokens(task_description)
+
+            if (
+                result
+                and isinstance(getattr(result, "output_tokens", None), int)
+                and result.output_tokens > 0
+            ):
+                output_tokens = result.output_tokens
+            else:
+                output_tokens = _estimate_tokens(result.stdout) if result.stdout else 0
+
             token_updates = record_tokens(state, STAGE_REVIEW, input_tokens, output_tokens)
             state.setdefault("stage_timestamps", {}).update(
                 token_updates.get("stage_timestamps", {})
@@ -209,8 +226,19 @@ async def sync_pr_description(
             finally:
                 await agent.close()
 
-            input_tokens = _estimate_tokens(prompt)
-            output_tokens = _estimate_tokens(updated_body) if updated_body else 0
+            # Record tokens (using actual agent metadata if available, else falling back to heuristic)
+            last_in = getattr(agent, "last_input_tokens", 0)
+            last_out = getattr(agent, "last_output_tokens", 0)
+            if isinstance(last_in, int) and not isinstance(last_in, bool) and last_in > 0:
+                input_tokens = last_in
+            else:
+                input_tokens = _estimate_tokens(prompt)
+
+            if isinstance(last_out, int) and not isinstance(last_out, bool) and last_out > 0:
+                output_tokens = last_out
+            else:
+                output_tokens = _estimate_tokens(updated_body) if updated_body else 0
+
             token_updates = record_tokens(state, STAGE_REVIEW, input_tokens, output_tokens)
             state.setdefault("stage_timestamps", {}).update(
                 token_updates.get("stage_timestamps", {})
