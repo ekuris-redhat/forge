@@ -293,11 +293,101 @@ def get_git_diff(base: str | None, head: str | None) -> str:
         return ""
 
 
+def check_bypass_conditions(args: argparse.Namespace) -> bool:
+    """
+    Checks if any bypass conditions are met to skip the freshness check.
+    """
+    # 1. Environment variable bypass
+    if os.environ.get("SKIP_DOC_FRESHNESS") in ("true", "1", "yes"):
+        print("Bypass condition met: SKIP_DOC_FRESHNESS environment variable is set.")
+        return True
+
+    # 2. Check for commit message bypass
+    try:
+        result = subprocess.run(
+            ["git", "log", "-1", "--pretty=%B"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout:
+            commit_msg = result.stdout.lower()
+            skip_patterns = [
+                "[skip doc-freshness]",
+                "[skip-doc-freshness]",
+                "[skip docs]",
+                "[skip-docs]",
+                "[skip cdf]",
+                "skip-doc-freshness",
+                "skip-docs",
+            ]
+            for pattern in skip_patterns:
+                if pattern in commit_msg:
+                    print(
+                        f"Bypass condition met: Commit message contains skip pattern '{pattern}'."
+                    )
+                    return True
+    except Exception as e:
+        if args.verbose:
+            print(f"Verbose: Failed to check commit message for bypass: {e}")
+
+    # 3. Check GITHUB_EVENT_PATH for PR labels, title, or body
+    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    if event_path and os.path.exists(event_path):
+        try:
+            import json
+
+            with open(event_path, encoding="utf-8") as f:
+                event_data = json.load(f)
+
+            pr_data = event_data.get("pull_request", {})
+            if pr_data:
+                # Check labels
+                labels = [lbl.get("name", "").lower() for lbl in pr_data.get("labels", [])]
+                for label in labels:
+                    if (
+                        "skip-doc-freshness" in label
+                        or "skip-docs" in label
+                        or "forge:yolo" in label
+                    ):
+                        print(f"Bypass condition met: PR label contains skip pattern '{label}'.")
+                        return True
+
+                # Check title/body
+                title = pr_data.get("title", "").lower()
+                body = pr_data.get("body", "")
+                body = body.lower() if body else ""
+
+                skip_patterns = [
+                    "[skip doc-freshness]",
+                    "[skip-doc-freshness]",
+                    "[skip docs]",
+                    "[skip-docs]",
+                    "/forge skip-gate doc-freshness",
+                    "/forge skip-gate documentation",
+                ]
+                for pattern in skip_patterns:
+                    if pattern in title or pattern in body:
+                        print(
+                            f"Bypass condition met: PR title/body contains skip pattern '{pattern}'."
+                        )
+                        return True
+        except Exception as e:
+            if args.verbose:
+                print(f"Verbose: Failed to parse GITHUB_EVENT_PATH for bypass: {e}")
+
+    return False
+
+
 def run_analysis(args: argparse.Namespace) -> int:
     """
     Main analysis orchestrator.
     Returns 0 on success (no drift), and 1 if drift is detected (and not warned only).
     """
+    if check_bypass_conditions(args):
+        print("Documentation freshness check was bypassed/skipped.")
+        return 0
+
     # 1. Retrieve the git diff
     if args.diff_file:
         try:

@@ -1,8 +1,8 @@
 import argparse
 import importlib.util
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # Load check-doc-freshness.py module dynamically since it has a hyphen in its filename
 script_path = os.path.abspath(
@@ -228,3 +228,72 @@ index 123456..789101 100644
         assert exit_code == 0
     finally:
         os.chdir(original_cwd)
+
+
+def test_check_bypass_conditions(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock, patch
+
+    # Test 1: env var bypass
+    with patch.dict(os.environ, {"SKIP_DOC_FRESHNESS": "true"}):
+        args = argparse.Namespace(verbose=True)
+        assert cdf.check_bypass_conditions(args) is True
+
+    # When SKIP_DOC_FRESHNESS is "false" and there is no git commit bypass, it should be False
+    with (
+        patch.dict(os.environ, {"SKIP_DOC_FRESHNESS": "false"}),
+        patch("subprocess.run") as mock_run,
+    ):
+        mock_run.return_value = MagicMock(returncode=0, stdout="A standard commit message")
+        args = argparse.Namespace(verbose=True)
+        assert cdf.check_bypass_conditions(args) is False
+
+    # Test 2: commit message bypass
+    with (
+        patch.dict(os.environ, {"SKIP_DOC_FRESHNESS": "false"}),
+        patch("subprocess.run") as mock_run,
+    ):
+        mock_run.return_value = MagicMock(returncode=0, stdout="[skip doc-freshness]\nSome comment")
+        args = argparse.Namespace(verbose=True)
+        assert cdf.check_bypass_conditions(args) is True
+
+    # Test 3: GITHUB_EVENT_PATH bypass with label
+    event_file = tmp_path / "event.json"
+    import json
+
+    event_data = {
+        "pull_request": {
+            "labels": [{"name": "skip-doc-freshness"}],
+            "title": "A standard PR title",
+            "body": "No skip inside body",
+        }
+    }
+    event_file.write_text(json.dumps(event_data))
+
+    with (
+        patch.dict(
+            os.environ, {"SKIP_DOC_FRESHNESS": "false", "GITHUB_EVENT_PATH": str(event_file)}
+        ),
+        patch("subprocess.run") as mock_run,
+    ):
+        mock_run.return_value = MagicMock(returncode=0, stdout="A standard commit")
+        args = argparse.Namespace(verbose=True)
+        assert cdf.check_bypass_conditions(args) is True
+
+    # Test 4: GITHUB_EVENT_PATH bypass with title skip
+    event_data_title = {
+        "pull_request": {
+            "labels": [],
+            "title": "[skip docs] Update main entrypoint",
+            "body": "No skip inside body",
+        }
+    }
+    event_file.write_text(json.dumps(event_data_title))
+    with (
+        patch.dict(
+            os.environ, {"SKIP_DOC_FRESHNESS": "false", "GITHUB_EVENT_PATH": str(event_file)}
+        ),
+        patch("subprocess.run") as mock_run,
+    ):
+        mock_run.return_value = MagicMock(returncode=0, stdout="A standard commit")
+        args = argparse.Namespace(verbose=True)
+        assert cdf.check_bypass_conditions(args) is True

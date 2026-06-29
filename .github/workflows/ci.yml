@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, edited]
     branches:
       - main
 
@@ -57,3 +58,26 @@ jobs:
           JIRA_USER_EMAIL: dummy@example.com
           GITHUB_TOKEN: dummy
         run: uv run pytest tests/unit/ -q
+
+  doc-freshness:
+    name: Doc Freshness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check documentation freshness
+        run: |
+          python scripts/check-doc-freshness.py --base origin/${{ github.base_ref }} --head HEAD --verbose
