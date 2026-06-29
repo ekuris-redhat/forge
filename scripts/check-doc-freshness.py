@@ -99,6 +99,10 @@ IGNORED_WORDS = {
     "CODE",
     "EXIT",
     "LINE",
+    "CLAUDE",
+    "README",
+    "CONTRIBUTING",
+    "PROJ",
 }
 
 
@@ -183,7 +187,9 @@ def extract_elements(lines: list[str], filename: str) -> dict[str, set[str]]:
         for pattern in CLASS_PATTERNS:
             match = pattern.match(line)
             if match:
-                elements["classes"].add(match.group(1))
+                class_name = match.group(1)
+                if class_name.upper() not in IGNORED_WORDS:
+                    elements["classes"].add(class_name)
                 class_matched = True
                 break
         if class_matched:
@@ -197,7 +203,8 @@ def extract_elements(lines: list[str], filename: str) -> dict[str, set[str]]:
                 func_name = match.group(1)
                 # Ignore dunder methods
                 if not (func_name.startswith("__") and func_name.endswith("__")):
-                    elements["functions"].add(func_name)
+                    if func_name.upper() not in IGNORED_WORDS:
+                        elements["functions"].add(func_name)
                     func_matched = True
                     break
         if func_matched:
@@ -419,6 +426,11 @@ def run_analysis(args: argparse.Namespace) -> int:
         "__pycache__",
         "node_modules",
         "vendor",
+        "zensical.config.json",
+        "zensical.toml",
+        "pyproject.toml",
+        "uv.lock",
+        "forge.db",
     ]
 
     for filepath in changed_files:

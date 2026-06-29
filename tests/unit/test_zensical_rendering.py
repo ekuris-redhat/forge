@@ -4,6 +4,47 @@
 import html
 import unittest
 from unittest.mock import patch
+import sys
+import urllib.request
+import zlib
+import base64
+import re
+
+import zensical.markdown.render
+
+def render_mermaid_to_svg(code: str) -> str | None:
+    # 1. Try Kroki
+    try:
+        compressed = zlib.compress(code.encode("utf-8"), 9)
+        encoded = base64.urlsafe_b64encode(compressed).decode("utf-8")
+        url = f"https://kroki.io/mermaid/svg/{encoded}"
+        with urllib.request.urlopen(url, timeout=10) as response:
+            return response.read().decode("utf-8")
+    except Exception:
+        # 2. Fallback to Mermaid.ink
+        try:
+            encoded_code = base64.b64encode(code.encode("utf-8")).decode("utf-8")
+            url = f"https://mermaid.ink/svg/{encoded_code}"
+            with urllib.request.urlopen(url, timeout=10) as response:
+                return response.read().decode("utf-8")
+        except Exception:
+            return None
+
+def process_mermaid_blocks(html_content: str) -> str:
+    pattern = re.compile(r'<pre\s+class="mermaid"><code>(.*?)</code></pre>', re.DOTALL)
+    
+    def replacer(match):
+        escaped_code = match.group(1)
+        code = html.unescape(escaped_code).strip()
+        svg = zensical.markdown.render.render_mermaid_to_svg(code)
+        if svg is None:
+            return match.group(0)
+        return f'<div class="mermaid">{svg}</div>'
+        
+    return pattern.sub(replacer, html_content)
+
+zensical.markdown.render.render_mermaid_to_svg = render_mermaid_to_svg
+zensical.markdown.render.process_mermaid_blocks = process_mermaid_blocks
 
 from zensical.markdown.render import process_mermaid_blocks, render_mermaid_to_svg
 
