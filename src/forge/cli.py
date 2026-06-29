@@ -469,6 +469,45 @@ async def cmd_logs(args: argparse.Namespace) -> int:
         return 1
 
 
+async def cmd_weekly_report(args: argparse.Namespace) -> int:
+    """Generate weekly project status reports and publish them idempotently."""
+    from forge.workflow.stats.reporter import generate_weekly_report, publish_report_idempotently
+
+    try:
+        report = await generate_weekly_report(
+            project_key=args.project,
+            days=args.days,
+        )
+
+        output_str = report.to_json() if args.format == "json" else report.to_markdown()
+
+        if args.output:
+            if args.format == "markdown":
+                publish_report_idempotently(
+                    file_path=args.output,
+                    report_markdown=output_str,
+                    start_time=report.start_time,
+                    end_time=report.end_time,
+                )
+                print(f"Report published idempotently to: {args.output}")
+            else:
+                import os
+
+                dir_name = os.path.dirname(os.path.abspath(args.output))
+                if dir_name:
+                    os.makedirs(dir_name, exist_ok=True)
+                with open(args.output, "w", encoding="utf-8") as f:
+                    f.write(output_str)
+                print(f"JSON metrics written to: {args.output}")
+        else:
+            print(output_str)
+
+        return 0
+    except Exception as e:
+        print(f"Error generating weekly report: {e}", file=sys.stderr)
+        return 1
+
+
 async def cmd_skills_install(args: argparse.Namespace) -> int:
     """Install a skill from a Git URL or local path."""
     from forge.skills.cli_handlers import cmd_skills_install as _handler
@@ -802,6 +841,34 @@ def main() -> int:
         help="Number of log entries to show (default: 50)",
     )
 
+    # weekly-report command
+    weekly_parser = subparsers.add_parser(
+        "weekly-report",
+        help="Generate weekly project status reports",
+    )
+    weekly_parser.add_argument(
+        "--project",
+        required=True,
+        help="Jira project key (e.g., PROJ)",
+    )
+    weekly_parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Number of days rolling window (default: 7)",
+    )
+    weekly_parser.add_argument(
+        "--output",
+        "-o",
+        help="Output file path to save/update the report",
+    )
+    weekly_parser.add_argument(
+        "--format",
+        choices=["markdown", "json"],
+        default="markdown",
+        help="Output format (markdown or json, default: markdown)",
+    )
+
     # skills subparser group
     skills_parser = subparsers.add_parser(
         "skills",
@@ -983,6 +1050,7 @@ Examples:
         "retry": cmd_retry,
         "logs": cmd_logs,
         "project-setup": cmd_project_setup,
+        "weekly-report": cmd_weekly_report,
     }
 
     handler = handlers.get(args.command)

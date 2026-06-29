@@ -1,5 +1,23 @@
 """Workflow statistics and state aggregation utilities."""
 
 from forge.workflow.stats.aggregator import RateModel, StateAggregator, StateHistory
+from forge.workflow.stats.reporter import (
+    TokenUsage,
+    TicketMetrics,
+    WeeklyReportMetrics,
+    publish_report_idempotently,
+    format_duration,
+    generate_weekly_report,
+)
 
-__all__ = ["RateModel", "StateAggregator", "StateHistory"]
+__all__ = [
+    "RateModel",
+    "StateAggregator",
+    "StateHistory",
+    "TokenUsage",
+    "TicketMetrics",
+    "WeeklyReportMetrics",
+    "publish_report_idempotently",
+    "format_duration",
+    "generate_weekly_report",
+]
