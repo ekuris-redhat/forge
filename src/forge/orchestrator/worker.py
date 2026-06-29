@@ -572,8 +572,8 @@ class OrchestratorWorker:
                 is_retry = True
                 logger.info(f"Detected retry signal via forge:retry label for {current_node}")
 
-            # Check for approval labels - but only if it matches the current stage
-            if "approved" in to_labels.lower() and "pending" in from_labels.lower():
+            # Check for approval labels
+            if "approved" in to_labels.lower():
                 # Validate the approval matches the workflow stage
                 approval_stage = None
                 if "prd-approved" in to_labels.lower():
@@ -602,17 +602,28 @@ class OrchestratorWorker:
                 }
                 expected_stage = node_to_stage.get(current_node)
 
-                if approval_stage and expected_stage and approval_stage == expected_stage:
-                    is_approved = True
-                    logger.info(
-                        f"Detected {approval_stage} approval via label change: "
-                        f"{from_labels} -> {to_labels}"
-                    )
-                elif approval_stage:
-                    logger.warning(
-                        f"Ignoring {approval_stage} approval - workflow at {current_node} "
-                        f"(expects {expected_stage})"
-                    )
+                if approval_stage:
+                    if expected_stage and approval_stage == expected_stage:
+                        if "pending" in from_labels.lower():
+                            is_approved = True
+                            logger.info(
+                                f"Detected {approval_stage} approval via label change: "
+                                f"{from_labels} -> {to_labels}"
+                            )
+                    else:
+                        # Out of order transition rejection
+                        logger.warning(
+                            f"Rejecting out-of-order transition: {approval_stage} approval "
+                            f"at {current_node} (expects {expected_stage})"
+                        )
+                        from forge.workflow.gates.spec_approval import handle_out_of_order_rejection
+
+                        await handle_out_of_order_rejection(
+                            ticket_key=message.ticket_key,
+                            current_node=current_node,
+                            attempted_label=to_labels,
+                        )
+                        return current_state
 
         # Fallback: check current labels on the ticket when changelog-based
         # detection missed the approval (e.g. user changed labels in two steps).

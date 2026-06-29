@@ -1,6 +1,8 @@
 """Tests for FeatureWorkflow."""
 
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from langgraph.graph import END
 
 from forge.models.workflow import TicketType
@@ -353,3 +355,25 @@ class TestFeatureWorkflow:
             "create_pr",
             "teardown_workspace",
         }.issubset(targets)
+
+    @pytest.mark.asyncio
+    @patch("forge.integrations.jira.client.JiraClient")
+    async def test_route_prd_approval_transitions_properly(self, mock_jira_class):
+        """Test route_prd_approval async transition and label operations."""
+        mock_jira = AsyncMock()
+        mock_jira_class.return_value = mock_jira
+
+        from forge.workflow.gates.prd_approval import route_prd_approval
+
+        state = {
+            "ticket_key": "TEST-123",
+            "is_paused": False,
+            "revision_requested": False,
+            "feedback_comment": None,
+        }
+        res = route_prd_approval(state)
+        import asyncio
+
+        await asyncio.sleep(0.01)
+        assert res == "generate_spec"
+        mock_jira.set_workflow_label.assert_called_once()

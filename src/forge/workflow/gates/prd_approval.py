@@ -64,6 +64,26 @@ def route_prd_approval(state: WorkflowState) -> str:
     if state.get("yolo_mode"):
         logger.info(f"YOLO mode: auto-approving PRD for {state['ticket_key']}")
         record_approval("prd")
+
+        # Handle transitioning and label removals/additions
+        import asyncio
+
+        from forge.integrations.jira.client import JiraClient
+        from forge.models.workflow import ForgeLabel
+
+        async def update_labels():
+            jira = JiraClient()
+            try:
+                await jira.set_workflow_label(state["ticket_key"], ForgeLabel.SPEC_PENDING)
+            finally:
+                await jira.close()
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(update_labels())
+        except RuntimeError:
+            pass
+
         return "generate_spec"
 
     # Check if revision was requested via comment
@@ -83,4 +103,24 @@ def route_prd_approval(state: WorkflowState) -> str:
     # PRD was approved, proceed to spec generation
     logger.info(f"PRD approved for {state['ticket_key']}, proceeding to spec generation")
     record_approval("prd")
+
+    # Handle transitioning and label removals/additions
+    import asyncio
+
+    from forge.integrations.jira.client import JiraClient
+    from forge.models.workflow import ForgeLabel
+
+    async def update_labels_approved():
+        jira = JiraClient()
+        try:
+            await jira.set_workflow_label(state["ticket_key"], ForgeLabel.SPEC_PENDING)
+        finally:
+            await jira.close()
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(update_labels_approved())
+    except RuntimeError:
+        pass
+
     return "generate_spec"
