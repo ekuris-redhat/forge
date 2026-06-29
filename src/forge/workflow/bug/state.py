@@ -33,6 +33,7 @@ class BugState(
     # Triage stage
     triage_passed: bool
     triage_missing_fields: list[str]
+    triage_attempts: int
 
     # Analysis / reflection loop
     reflection_count: int
@@ -113,6 +114,7 @@ def create_initial_bug_state(ticket_key: str, **kwargs: Any) -> BugState:
         # Triage stage
         "triage_passed": False,
         "triage_missing_fields": [],
+        "triage_attempts": 0,
         # Analysis / reflection loop
         "reflection_count": 0,
         "reflection_critique": None,

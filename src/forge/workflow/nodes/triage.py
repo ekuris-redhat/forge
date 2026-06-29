@@ -6,6 +6,7 @@ for codebase analysis before any exploration begins.
 
 import json
 import logging
+from typing import Any, cast
 
 from langgraph.graph import END
 
@@ -54,6 +55,8 @@ async def triage_check(state: BugState) -> BugState:
             logger.error("triage_check exceeded max retries for %s", ticket_key)
             return {**state, "current_node": "escalate_blocked"}
 
+        triage_attempts = state.get("triage_attempts", 0) + 1
+
         # Step 1: Post acknowledgement on first invocation only (not on resume)
         if not is_resume:
             await jira.add_comment(
@@ -89,15 +92,19 @@ async def triage_check(state: BugState) -> BugState:
                 else "Ticket has enough information to proceed. Starting root cause analysis — results will be posted here."
             )
             await jira.add_comment(ticket_key, pass_msg)
-            return update_state_timestamp(
-                {
-                    **state,
-                    "triage_passed": True,
-                    "triage_missing_fields": [],
-                    "current_node": "analyze_bug",
-                    "last_error": None,
-                    "retry_count": 0,
-                }
+            return cast(
+                BugState,
+                update_state_timestamp(
+                    {
+                        **state,
+                        "triage_passed": True,
+                        "triage_missing_fields": [],
+                        "triage_attempts": triage_attempts,
+                        "current_node": "analyze_bug",
+                        "last_error": None,
+                        "retry_count": 0,
+                    }
+                ),
             )
 
         # Step 5: Missing fields path
@@ -123,26 +130,33 @@ async def triage_check(state: BugState) -> BugState:
         )
         await jira.set_workflow_label(ticket_key, ForgeLabel.TRIAGE_PENDING)
 
-        return update_state_timestamp(
-            {
-                **state,
-                "triage_passed": False,
-                "triage_missing_fields": missing_fields,
-                "current_node": "triage_gate",
-                "last_error": None,
-                "retry_count": 0,
-            }
+        return cast(
+            BugState,
+            update_state_timestamp(
+                {
+                    **state,
+                    "triage_passed": False,
+                    "triage_missing_fields": missing_fields,
+                    "triage_attempts": triage_attempts,
+                    "current_node": "triage_gate",
+                    "last_error": None,
+                    "retry_count": 0,
+                }
+            ),
         )
 
     except Exception as e:
         logger.error("triage_check failed for %s: %s", ticket_key, e)
         new_retry = retry_count + 1
-        return {
-            **state,
-            "last_error": str(e),
-            "retry_count": new_retry,
-            "current_node": "escalate_blocked" if new_retry >= _MAX_RETRIES else "triage_check",
-        }
+        return cast(
+            BugState,
+            {
+                **state,
+                "last_error": str(e),
+                "retry_count": new_retry,
+                "current_node": "escalate_blocked" if new_retry >= _MAX_RETRIES else "triage_check",
+            },
+        )
     finally:
         await jira.close()
         await agent.close()
@@ -161,7 +175,7 @@ def triage_gate(state: BugState) -> BugState:
     Returns:
         State with is_paused=True.
     """
-    return set_paused(state, "triage_gate")
+    return cast(BugState, set_paused(cast(dict[str, Any], state), "triage_gate"))
 
 
 def route_triage_gate(state: BugState) -> str:
