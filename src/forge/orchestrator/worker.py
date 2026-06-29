@@ -30,7 +30,12 @@ from forge.skills.utils import extract_project_key
 from forge.utils.redaction import redact_secrets
 from forge.workflow.registry import create_default_router
 from forge.workflow.router import WorkflowRouter
-from forge.workflow.utils.comment_classifier import CommentType, classify_comment
+from forge.workflow.utils.comment_classifier import (
+    CommentType,
+    classify_comment,
+    extract_prefix_character,
+    strip_comment_prefix,
+)
 from forge.workflow.utils.jira_status import post_status_comment
 
 logger = logging.getLogger(__name__)
@@ -705,15 +710,20 @@ class OrchestratorWorker:
                             return current_state
 
                 comment_type = classify_comment(comment_body)
+                prefix_char = extract_prefix_character(comment_body)
 
                 if comment_type == CommentType.QUESTION:
                     is_question = True
                     feedback = comment_body
-                    logger.info(f"Detected question comment: {feedback[:100]}...")
+                    logger.info(
+                        f"Detected question comment (prefix: {prefix_char}): {feedback[:100]}..."
+                    )
                 elif comment_type == CommentType.FEEDBACK:
                     is_rejected = True
-                    feedback = re.sub(r"^\s*!\s*", "", comment_body)
-                    logger.info(f"Detected revision comment: {feedback[:100]}...")
+                    feedback = strip_comment_prefix(comment_body)
+                    logger.info(
+                        f"Detected revision comment (prefix: {prefix_char}): {feedback[:100]}..."
+                    )
                 else:
                     logger.info(
                         f"Informational comment on {message.ticket_key}, "

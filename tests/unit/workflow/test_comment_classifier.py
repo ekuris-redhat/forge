@@ -1,6 +1,11 @@
 """Tests for comment classification functionality."""
 
-from forge.workflow.utils import CommentType, classify_comment
+from forge.workflow.utils import (
+    CommentType,
+    classify_comment,
+    extract_prefix_character,
+    strip_comment_prefix,
+)
 
 
 class TestClassifyComment:
@@ -92,3 +97,34 @@ class TestClassifyComment:
         """Whitespace-only comments should be informational."""
         assert classify_comment("   ") == CommentType.INFORMATIONAL
         assert classify_comment("\n\t") == CommentType.INFORMATIONAL
+
+    def test_strip_comment_prefix_basic(self) -> None:
+        """Verify strip_comment_prefix strips basic feedback comment prefixes."""
+        assert strip_comment_prefix("!Please fix this") == "Please fix this"
+        assert strip_comment_prefix("!   Please fix this") == "Please fix this"
+        assert strip_comment_prefix("  ! Please fix this") == "Please fix this"
+
+    def test_strip_comment_prefix_empty_or_no_prefix(self) -> None:
+        """Verify strip_comment_prefix handles empty text and non-feedback text correctly."""
+        assert strip_comment_prefix("") == ""
+        assert strip_comment_prefix("   ") == "   "
+        assert strip_comment_prefix("Please fix this") == "Please fix this"
+        assert strip_comment_prefix("?Why this approach?") == "?Why this approach?"
+
+    def test_strip_comment_prefix_multiple_exclamations(self) -> None:
+        """Verify strip_comment_prefix strips multiple exclamations."""
+        assert strip_comment_prefix("!!Please fix this") == "Please fix this"
+        assert strip_comment_prefix("!!!   Please fix this") == "Please fix this"
+        assert strip_comment_prefix("  !!! Please fix this") == "Please fix this"
+
+    def test_extract_prefix_character(self) -> None:
+        """Verify extract_prefix_character detects correct prefix types."""
+        assert extract_prefix_character("!Please fix this") == "!"
+        assert extract_prefix_character("?Why this?") == "?"
+        assert extract_prefix_character("@forge ask explain this") == "@forge ask"
+        assert extract_prefix_character("  @Forge Ask explain this") == "@Forge Ask"
+        assert extract_prefix_character("  !!! Please fix") == "!"
+        assert extract_prefix_character("  ??? Why") == "?"
+        assert extract_prefix_character("plain text") is None
+        assert extract_prefix_character("") is None
+        assert extract_prefix_character("   ") is None

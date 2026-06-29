@@ -5,7 +5,12 @@ from typing import Any
 
 from langgraph.graph import END
 
-from forge.workflow.utils.comment_classifier import CommentType, classify_comment
+from forge.workflow.utils.comment_classifier import (
+    CommentType,
+    classify_comment,
+    extract_prefix_character,
+    strip_comment_prefix,
+)
 from forge.workflow.utils.jira_status import (
     post_status_comment,
     remove_implementing_label,
@@ -81,6 +86,8 @@ def set_error(state: dict[str, Any], error: str) -> dict[str, Any]:
 __all__ = [
     "CommentType",
     "classify_comment",
+    "strip_comment_prefix",
+    "extract_prefix_character",
     "post_qa_summary_if_needed",
     "post_status_comment",
     "remove_implementing_label",
