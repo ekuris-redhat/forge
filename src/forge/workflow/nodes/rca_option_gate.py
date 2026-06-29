@@ -1,6 +1,7 @@
 """RCA option gate node and routing for bug workflow."""
 
 import logging
+import re
 
 from langgraph.graph import END
 
@@ -14,7 +15,40 @@ logger = logging.getLogger(__name__)
 _TRUNCATION_NOTE = "*(RCA truncated — full analysis available in the analysis container logs.)*"
 _MAX_COMMENT_CHARS = 25_000
 
-__all__ = ["rca_option_gate", "route_rca_option", "regenerate_rca"]
+# Matches >option N anywhere in comment (case-insensitive, first match wins)
+# Supports both start-of-line usage (>option 2) and in-prose usage (let's go with >option 2)
+_OPTION_PATTERN = re.compile(r"(?mi)>option\s+(\d+)")
+
+__all__ = [
+    "rca_option_gate",
+    "route_rca_option",
+    "regenerate_rca",
+    "parse_option_comment",
+    "validate_option_index",
+]
+
+
+def parse_option_comment(comment_body: str) -> int | None:
+    """Parse the selected option index (1-based) from comment body.
+
+    Returns the first option index matched (as an int), or None if not found.
+    """
+    if not comment_body:
+        return None
+    match = _OPTION_PATTERN.search(comment_body)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def validate_option_index(option_index: int, options: list[dict]) -> bool:
+    """Perform bounds checking on the option number (1-based index).
+
+    Returns True if valid (within bounds 1 to len(options)), False otherwise.
+    """
+    if not options:
+        return False
+    return 1 <= option_index <= len(options)
 
 
 async def rca_option_gate(state: BugState) -> BugState:

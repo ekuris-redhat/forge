@@ -42,9 +42,11 @@ from forge.workflow.nodes.prd_generation import (
 from forge.workflow.nodes.qa_handler import answer_question, extract_question_text
 from forge.workflow.nodes.rca_analysis import analyze_bug, reflect_rca
 from forge.workflow.nodes.rca_option_gate import (
+    parse_option_comment,
     rca_option_gate,
     regenerate_rca,
     route_rca_option,
+    validate_option_index,
 )
 from forge.workflow.nodes.rebase import rebase_pr
 from forge.workflow.nodes.spec_generation import (
@@ -127,6 +129,8 @@ __all__ = [
     "rca_option_gate",
     "regenerate_rca",
     "route_rca_option",
+    "parse_option_comment",
+    "validate_option_index",
     # Bug workflow — planning
     "decompose_plan",
     "plan_approval_gate",

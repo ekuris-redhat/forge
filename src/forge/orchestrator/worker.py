@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import logging
 import os
-import re
 import signal
 import sys
 import uuid
@@ -28,6 +27,7 @@ from forge.queue.models import QueueMessage
 from forge.skills.orchestrator import ensure_skills
 from forge.skills.utils import extract_project_key
 from forge.utils.redaction import redact_secrets
+from forge.workflow.nodes.rca_option_gate import parse_option_comment, validate_option_index
 from forge.workflow.registry import create_default_router
 from forge.workflow.router import WorkflowRouter
 from forge.workflow.utils.comment_classifier import (
@@ -56,10 +56,6 @@ _FRESH_INVOKE_NODES = (
     "rebase_pr",
     "setup_workspace",
 )
-
-# Matches >option N anywhere in comment (case-insensitive, first match wins)
-# Supports both start-of-line usage (>option 2) and in-prose usage (let's go with >option 2)
-_OPTION_PATTERN = re.compile(r"(?mi)>option\s+(\d+)")
 
 # Gates where forge:yolo label addition triggers auto-approval and workflow resumption
 _YOLO_GATES = {
@@ -674,16 +670,15 @@ class OrchestratorWorker:
             if comment_body.strip():
                 # >option N detection for rca_option_gate (runs before general classification)
                 if current_node == "rca_option_gate":
-                    option_match = _OPTION_PATTERN.search(comment_body)
-                    if option_match:
-                        n = int(option_match.group(1))
+                    parsed_n = parse_option_comment(comment_body)
+                    if parsed_n is not None:
                         rca_options = current_state.get("rca_options", [])
-                        if 1 <= n <= len(rca_options):
-                            logger.info(f"Detected >option {n} for {message.ticket_key}")
+                        if validate_option_index(parsed_n, rca_options):
+                            logger.info(f"Detected >option {parsed_n} for {message.ticket_key}")
                             return {
                                 **current_state,
-                                "selected_fix_option": n,
-                                "selected_fix_approach": rca_options[n - 1],
+                                "selected_fix_option": parsed_n,
+                                "selected_fix_approach": rca_options[parsed_n - 1],
                                 "is_paused": False,
                                 "is_question": False,
                                 "revision_requested": False,
@@ -697,7 +692,7 @@ class OrchestratorWorker:
                         else:
                             max_n = len(rca_options)
                             logger.info(
-                                f">option {n} out of range (max {max_n}) for {message.ticket_key}"
+                                f">option {parsed_n} out of range (max {max_n}) for {message.ticket_key}"
                             )
                             jira = JiraClient()
                             try:
