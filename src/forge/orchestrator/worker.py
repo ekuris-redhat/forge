@@ -10,7 +10,7 @@ import sys
 import uuid
 from dataclasses import replace as dataclass_replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from forge.api.routes.metrics import (
     record_workflow_completed,
@@ -30,6 +30,7 @@ from forge.skills.utils import extract_project_key
 from forge.utils.redaction import redact_secrets
 from forge.workflow.registry import create_default_router
 from forge.workflow.router import WorkflowRouter
+from forge.workflow.stats import StatsState
 from forge.workflow.stats.formatter import format_stats_summary
 from forge.workflow.stats.poster import ensure_stats_is_final_comment
 from forge.workflow.utils.comment_classifier import CommentType, classify_comment
@@ -1378,7 +1379,7 @@ class OrchestratorWorker:
             # Use the re-post mechanism so stats appears as the final Forge comment.
             try:
                 await ensure_stats_is_final_comment(
-                    ticket_key, current_state, outcome, outcome_detail
+                    ticket_key, cast(StatsState, current_state), outcome, outcome_detail
                 )
                 logger.info(f"Re-posted stats comment to {ticket_key} via retry")
             except Exception as e:
@@ -1387,7 +1388,10 @@ class OrchestratorWorker:
 
         try:
             comment_body = format_stats_summary(
-                current_state, outcome, outcome_detail, pricing=self.settings.llm_pricing
+                cast(StatsState, current_state),
+                outcome,
+                outcome_detail,
+                pricing=self.settings.llm_pricing,
             )
         except Exception as e:
             logger.warning(f"Failed to format stats for {ticket_key}: {e}")

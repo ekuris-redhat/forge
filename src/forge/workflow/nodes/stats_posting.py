@@ -7,6 +7,7 @@ of whether the Jira posting succeeds.
 """
 
 import logging
+from typing import Any
 
 from forge.workflow.bug.state import BugState
 from forge.workflow.feature.state import FeatureState
@@ -91,7 +92,7 @@ def _extract_outcome_detail(
 # ---------------------------------------------------------------------------
 
 
-async def post_terminal_stats(state: FeatureState | BugState) -> dict:
+async def post_terminal_stats(state: FeatureState | BugState) -> dict[str, Any]:
     """Post a workflow stats summary comment when a terminal state is reached.
 
     Determines the outcome type (Completed / Blocked / Failed) from the current
@@ -116,7 +117,7 @@ async def post_terminal_stats(state: FeatureState | BugState) -> dict:
     Returns:
         An empty dict (state is returned unchanged — this is a side-effect node).
     """
-    ticket_key: str = state.get("ticket_key", "")  # type: ignore[assignment]
+    ticket_key: str = state.get("ticket_key", "")
     if not ticket_key:
         logger.warning("post_terminal_stats: no ticket_key in state — skipping stats post")
         return {}

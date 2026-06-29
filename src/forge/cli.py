@@ -638,8 +638,10 @@ async def cmd_project_setup(args: argparse.Namespace) -> int:
 async def cmd_stats(args: argparse.Namespace) -> int:
     """Display workflow statistics for a ticket."""
     import json as json_module
+    from typing import cast
 
     from forge.orchestrator.checkpointer import get_checkpoint_state
+    from forge.workflow.stats import StatsState
     from forge.workflow.stats.formatter import format_stats_summary
 
     ticket = args.ticket
@@ -689,7 +691,9 @@ async def cmd_stats(args: argparse.Namespace) -> int:
     else:
         # Use the Jira formatter for content, then display as plain text
         settings = get_settings()
-        summary = format_stats_summary(state, outcome, outcome_detail, pricing=settings.llm_pricing)
+        summary = format_stats_summary(
+            cast(StatsState, state), outcome, outcome_detail, pricing=settings.llm_pricing
+        )
         print(summary)
 
     return 0
