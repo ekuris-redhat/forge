@@ -372,7 +372,7 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
         ):
             input_tokens_1 = result_phase1.input_tokens
         else:
-            input_tokens_1 = _estimate_tokens(analysis_prompt)
+            input_tokens_1 = max(1, _estimate_tokens(analysis_prompt))
 
         if (
             result_phase1
@@ -381,7 +381,12 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
         ):
             output_tokens_1 = result_phase1.output_tokens
         else:
-            output_tokens_1 = _estimate_tokens(result_phase1.stdout) if result_phase1.stdout else 0
+            text_for_est_1 = ""
+            if result_phase1:
+                text_for_est_1 = (getattr(result_phase1, "stdout", "") or "") + (
+                    getattr(result_phase1, "stderr", "") or ""
+                )
+            output_tokens_1 = max(1, _estimate_tokens(text_for_est_1))
 
         state = {**state, **record_tokens(state, STAGE_CI, input_tokens_1, output_tokens_1)}
 
@@ -423,7 +428,7 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
         ):
             input_tokens_2 = result_phase2.input_tokens
         else:
-            input_tokens_2 = _estimate_tokens(fix_prompt)
+            input_tokens_2 = max(1, _estimate_tokens(fix_prompt))
 
         if (
             result_phase2
@@ -432,7 +437,12 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
         ):
             output_tokens_2 = result_phase2.output_tokens
         else:
-            output_tokens_2 = _estimate_tokens(result_phase2.stdout) if result_phase2.stdout else 0
+            text_for_est_2 = ""
+            if result_phase2:
+                text_for_est_2 = (getattr(result_phase2, "stdout", "") or "") + (
+                    getattr(result_phase2, "stderr", "") or ""
+                )
+            output_tokens_2 = max(1, _estimate_tokens(text_for_est_2))
 
         state = {**state, **record_tokens(state, STAGE_CI, input_tokens_2, output_tokens_2)}
 
