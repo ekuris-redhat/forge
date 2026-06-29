@@ -198,9 +198,7 @@ class TestCIAttemptLimitValidation:
             with patch("forge.workflow.nodes.ci_evaluator.get_settings") as mock_settings:
                 mock_settings.return_value.ci_fix_max_retries = 5
                 mock_settings.return_value.ignored_ci_checks = ["tide"]
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.record_ci_fix_attempt"
-                ):
+                with patch("forge.workflow.nodes.ci_evaluator.record_ci_fix_attempt"):
                     result = await evaluate_ci_status(state)
 
         # Should not increment or route to attempt_ci_fix
@@ -230,9 +228,7 @@ class TestCIAttemptLimitValidation:
             with patch("forge.workflow.nodes.ci_evaluator.get_settings") as mock_settings:
                 mock_settings.return_value.ci_fix_max_retries = 5
                 mock_settings.return_value.ignored_ci_checks = ["tide"]
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.record_ci_fix_attempt"
-                ):
+                with patch("forge.workflow.nodes.ci_evaluator.record_ci_fix_attempt"):
                     result = await evaluate_ci_status(state)
 
         # Should not increment or route to attempt_ci_fix
