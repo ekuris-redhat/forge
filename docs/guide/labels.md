@@ -38,6 +38,8 @@ These labels advance the pipeline. Forge watches for label changes via Jira webh
 
 **Approving a stage:** When Forge posts a PRD, spec, or other artifact, it sets the `forge:*-pending` label. Change it to `forge:*-approved` to advance the workflow. Do not add the approved label manually before Forge posts — it won't be recognized until the pending state is set.
 
+**Out-of-Order Transitions:** If you attempt to approve a stage prematurely or out-of-order (for example, adding `forge:spec-approved` while the workflow is still at the PRD stage), Forge will reject the transition. It will post a warning comment explaining the error to the Jira ticket and automatically revert the label back to the correct stage's pending or drafting label.
+
 **Requesting revisions:** Start a comment with `!` followed by your feedback. Forge regenerates the artifact and resets the pending label.
 
 **Asking questions:** Start a comment with `?` or `@forge ask`. Forge answers without advancing or regenerating.

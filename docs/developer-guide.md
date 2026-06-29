@@ -16,10 +16,11 @@ Everything you need to run Forge locally, test it, observe what it's doing, and 
 6. [Testing with Payloads](#6-testing-with-payloads)
 7. [GitHub Webhook Testing](#7-github-webhook-testing)
 8. [Prometheus Metrics](#8-prometheus-metrics)
-9. [Langfuse Tracing](#9-langfuse-tracing)
-10. [Debugging Tools](#10-debugging-tools)
-11. [Common Workflows](#11-common-workflows)
-12. [Service Reference](#12-service-reference)
+9. [Weekly Project Status Reports](#9-weekly-project-status-reports)
+10. [Langfuse Tracing](#10-langfuse-tracing)
+11. [Debugging Tools](#11-debugging-tools)
+12. [Common Workflows](#12-common-workflows)
+13. [Service Reference](#13-service-reference)
 
 ---
 
@@ -541,7 +542,48 @@ curl -s http://localhost:8001/metrics | grep forge_agent
 
 ---
 
-## 9. Langfuse Tracing
+## 9. Weekly Project Status Reports
+
+Forge includes a reporting command to generate and publish project status reports, tracking aggregated workflow statistics, token usages, costs, and phase durations over a rolling window.
+
+### Command-line Usage
+
+```bash
+# Generate report for project PROJ over the last 7 days and output markdown to stdout (dry run)
+uv run forge weekly-report --project PROJ --days 7 --dry-run
+
+# Generate report and save it idempotently to a markdown file
+uv run forge weekly-report --project PROJ --days 7 --output /path/to/report.md --format markdown
+
+# Output metrics in JSON format
+uv run forge weekly-report --project PROJ --days 7 --output /path/to/metrics.json --format json
+
+# Apply config overrides on the fly
+uv run forge weekly-report --project PROJ --days 7 --config alert_channel=slack
+```
+
+### Options
+
+- `--project`: (Required) The Jira project key (e.g. `PROJ`).
+- `--days`: Number of days in the rolling reporting window (default: `7`).
+- `--output`: File path to save/update the generated report.
+- `--format`: Output format, either `markdown` or `json` (default: `markdown`).
+- `--dry-run`: Dry run mode — output markdown to stdout without writing files or firing alerts.
+- `--config`: Configuration override in `KEY=VALUE` format (can be specified multiple times).
+
+### Alerting and Notification Fallbacks
+
+When generating reports (in non-dry-run mode), Forge dispatches summary alerts to stakeholders using a configurable priority chain with automatic fallbacks:
+
+1. **Email:** Dispatched to the address set in `FORGE_ALERT_EMAIL` or config settings.
+2. **Slack:** Posted to `FORGE_SLACK_WEBHOOK` (fallback: `SLACK_WEBHOOK_URL`).
+3. **Custom Webhook:** Sent as a POST request to `FORGE_ALERT_WEBHOOK` (fallback: `FORGE_WEBHOOK_URL`).
+
+Configure the primary channel using `FORGE_ALERT_CHANNEL` (e.g. `slack` or `webhook`).
+
+---
+
+## 10. Langfuse Tracing
 
 Langfuse records every LLM call: prompt, response, latency, cost, token count.
 
@@ -623,7 +665,7 @@ LANGFUSE_ENABLED=false
 
 ---
 
-## 10. Debugging Tools
+## 11. Debugging Tools
 
 ### Snapshot and restore a workflow checkpoint
 
@@ -736,7 +778,7 @@ GET checkpoint:AISOS-376:...
 
 ---
 
-## 11. Common Workflows
+## 12. Common Workflows
 
 ### Start a new feature end-to-end (local test)
 
@@ -818,7 +860,7 @@ curl -X POST http://localhost:8000/api/v1/webhooks/github \
 
 ---
 
-## 12. Service Reference
+## 13. Service Reference
 
 ### Ports
 

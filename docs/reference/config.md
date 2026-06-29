@@ -125,6 +125,18 @@ These variables are used by `docker-compose.yml`, `devtools/docker-compose.dev.y
 | `REDIS_HOST` | Redis host for standalone Grafana compose |
 | `REDIS_PORT` | Redis port for standalone Grafana compose |
 
+## Weekly Status Reports and Alerting
+
+| Variable | Description |
+|----------|-------------|
+| `FORGE_ALERT_EMAIL` | Email address to receive status alerts and reports. |
+| `FORGE_SLACK_WEBHOOK` | Slack webhook URL to post weekly report summary alerts. |
+| `SLACK_WEBHOOK_URL` | Fallback Slack webhook URL if `FORGE_SLACK_WEBHOOK` is not set. |
+| `FORGE_ALERT_WEBHOOK` | Custom webhook URL to receive status reports via POST request. |
+| `FORGE_WEBHOOK_URL` | Fallback Custom webhook URL if `FORGE_ALERT_WEBHOOK` is not set. |
+| `FORGE_ALERT_CHANNEL` | Primary alert channel to attempt first (`email`, `slack`, or `webhook`). Defaults to `email`. |
+| `SKIP_DOC_FRESHNESS` | Set to `true` to skip the documentation freshness check in CI environments. |
+
 ### MCP Servers
 
 MCP server configuration lives in `mcp-servers.json`, not `.env`. See the [MCP servers section](https://github.com/forge-sdlc/forge/blob/main/mcp-servers.json) of the repository.
