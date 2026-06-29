@@ -8,6 +8,7 @@ All timestamps are UTC ISO-8601 strings (e.g. "2024-01-01T12:00:00.000000+00:00"
 """
 
 from datetime import UTC, datetime
+from typing import Any
 
 
 def _utc_now() -> str:
@@ -15,9 +16,9 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _get_stage(state: dict, stage_name: str) -> dict:
+def _get_stage(state: dict[str, Any], stage_name: str) -> dict[str, Any]:
     """Return a copy of the stage entry, or a zeroed default if absent."""
-    stages: dict = state.get("stage_timestamps") or {}
+    stages: dict[str, Any] = state.get("stage_timestamps") or {}
     existing = stages.get(stage_name)
     if existing is None:
         return {
@@ -35,10 +36,10 @@ def _get_stage(state: dict, stage_name: str) -> dict:
 
 
 def record_stage_start(
-    state: dict,
+    state: dict[str, Any],
     stage_name: str,
     model_name: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Initialize a stage entry in stats_stages with a started_at timestamp.
 
     If the stage already exists (e.g. a retry), the started_at timestamp is
@@ -55,7 +56,7 @@ def record_stage_start(
     Returns:
         Partial state update dict with ``stage_timestamps`` key.
     """
-    stages: dict = dict(state.get("stage_timestamps") or {})
+    stages: dict[str, Any] = dict(state.get("stage_timestamps") or {})
     stage = _get_stage(state, stage_name)
     stage["started_at"] = _utc_now()
     stage["ended_at"] = None  # reset end marker when re-entering
@@ -66,10 +67,10 @@ def record_stage_start(
 
 
 def record_stage_end(
-    state: dict,
+    state: dict[str, Any],
     stage_name: str,
     machine_time: float,
-) -> dict:
+) -> dict[str, Any]:
     """Mark a stage as ended and accumulate time metrics.
 
     Time values are *accumulated* (not replaced) so that repeated calls for
@@ -83,7 +84,7 @@ def record_stage_end(
     Returns:
         Partial state update dict with ``stage_timestamps`` key.
     """
-    stages: dict = dict(state.get("stage_timestamps") or {})
+    stages: dict[str, Any] = dict(state.get("stage_timestamps") or {})
     stage = _get_stage(state, stage_name)
     stage["ended_at"] = _utc_now()
     stage["machine_time_seconds"] = stage.get("machine_time_seconds", 0.0) + machine_time
@@ -92,11 +93,11 @@ def record_stage_end(
 
 
 def record_tokens(
-    state: dict,
+    state: dict[str, Any],
     stage_name: str,
     input_tokens: int,
     output_tokens: int,
-) -> dict:
+) -> dict[str, Any]:
     """Accumulate LLM token counts for a stage.
 
     Tokens are *accumulated* (not replaced) so that multiple LLM calls within
@@ -112,14 +113,14 @@ def record_tokens(
         Partial state update dict with ``stage_timestamps``, ``stage_token_usage``,
         and ``token_usage`` keys.
     """
-    stages: dict = dict(state.get("stage_timestamps") or {})
+    stages: dict[str, Any] = dict(state.get("stage_timestamps") or {})
     stage = _get_stage(state, stage_name)
     stage["input_tokens"] = stage.get("input_tokens", 0) + input_tokens
     stage["output_tokens"] = stage.get("output_tokens", 0) + output_tokens
     stages[stage_name] = stage
 
     # Update per-stage token usage map
-    stage_token_usage: dict = dict(state.get("stage_token_usage") or {})
+    stage_token_usage: dict[str, Any] = dict(state.get("stage_token_usage") or {})
     existing_stage_tokens = stage_token_usage.get(stage_name) or {}
     stage_token_usage[stage_name] = {
         "input_tokens": (existing_stage_tokens.get("input_tokens") or 0) + input_tokens,
@@ -127,7 +128,7 @@ def record_tokens(
     }
 
     # Update aggregate token usage
-    agg: dict = dict(state.get("token_usage") or {})
+    agg: dict[str, Any] = dict(state.get("token_usage") or {})
     agg["input_tokens"] = (agg.get("input_tokens") or 0) + input_tokens
     agg["output_tokens"] = (agg.get("output_tokens") or 0) + output_tokens
 
@@ -138,7 +139,7 @@ def record_tokens(
     }
 
 
-def increment_revision(state: dict, stage_name: str) -> dict:
+def increment_revision(state: dict[str, Any], stage_name: str) -> dict[str, Any]:
     """Increment the iteration_count for a stage by 1.
 
     Should be called each time a stage is re-entered due to a revision
@@ -152,13 +153,13 @@ def increment_revision(state: dict, stage_name: str) -> dict:
         Partial state update dict with ``stage_timestamps`` and
         ``revision_counts`` keys.
     """
-    stages: dict = dict(state.get("stage_timestamps") or {})
+    stages: dict[str, Any] = dict(state.get("stage_timestamps") or {})
     stage = _get_stage(state, stage_name)
     new_count = stage.get("iteration_count", 0) + 1
     stage["iteration_count"] = new_count
     stages[stage_name] = stage
 
-    revision_counts: dict = dict(state.get("revision_counts") or {})
+    revision_counts: dict[str, Any] = dict(state.get("revision_counts") or {})
     revision_counts[stage_name] = new_count
 
     return {
@@ -167,7 +168,7 @@ def increment_revision(state: dict, stage_name: str) -> dict:
     }
 
 
-def increment_ci_cycle(state: dict) -> dict:
+def increment_ci_cycle(state: dict[str, Any]) -> dict[str, Any]:
     """Increment the workflow-level CI fix-attempt cycle counter by 1.
 
     Args:
@@ -180,7 +181,7 @@ def increment_ci_cycle(state: dict) -> dict:
     return {"stats_ci_cycles": current + 1}
 
 
-def add_pr_url(state: dict, pr_url: str) -> dict:
+def add_pr_url(state: dict[str, Any], pr_url: str) -> dict[str, Any]:
     """Append a PR URL to stats_pr_urls (idempotent — no duplicates).
 
     Args:
@@ -196,7 +197,7 @@ def add_pr_url(state: dict, pr_url: str) -> dict:
     return {"stats_pr_urls": existing}
 
 
-def set_outcome(_state: dict, outcome: str, reason: str | None = None) -> dict:
+def set_outcome(_state: dict[str, Any], outcome: str, reason: str | None = None) -> dict[str, Any]:
     """Set the workflow outcome and optional reason.
 
     Conventional outcome values:

@@ -932,7 +932,7 @@ class OrchestratorWorker:
                     repo_full = payload.get("repository", {}).get("full_name", "")
                     pr_number = payload.get("pull_request", {}).get("number")
                     review_id = review.get("id")
-                    inline_comments: list[dict[str, Any]] = []
+                    inline_comments = []
                     if repo_full and pr_number and review_id:
                         _owner, _repo = repo_full.split("/", 1)
                         gh = GitHubClient()
