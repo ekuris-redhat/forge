@@ -160,3 +160,27 @@ def sample_github_webhook_payload() -> dict:
         },
         "repository": {"full_name": "org/repo"},
     }
+
+
+@pytest.fixture(autouse=True)
+def mock_database_for_all_tests(tmp_path):
+    """Automatically patch settings to use a temp sqlite db for all tests."""
+    from forge.config import get_settings
+    from forge.services.gate_skip_service import GateSkipService
+
+    db_file = tmp_path / "test_forge.db"
+    settings = get_settings()
+
+    # Save the original database_path
+    original_path = settings.database_path
+    settings.database_path = str(db_file)
+
+    # Reset GateSkipService initialization to force DB creation
+    original_init = GateSkipService._initialized
+    GateSkipService._initialized = False
+
+    yield
+
+    # Restore original settings and initialization flag
+    settings.database_path = original_path
+    GateSkipService._initialized = original_init

@@ -90,6 +90,19 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
             parts = pr_url.rstrip("/").split("/")
             owner, repo = parts[-4], parts[-3]
             pr_number = int(parts[-1])
+            repo_full = f"{owner}/{repo}"
+
+            # Check if this PR has a persistent gate-skipping override
+            from forge.services.gate_skip_service import get_skip_status
+
+            if await get_skip_status(repo_full, pr_number) or await get_skip_status(
+                repo, pr_number
+            ):
+                logger.info(
+                    f"CI gate skipped by persistent database override for {repo_full} PR #{pr_number}"
+                )
+                _any_skipped = True
+                continue
 
             # Get PR details for head SHA
             pr_data = await github.get_pull_request(owner, repo, pr_number)

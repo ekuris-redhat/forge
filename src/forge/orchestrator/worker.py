@@ -493,6 +493,12 @@ class OrchestratorWorker:
                     if check_name not in skipped:
                         skipped.append(check_name)
                     logger.info(f"CI gate skip added for {message.ticket_key}: '{check_name}'")
+
+                    # Persist skip status in database
+                    from forge.services.gate_skip_service import set_skip_status
+
+                    await set_skip_status(repo_full, pr_number, True, sender)
+
                     await self._post_skip_gate_feedback(
                         ticket_key=message.ticket_key,
                         owner=_owner,
@@ -517,6 +523,12 @@ class OrchestratorWorker:
                         s for s in current_state.get("ci_skipped_checks", []) if s != check_name
                     ]
                     logger.info(f"CI gate skip removed for {message.ticket_key}: '{check_name}'")
+
+                    # Persist unskip status in database
+                    from forge.services.gate_skip_service import set_skip_status
+
+                    await set_skip_status(repo_full, pr_number, False, sender)
+
                     await self._post_skip_gate_feedback(
                         ticket_key=message.ticket_key,
                         owner=_owner,

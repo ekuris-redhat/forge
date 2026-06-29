@@ -29,6 +29,12 @@ class Settings(BaseSettings):
         description="Redis connection URL for state persistence and message queue",
     )
 
+    # Database Configuration
+    database_path: str = Field(
+        default="forge.db",
+        description="Path to SQLite database file for application state persistence",
+    )
+
     # Jira Configuration
     jira_base_url: str = Field(
         description="Jira instance URL (e.g., https://company.atlassian.net)"

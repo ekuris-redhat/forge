@@ -2,6 +2,7 @@
 
 from forge.models.artifacts import Epic, Feature, Task
 from forge.models.events import EventSource, EventStatus, WebhookEvent
+from forge.models.gate_skip import PRGateSkipSettings
 from forge.models.workflow import (
     ForgeLabel,
     JiraStatus,
@@ -23,6 +24,7 @@ __all__ = [
     "Feature",
     "Epic",
     "Task",
+    "PRGateSkipSettings",
     # Event models
     "WebhookEvent",
     "EventSource",
