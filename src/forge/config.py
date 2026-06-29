@@ -409,7 +409,29 @@ class Settings(BaseSettings):
         )
 
 
-@lru_cache
+_settings_override: Settings | None = None
+
+
+def set_settings_override(settings: Settings) -> None:
+    """Set a global settings override (primarily for local dev / testing)."""
+    global _settings_override
+    _settings_override = settings
+
+
+def clear_settings_override() -> None:
+    """Clear the global settings override."""
+    global _settings_override
+    _settings_override = None
+
+
 def get_settings() -> Settings:
+    """Get cached or overridden application settings."""
+    if _settings_override is not None:
+        return _settings_override
+    return _get_cached_settings()
+
+
+@lru_cache
+def _get_cached_settings() -> Settings:
     """Get cached application settings."""
     return Settings()

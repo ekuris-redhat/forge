@@ -289,37 +289,56 @@ async def test_generate_weekly_report(mock_get_checkpointer, mock_list_checkpoin
 
 
 @pytest.mark.asyncio
-@patch("forge.workflow.stats.reporter.generate_weekly_report")
-@patch("forge.workflow.stats.reporter.publish_report_idempotently")
-async def test_cmd_weekly_report(mock_publish, mock_generate):
+@patch("forge.orchestrator.checkpointer.get_checkpointer")
+@patch("forge.integrations.jira.client.JiraClient")
+@patch("forge.workflow.stats.alerter.StakeholderAlerter")
+@patch("forge.workflow.stats.reporter.IdempotentReporter")
+async def test_cmd_weekly_report(mock_reporter_cls, mock_alerter_cls, mock_jira_cls, mock_get_cp):
     """Test cmd_weekly_report CLI integration."""
     import argparse
 
     from forge.cli import cmd_weekly_report
+
+    mock_get_cp.return_value = AsyncMock()
+    mock_jira = AsyncMock()
+    mock_jira_cls.return_value = mock_jira
 
     mock_report = MagicMock()
     mock_report.start_time = "2026-05-01T00:00:00Z"
     mock_report.end_time = "2026-05-08T00:00:00Z"
     mock_report.to_markdown.return_value = "MD Report"
     mock_report.to_json.return_value = '{"json": true}'
-    mock_generate.return_value = mock_report
+
+    mock_reporter = MagicMock()
+    mock_reporter.generate_report = AsyncMock(return_value=mock_report)
+    mock_reporter_cls.return_value = mock_reporter
+
+    mock_alerter = AsyncMock()
+    mock_alerter.send_alert.return_value = {"status": "success", "channel_used": "email"}
+    mock_alerter_cls.return_value = mock_alerter
 
     # 1. Test markdown output to file
-    args = argparse.Namespace(project="PROJ", days=7, format="markdown", output="report.md")
+    args = argparse.Namespace(
+        project="PROJ", days=7, format="markdown", output="report.md", config=None
+    )
     res = await cmd_weekly_report(args)
     assert res == 0
-    mock_generate.assert_called_with(project_key="PROJ", days=7)
-    mock_publish.assert_called_with(
+    mock_reporter.generate_report.assert_called_with(project_key="PROJ", days=7)
+    mock_reporter.publish_report.assert_called_with(
         file_path="report.md",
-        report_markdown="MD Report",
-        start_time="2026-05-01T00:00:00Z",
-        end_time="2026-05-08T00:00:00Z",
+        report=mock_report,
+        output_format="markdown",
     )
+    mock_alerter.send_alert.assert_called_with(mock_report, report_path="report.md")
 
     # 2. Test JSON output to file
-    with patch("builtins.open", create=True) as mock_file_open:
-        args = argparse.Namespace(project="PROJ", days=7, format="json", output="report.json")
-        res = await cmd_weekly_report(args)
-        assert res == 0
-        mock_file_open.assert_called_with("report.json", "w", encoding="utf-8")
-
+    args = argparse.Namespace(
+        project="PROJ", days=7, format="json", output="report.json", config=None
+    )
+    res = await cmd_weekly_report(args)
+    assert res == 0
+    mock_reporter.publish_report.assert_called_with(
+        file_path="report.json",
+        report=mock_report,
+        output_format="json",
+    )

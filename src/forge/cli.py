@@ -471,41 +471,119 @@ async def cmd_logs(args: argparse.Namespace) -> int:
 
 async def cmd_weekly_report(args: argparse.Namespace) -> int:
     """Generate weekly project status reports and publish them idempotently."""
-    from forge.workflow.stats.reporter import generate_weekly_report, publish_report_idempotently
+    from forge.config import clear_settings_override
+    from forge.integrations.jira.client import JiraClient
+    from forge.orchestrator.checkpointer import get_checkpointer
+    from forge.workflow.stats.alerter import StakeholderAlerter
+    from forge.workflow.stats.reporter import IdempotentReporter
 
+    # 1. Parse and apply configuration overrides
+    overrides = {}
+    if getattr(args, "config", None):
+        for entry in args.config:
+            if "=" not in entry:
+                print(
+                    f"Error: invalid config override format (expected KEY=VALUE): {entry}",
+                    file=sys.stderr,
+                )
+                return 1
+            key, val = entry.split("=", 1)
+            key = key.strip().lower()
+            val = val.strip()
+
+            # Cast basic types
+            if val.lower() == "true":
+                val = True
+            elif val.lower() == "false":
+                val = False
+            else:
+                import contextlib
+
+                with contextlib.suppress(ValueError):
+                    val = int(val)
+                if isinstance(val, str):
+                    with contextlib.suppress(ValueError):
+                        val = float(val)
+            overrides[key] = val
+
+    if overrides:
+        from forge.config import Settings, set_settings_override
+
+        try:
+            current_settings = Settings()
+            updated_data = current_settings.model_dump()
+            for k, v in overrides.items():
+                updated_data[k] = v
+            new_settings = Settings(**updated_data)
+            set_settings_override(new_settings)
+        except Exception as e:
+            print(f"Error applying configuration overrides: {e}", file=sys.stderr)
+            return 1
+
+    # 2. Argument validation
+    if not args.project or not args.project.strip():
+        print("Error: --project must be a non-empty string.", file=sys.stderr)
+        return 1
+
+    if args.days <= 0:
+        print("Error: --days must be a positive integer.", file=sys.stderr)
+        return 1
+
+    jira_client = JiraClient()
     try:
-        report = await generate_weekly_report(
+        checkpointer = await get_checkpointer()
+
+        reporter = IdempotentReporter(
+            checkpointer=checkpointer,
+            jira_client=jira_client,
+        )
+        alerter = StakeholderAlerter()
+
+        # Generate report
+        report = await reporter.generate_report(
             project_key=args.project,
             days=args.days,
         )
 
+        # 4. Dry-run coordination
+        if getattr(args, "dry_run", False):
+            # Outputs markdown to stdout without writing files or firing alerts
+            print(report.to_markdown())
+            return 0
+
+        # 5. Non-dry-run: write files and fire alerts
         output_str = report.to_json() if args.format == "json" else report.to_markdown()
 
         if args.output:
+            reporter.publish_report(
+                file_path=args.output,
+                report=report,
+                output_format=args.format,
+            )
             if args.format == "markdown":
-                publish_report_idempotently(
-                    file_path=args.output,
-                    report_markdown=output_str,
-                    start_time=report.start_time,
-                    end_time=report.end_time,
-                )
                 print(f"Report published idempotently to: {args.output}")
             else:
-                import os
-
-                dir_name = os.path.dirname(os.path.abspath(args.output))
-                if dir_name:
-                    os.makedirs(dir_name, exist_ok=True)
-                with open(args.output, "w", encoding="utf-8") as f:
-                    f.write(output_str)
                 print(f"JSON metrics written to: {args.output}")
         else:
             print(output_str)
 
+        # Send alert
+        try:
+            alert_res = await alerter.send_alert(report, report_path=args.output)
+            print(
+                f"Alert fired successfully via {alert_res.get('channel_used', 'unknown')} channel."
+            )
+        except Exception as alert_err:
+            print(f"Alert sending failed: {alert_err}", file=sys.stderr)
+
         return 0
+
     except Exception as e:
         print(f"Error generating weekly report: {e}", file=sys.stderr)
         return 1
+    finally:
+        await jira_client.close()
+        clear_settings_override()
 
 
 async def cmd_skills_install(args: argparse.Namespace) -> int:
@@ -867,6 +945,17 @@ def main() -> int:
         choices=["markdown", "json"],
         default="markdown",
         help="Output format (markdown or json, default: markdown)",
+    )
+    weekly_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Dry run mode: output markdown to stdout without writing files or firing alerts",
+    )
+    weekly_parser.add_argument(
+        "--config",
+        action="append",
+        metavar="KEY=VALUE",
+        help="Configuration override in KEY=VALUE format (repeatable)",
     )
 
     # skills subparser group

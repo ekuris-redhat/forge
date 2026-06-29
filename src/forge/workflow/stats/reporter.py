@@ -327,3 +327,55 @@ async def generate_weekly_report(
     )
 
     return report
+
+
+class IdempotentReporter:
+    """Reporter that generates weekly metrics reports and writes/publishes them idempotently."""
+
+    def __init__(self, checkpointer: Any = None, jira_client: Any = None, rate_model: Any = None):
+        self.checkpointer = checkpointer
+        self.jira_client = jira_client
+        self.rate_model = rate_model
+
+    async def generate_report(
+        self, project_key: str, days: int = 7, end_time: datetime | None = None
+    ) -> WeeklyReportMetrics:
+        """Generate weekly report metrics."""
+        return await generate_weekly_report(
+            project_key=project_key,
+            days=days,
+            end_time=end_time,
+            jira_client=self.jira_client,
+            checkpointer=self.checkpointer,
+            rate_model=self.rate_model,
+        )
+
+    def publish_report(
+        self, file_path: str, report: WeeklyReportMetrics, output_format: str = "markdown"
+    ) -> str:
+        """Write the report to file idempotently if format is markdown, or write JSON otherwise.
+
+        Returns:
+            The generated report string (markdown or json).
+        """
+        output_str = report.to_json() if output_format == "json" else report.to_markdown()
+
+        # Ensure parent directory exists
+        import os
+
+        dir_name = os.path.dirname(os.path.abspath(file_path))
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
+
+        if output_format == "markdown":
+            publish_report_idempotently(
+                file_path=file_path,
+                report_markdown=output_str,
+                start_time=report.start_time,
+                end_time=report.end_time,
+            )
+        else:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(output_str)
+
+        return output_str
