@@ -76,9 +76,7 @@ class TestTaskImplementationStatusCommentsTS003:
         assert mock_jira.add_comment.call_count >= 1
         start_call = mock_jira.add_comment.call_args_list[0]
         assert start_call[0][0] == "TASK-001"
-        assert (
-            start_call[0][1] == "🔨 Forge started implementing [TASK-001]: Task summary for testing"
-        )
+        assert start_call[0][1] == "🔨 Forge is implementing this task."
 
     @pytest.mark.asyncio
     async def test_single_task_receives_completion_comment_on_success(self):
@@ -107,17 +105,12 @@ class TestTaskImplementationStatusCommentsTS003:
         # Verify start comment
         start_call = mock_jira.add_comment.call_args_list[0]
         assert start_call[0][0] == "TASK-001"
-        assert (
-            start_call[0][1] == "🔨 Forge started implementing [TASK-001]: Task summary for testing"
-        )
+        assert start_call[0][1] == "🔨 Forge is implementing this task."
 
         # Verify completion comment with exact text
         completion_call = mock_jira.add_comment.call_args_list[1]
         assert completion_call[0][0] == "TASK-001"
-        assert (
-            completion_call[0][1]
-            == "✅ Implementation complete. Running local code review before PR."
-        )
+        assert completion_call[0][1] == "✅ Implementation complete. Running local code review before PR."
 
         # Verify task was marked as implemented
         assert "TASK-001" in result["implemented_tasks"]
@@ -126,9 +119,7 @@ class TestTaskImplementationStatusCommentsTS003:
     async def test_single_task_no_completion_comment_on_failure(self):
         """TS-003: Verify NO completion comment when task implementation fails."""
         mock_jira = create_mock_jira_client()
-        mock_runner = create_mock_container_runner(
-            success=False, error_message="Implementation error"
-        )
+        mock_runner = create_mock_container_runner(success=False, error_message="Implementation error")
 
         state = create_initial_feature_state(
             ticket_key="FEAT-100",
@@ -150,9 +141,7 @@ class TestTaskImplementationStatusCommentsTS003:
         assert mock_jira.add_comment.call_count == 1
         start_call = mock_jira.add_comment.call_args_list[0]
         assert start_call[0][0] == "TASK-001"
-        assert (
-            start_call[0][1] == "🔨 Forge started implementing [TASK-001]: Task summary for testing"
-        )
+        assert start_call[0][1] == "🔨 Forge is implementing this task."
 
         # Verify error state
         assert result["last_error"] == "Implementation error"
@@ -187,10 +176,7 @@ class TestTaskImplementationStatusCommentsTS013:
         # Verify first task got start and completion comments with correct task_key
         assert mock_jira1.add_comment.call_count == 2
         assert mock_jira1.add_comment.call_args_list[0][0][0] == "TASK-100"
-        assert (
-            mock_jira1.add_comment.call_args_list[0][0][1]
-            == "🔨 Forge started implementing [TASK-100]: Task summary for testing"
-        )
+        assert mock_jira1.add_comment.call_args_list[0][0][1] == "🔨 Forge is implementing this task."
         assert mock_jira1.add_comment.call_args_list[1][0][0] == "TASK-100"
 
         # Reset mock for second task
@@ -210,10 +196,7 @@ class TestTaskImplementationStatusCommentsTS013:
         # Verify second task got its own independent start and completion comments
         assert mock_jira2.add_comment.call_count == 2
         assert mock_jira2.add_comment.call_args_list[0][0][0] == "TASK-101"
-        assert (
-            mock_jira2.add_comment.call_args_list[0][0][1]
-            == "🔨 Forge started implementing [TASK-101]: Task summary for testing"
-        )
+        assert mock_jira2.add_comment.call_args_list[0][0][1] == "🔨 Forge is implementing this task."
         assert mock_jira2.add_comment.call_args_list[1][0][0] == "TASK-101"
 
     @pytest.mark.asyncio
@@ -243,14 +226,8 @@ class TestTaskImplementationStatusCommentsTS013:
             call for call in mock_jira1.add_comment.call_args_list if call[0][0] == "TASK-200"
         ]
         assert len(task200_calls) == 2
-        assert (
-            task200_calls[0][0][1]
-            == "🔨 Forge started implementing [TASK-200]: Task summary for testing"
-        )
-        assert (
-            task200_calls[1][0][1]
-            == "✅ Implementation complete. Running local code review before PR."
-        )
+        assert task200_calls[0][0][1] == "🔨 Forge is implementing this task."
+        assert task200_calls[1][0][1] == "✅ Implementation complete. Running local code review before PR."
 
         # Second task
         mock_jira2 = create_mock_jira_client()
@@ -270,14 +247,8 @@ class TestTaskImplementationStatusCommentsTS013:
             call for call in mock_jira2.add_comment.call_args_list if call[0][0] == "TASK-201"
         ]
         assert len(task201_calls) == 2
-        assert (
-            task201_calls[0][0][1]
-            == "🔨 Forge started implementing [TASK-201]: Task summary for testing"
-        )
-        assert (
-            task201_calls[1][0][1]
-            == "✅ Implementation complete. Running local code review before PR."
-        )
+        assert task201_calls[0][0][1] == "🔨 Forge is implementing this task."
+        assert task201_calls[1][0][1] == "✅ Implementation complete. Running local code review before PR."
 
         # Third task
         mock_jira3 = create_mock_jira_client()
@@ -297,14 +268,8 @@ class TestTaskImplementationStatusCommentsTS013:
             call for call in mock_jira3.add_comment.call_args_list if call[0][0] == "TASK-202"
         ]
         assert len(task202_calls) == 2
-        assert (
-            task202_calls[0][0][1]
-            == "🔨 Forge started implementing [TASK-202]: Task summary for testing"
-        )
-        assert (
-            task202_calls[1][0][1]
-            == "✅ Implementation complete. Running local code review before PR."
-        )
+        assert task202_calls[0][0][1] == "🔨 Forge is implementing this task."
+        assert task202_calls[1][0][1] == "✅ Implementation complete. Running local code review before PR."
 
         # Verify all three tasks are marked as implemented
         assert result3["implemented_tasks"] == ["TASK-200", "TASK-201", "TASK-202"]
@@ -339,10 +304,7 @@ class TestTaskImplementationFailureScenarios:
         # Verify only start comment, no completion comment
         assert mock_jira.add_comment.call_count == 1
         assert mock_jira.add_comment.call_args_list[0][0][0] == "TASK-300"
-        assert (
-            mock_jira.add_comment.call_args_list[0][0][1]
-            == "🔨 Forge started implementing [TASK-300]: Task summary for testing"
-        )
+        assert mock_jira.add_comment.call_args_list[0][0][1] == "🔨 Forge is implementing this task."
 
         # Verify error is set and task not implemented
         assert "Container crashed" in result["last_error"]
@@ -426,8 +388,7 @@ class TestTaskImplementationErrorHandling:
 
         # Verify error was logged (from jira_status utility)
         assert any(
-            "Failed to post status comment to TASK-500" in record.message
-            for record in caplog.records
+            "Failed to post status comment to TASK-500" in record.message for record in caplog.records
         )
 
     @pytest.mark.asyncio
@@ -469,8 +430,7 @@ class TestTaskImplementationErrorHandling:
 
         # Verify error was logged
         assert any(
-            "Failed to post status comment to TASK-501" in record.message
-            for record in caplog.records
+            "Failed to post status comment to TASK-501" in record.message for record in caplog.records
         )
 
     @pytest.mark.asyncio
@@ -502,8 +462,6 @@ class TestTaskImplementationErrorHandling:
 
         # Verify errors were logged for both start and completion attempts
         error_logs = [
-            record
-            for record in caplog.records
-            if "Failed to post status comment to TASK-502" in record.message
+            record for record in caplog.records if "Failed to post status comment to TASK-502" in record.message
         ]
         assert len(error_logs) == 2  # Both start and completion comments should have logged errors

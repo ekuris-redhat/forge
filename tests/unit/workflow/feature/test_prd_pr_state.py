@@ -1,7 +1,7 @@
 """Tests for PRD PR state fields."""
 
 from forge.models.workflow import TicketType
-from forge.workflow.feature.state import create_initial_feature_state
+from forge.workflow.feature.state import FeatureState, create_initial_feature_state
 
 
 class TestPrdPrStateFields:

@@ -57,7 +57,7 @@ def create_mock_git_operations(has_changes=False):
 
 class TestPassNumberOneCommentPosting:
     """Tests verifying initial comment posts only when pass_number == 1.
-
+    
     Acceptance Criteria: Unit tests verify initial comment posts only when pass_number == 1
     """
 
@@ -80,7 +80,9 @@ class TestPassNumberOneCommentPosting:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -112,16 +114,16 @@ class TestPassNumberOneCommentPosting:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
 
         # Verify initial comment (with 🔍) was NOT posted
         for call in mock_post_status.call_args_list:
-            assert "🔍" not in str(call), (
-                "Initial comment should not be posted when pass_number > 1"
-            )
+            assert "🔍" not in str(call), "Initial comment should not be posted when pass_number > 1"
 
     @pytest.mark.asyncio
     async def test_no_initial_comment_when_pass_number_greater_than_one(self):
@@ -142,7 +144,9 @@ class TestPassNumberOneCommentPosting:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -156,7 +160,7 @@ class TestPassNumberOneCommentPosting:
 
 class TestPassNumberGreaterThanOneCommentPosting:
     """Tests verifying fix comments post only when pass_number > 1.
-
+    
     Acceptance Criteria: Unit tests verify fix comments post only when pass_number > 1
     """
 
@@ -179,7 +183,9 @@ class TestPassNumberGreaterThanOneCommentPosting:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -211,7 +217,9 @@ class TestPassNumberGreaterThanOneCommentPosting:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -240,7 +248,9 @@ class TestPassNumberGreaterThanOneCommentPosting:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -252,8 +262,8 @@ class TestPassNumberGreaterThanOneCommentPosting:
 
 class TestCorrectPassNumberInCommentText:
     """Tests verifying correct pass number appears in comment text.
-
-    Acceptance Criteria: Unit tests verify correct pass number appears in comment text
+    
+    Acceptance Criteria: Unit tests verify correct pass number appears in comment text 
     for passes 2, 3, 4, 5+
     """
 
@@ -276,7 +286,9 @@ class TestCorrectPassNumberInCommentText:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -307,7 +319,9 @@ class TestCorrectPassNumberInCommentText:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -338,7 +352,9 @@ class TestCorrectPassNumberInCommentText:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -370,7 +386,9 @@ class TestCorrectPassNumberInCommentText:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -401,7 +419,9 @@ class TestCorrectPassNumberInCommentText:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -416,7 +436,7 @@ class TestCorrectPassNumberInCommentText:
 
 class TestGracefulHandlingWhenPassNumberUnavailable:
     """Tests verifying graceful handling when pass_number unavailable.
-
+    
     Acceptance Criteria: Unit tests verify graceful handling when pass_number unavailable
     """
 
@@ -441,7 +461,9 @@ class TestGracefulHandlingWhenPassNumberUnavailable:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -474,7 +496,9 @@ class TestGracefulHandlingWhenPassNumberUnavailable:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             result = await local_review_changes(state)
@@ -503,10 +527,12 @@ class TestGracefulHandlingWhenPassNumberUnavailable:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
-
+            
             # Should not raise exception
             try:
                 result = await local_review_changes(state)
@@ -534,10 +560,12 @@ class TestGracefulHandlingWhenPassNumberUnavailable:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
-
+            
             # Should not raise exception
             result = await local_review_changes(state)
 
@@ -549,9 +577,7 @@ class TestGracefulHandlingWhenPassNumberUnavailable:
             comment_args = mock_post_status.call_args[0]
             assert comment_args[0] == mock_jira  # First arg is jira client
             assert comment_args[1] == "FEAT-503"  # Second arg is ticket key
-            assert (
-                "🔧 Local review found issues, applying fixes." in comment_args[2]
-            )  # Third arg is message
+            assert "🔧 Local review found issues, applying fixes." in comment_args[2]  # Third arg is message
 
 
 class TestIntegrationWithReviewFlow:
@@ -619,7 +645,9 @@ class TestIntegrationWithReviewFlow:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -639,7 +667,9 @@ class TestIntegrationWithReviewFlow:
 
         with (
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
+            patch(
+                "forge.workflow.nodes.local_reviewer.post_status_comment"
+            ) as mock_post_status,
         ):
             result = await local_review_changes(state)
 

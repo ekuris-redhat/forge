@@ -5,7 +5,9 @@ from forge.utils.redaction import redact_secrets
 
 def test_redacts_github_token_in_authenticated_url():
     token = "gh" + "p_" + "abcdefghijklmnopqrstuvwxyz123456"
-    text = f"https://x-access-token:{token}@github.com/org/repo.git"
+    text = (
+        f"https://x-access-token:{token}@github.com/org/repo.git"
+    )
 
     redacted = redact_secrets(text)
 

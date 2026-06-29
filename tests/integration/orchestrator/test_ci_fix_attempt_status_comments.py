@@ -68,36 +68,23 @@ class TestCIFixAttemptStatusCommentsTS007:
         state["ci_fix_max_attempts"] = 3
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                await attempt_ci_fix(state)
 
         # Verify status comment posted with correct format
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
         assert comment_call[0][0] == "FEAT-300"
-        assert (
-            comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (1/3)."
-        )
+        assert comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (1/3)."
 
         # Verify JiraClient closed
         assert mock_jira.close.call_count == 1
@@ -128,36 +115,23 @@ class TestCIFixAttemptStatusCommentsTS007:
         state["ci_fix_max_attempts"] = 3
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                await attempt_ci_fix(state)
 
         # Verify status comment posted with correct format
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
         assert comment_call[0][0] == "FEAT-301"
-        assert (
-            comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (2/3)."
-        )
+        assert comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (2/3)."
 
     @pytest.mark.asyncio
     async def test_final_attempt_posts_comment_with_max_of_max(self):
@@ -185,36 +159,23 @@ class TestCIFixAttemptStatusCommentsTS007:
         state["ci_fix_max_attempts"] = 3
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                await attempt_ci_fix(state)
 
         # Verify status comment posted with correct format
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
         assert comment_call[0][0] == "FEAT-302"
-        assert (
-            comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (3/3)."
-        )
+        assert comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (3/3)."
 
     @pytest.mark.asyncio
     async def test_comment_posted_to_feature_ticket_not_task(self):
@@ -242,28 +203,17 @@ class TestCIFixAttemptStatusCommentsTS007:
         state["ci_fix_max_attempts"] = 5
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                await attempt_ci_fix(state)
 
         # Verify comment posted to feature ticket (FEAT-303), not task tickets (TASK-001, TASK-002)
         assert mock_jira.add_comment.call_count == 1
@@ -285,10 +235,10 @@ class TestCIFixAttemptCommentCounts:
 
         # Collect all comments posted
         comments = []
-
+        
         def capture_comment(ticket_key, message):
             comments.append((ticket_key, message))
-
+        
         mock_jira.add_comment.side_effect = capture_comment
 
         base_state = create_initial_feature_state(
@@ -311,31 +261,19 @@ class TestCIFixAttemptCommentCounts:
         # Simulate three attempts
         for attempt in [1, 2, 3]:
             state = {**base_state, "ci_fix_attempt": attempt}
-
+            
             with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                    ):
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                        ) as mock_prepare:
+                with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                    with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                        with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                             mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                            with patch(
-                                "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                                AsyncMock(),
-                            ), patch(
-                                "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                                return_value="errors",
-                            ), patch(
-                                "forge.workflow.nodes.ci_evaluator.load_prompt",
-                                return_value="prompt",
-                            ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"), patch(
-                                "pathlib.Path.exists", return_value=False
-                            ):
-                                await attempt_ci_fix(state)
+                            with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                                with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                    with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                        with patch("pathlib.Path.mkdir"):
+                                            with patch("pathlib.Path.write_text"):
+                                                with patch("pathlib.Path.exists", return_value=False):
+                                                    await attempt_ci_fix(state)
 
         # Verify three comments posted with correct counts
         assert len(comments) == 3
@@ -369,35 +307,22 @@ class TestCIFixAttemptCommentCounts:
         state["ci_fix_max_attempts"] = 5
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                await attempt_ci_fix(state)
 
         # Verify comment uses max_attempts=5
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
-        assert (
-            comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (2/5)."
-        )
+        assert comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (2/5)."
 
 
 class TestCIFixAttemptErrorHandling:
@@ -409,7 +334,7 @@ class TestCIFixAttemptErrorHandling:
         mock_jira = create_mock_jira_client()
         # Simulate comment posting failure
         mock_jira.add_comment.side_effect = Exception("Jira API error")
-
+        
         mock_runner = create_mock_container_runner()
         mock_github = create_mock_github_client()
 
@@ -432,28 +357,17 @@ class TestCIFixAttemptErrorHandling:
         state["ci_fix_max_attempts"] = 3
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                result = await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                result = await attempt_ci_fix(state)
 
         # Verify workflow continues (doesn't raise exception)
         assert result is not None
@@ -466,7 +380,7 @@ class TestCIFixAttemptErrorHandling:
         mock_jira = create_mock_jira_client()
         # Simulate comment posting failure
         mock_jira.add_comment.side_effect = Exception("Jira API error")
-
+        
         mock_runner = create_mock_container_runner()
         mock_github = create_mock_github_client()
 
@@ -489,28 +403,17 @@ class TestCIFixAttemptErrorHandling:
         state["ci_fix_max_attempts"] = 3
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                await attempt_ci_fix(state)
 
         # Verify JiraClient closed despite error
         assert mock_jira.close.call_count == 1

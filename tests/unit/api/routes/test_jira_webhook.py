@@ -8,14 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
-
-from forge.main import app
 from tests.fixtures.jira_payloads import (
     WEBHOOK_ISSUE_CREATED,
     WEBHOOK_ISSUE_UPDATED_COMMENT_ADDED,
     WEBHOOK_ISSUE_UPDATED_LABEL_ADDED,
     make_jira_webhook,
 )
+
+from forge.main import app
 
 
 def compute_signature(payload: bytes, secret: str) -> str:
@@ -47,7 +47,8 @@ class TestJiraWebhookRoute:
         with patch("forge.api.routes.jira.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.jira.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
+                    transport=ASGITransport(app=app),
+                    base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/jira",
@@ -70,7 +71,8 @@ class TestJiraWebhookRoute:
 
         with patch("forge.api.routes.jira.get_settings", return_value=mock_settings):
             async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
+                transport=ASGITransport(app=app),
+                base_url="http://test"
             ) as client:
                 response = await client.post(
                     "/api/v1/webhooks/jira",
@@ -93,7 +95,8 @@ class TestJiraWebhookRoute:
 
         with patch("forge.api.routes.jira.get_settings", return_value=mock_settings):
             async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
+                transport=ASGITransport(app=app),
+                base_url="http://test"
             ) as client:
                 response = await client.post(
                     "/api/v1/webhooks/jira",
@@ -120,7 +123,8 @@ class TestJiraWebhookRoute:
         with patch("forge.api.routes.jira.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.jira.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
+                    transport=ASGITransport(app=app),
+                    base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/jira",
@@ -159,7 +163,8 @@ class TestJiraWebhookRoute:
         with patch("forge.api.routes.jira.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.jira.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
+                    transport=ASGITransport(app=app),
+                    base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/jira",

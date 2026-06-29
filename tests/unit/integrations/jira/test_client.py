@@ -219,7 +219,9 @@ class TestJiraClientArchiveIssue:
         assert mock_http.put.await_args_list[1].kwargs["json"] == {"fields": {"parent": None}}
 
         assert mock_http.put.await_args_list[2].args[0] == "/issue/archive"
-        assert mock_http.put.await_args_list[2].kwargs["json"] == {"issueIdsOrKeys": ["TEST-123"]}
+        assert mock_http.put.await_args_list[2].kwargs["json"] == {
+            "issueIdsOrKeys": ["TEST-123"]
+        }
 
     @pytest.mark.asyncio
     async def test_archive_issue_logs_native_archive_body_errors(self, mock_client, caplog):

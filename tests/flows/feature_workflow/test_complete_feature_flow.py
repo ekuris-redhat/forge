@@ -1,5 +1,6 @@
 """Tests for complete feature workflow flow."""
 
+
 import pytest
 
 from forge.models.workflow import TicketType
@@ -65,7 +66,6 @@ class TestFeatureWorkflowPhases:
         )
 
         from forge.workflow.gates import route_prd_approval
-
         next_node = route_prd_approval(state)
 
         assert next_node == "generate_spec"
@@ -81,7 +81,6 @@ class TestFeatureWorkflowPhases:
         )
 
         from forge.workflow.gates import route_spec_approval
-
         next_node = route_spec_approval(state)
 
         assert next_node == "decompose_epics"
@@ -96,7 +95,6 @@ class TestFeatureWorkflowPhases:
         )
 
         from forge.workflow.gates import route_plan_approval
-
         next_node = route_plan_approval(state)
 
         assert next_node == "generate_tasks"
@@ -197,8 +195,7 @@ class TestMultiRepoFeature:
 
         # Should have more repos to process
         remaining = [
-            r
-            for r in multi_repo_state["repos_to_process"]
+            r for r in multi_repo_state["repos_to_process"]
             if r not in multi_repo_state["repos_completed"]
         ]
 

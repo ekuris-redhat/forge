@@ -318,7 +318,9 @@ class TestResolveTraceFields:
         metadata_fields = [TracingField.TICKET_KEY, TracingField.RETRY_COUNT]
 
         with (
-            patch("forge.config.get_settings") as mock_get_settings,
+            patch(
+                "forge.config.get_settings"
+            ) as mock_get_settings,
         ):
             mock_settings = mock_get_settings.return_value
             type(mock_settings).trace_tag_fields = PropertyMock(return_value=tag_fields)
@@ -335,7 +337,9 @@ class TestResolveTraceFields:
         tag_fields = [TracingField.TICKET_TYPE, TracingField.REPO]
         metadata_fields = [TracingField.PR_NUMBER]
 
-        with patch("forge.config.get_settings") as mock_get_settings:
+        with patch(
+            "forge.config.get_settings"
+        ) as mock_get_settings:
             mock_settings = mock_get_settings.return_value
             type(mock_settings).trace_tag_fields = PropertyMock(return_value=tag_fields)
             type(mock_settings).trace_metadata_fields = PropertyMock(return_value=metadata_fields)
@@ -346,7 +350,9 @@ class TestResolveTraceFields:
         assert metadata == {"pr_number": "99"}
 
     def test_empty_config_returns_empty(self) -> None:
-        with patch("forge.config.get_settings") as mock_get_settings:
+        with patch(
+            "forge.config.get_settings"
+        ) as mock_get_settings:
             mock_settings = mock_get_settings.return_value
             type(mock_settings).trace_tag_fields = PropertyMock(return_value=[])
             type(mock_settings).trace_metadata_fields = PropertyMock(return_value=[])
@@ -360,7 +366,9 @@ class TestResolveTraceFields:
         state = _make_state(system_prompt_length=4523)
         metadata_fields = [TracingField.SYSTEM_PROMPT_LENGTH]
 
-        with patch("forge.config.get_settings") as mock_get_settings:
+        with patch(
+            "forge.config.get_settings"
+        ) as mock_get_settings:
             mock_settings = mock_get_settings.return_value
             type(mock_settings).trace_tag_fields = PropertyMock(return_value=[])
             type(mock_settings).trace_metadata_fields = PropertyMock(return_value=metadata_fields)
@@ -374,7 +382,9 @@ class TestResolveTraceFields:
         state = _make_state(llm_model="claude-sonnet-4-6-20250514")
         tag_fields = [TracingField.LLM_MODEL]
 
-        with patch("forge.config.get_settings") as mock_get_settings:
+        with patch(
+            "forge.config.get_settings"
+        ) as mock_get_settings:
             mock_settings = mock_get_settings.return_value
             type(mock_settings).trace_tag_fields = PropertyMock(return_value=tag_fields)
             type(mock_settings).trace_metadata_fields = PropertyMock(return_value=[])

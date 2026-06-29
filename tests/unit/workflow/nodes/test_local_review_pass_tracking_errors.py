@@ -1,6 +1,7 @@
 """Unit tests for defensive pass number tracking error handling in local_reviewer.py."""
 
 import logging
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -84,14 +85,13 @@ class TestPassTrackingUnavailable:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post,
-            caplog.at_level(logging.WARNING),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post, \
+             caplog.at_level(logging.WARNING):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -134,13 +134,12 @@ class TestPassTrackingUnavailable:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment"),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment"):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -177,14 +176,13 @@ class TestInvalidPassNumberValues:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post,
-            caplog.at_level(logging.WARNING),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post, \
+             caplog.at_level(logging.WARNING):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -228,14 +226,13 @@ class TestInvalidPassNumberValues:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post,
-            caplog.at_level(logging.WARNING),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post, \
+             caplog.at_level(logging.WARNING):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -276,14 +273,13 @@ class TestInvalidPassNumberValues:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post,
-            caplog.at_level(logging.WARNING),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post, \
+             caplog.at_level(logging.WARNING):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -327,14 +323,13 @@ class TestNormalPassNumberLogging:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment"),
-            caplog.at_level(logging.INFO),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment"), \
+             caplog.at_level(logging.INFO):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -365,14 +360,13 @@ class TestNormalPassNumberLogging:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment"),
-            caplog.at_level(logging.INFO),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment"), \
+             caplog.at_level(logging.INFO):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -403,14 +397,13 @@ class TestNormalPassNumberLogging:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment"),
-            caplog.at_level(logging.INFO),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment"), \
+             caplog.at_level(logging.INFO):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -445,14 +438,13 @@ class TestPassTrackingFailureLogging:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment"),
-            caplog.at_level(logging.WARNING),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment"), \
+             caplog.at_level(logging.WARNING):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -485,14 +477,13 @@ class TestPassTrackingFailureLogging:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment"),
-            caplog.at_level(logging.WARNING),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment"), \
+             caplog.at_level(logging.WARNING):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -527,13 +518,12 @@ class TestPassNumberIncrement:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment"),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment"):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance
@@ -565,13 +555,12 @@ class TestPassNumberIncrement:
         mock_result.stderr = ""
         mock_runner.run = AsyncMock(return_value=mock_result)
 
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
-            patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops,
-            patch("forge.workflow.nodes.local_reviewer.post_status_comment"),
-        ):
+        with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira), \
+             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner), \
+             patch("forge.workflow.nodes.local_reviewer.load_prompt", return_value="test prompt"), \
+             patch("forge.workflow.nodes.local_reviewer.GitOperations") as mock_git_ops, \
+             patch("forge.workflow.nodes.local_reviewer.post_status_comment"):
+
             mock_git_instance = MagicMock()
             mock_git_instance.has_uncommitted_changes.return_value = False
             mock_git_ops.return_value = mock_git_instance

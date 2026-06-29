@@ -1,5 +1,6 @@
 """Tests for label state transitions."""
 
+
 import pytest
 
 from forge.models.workflow import ForgeLabel, get_workflow_phase
@@ -162,31 +163,28 @@ class TestLabelConsistency:
 class TestLabelStateAtEachPhase:
     """Tests verifying correct label at each workflow phase."""
 
-    @pytest.mark.parametrize(
-        "label,expected_phase",
-        [
-            (ForgeLabel.PRD_DRAFTING, "prd_generation"),
-            (ForgeLabel.PRD_PENDING, "prd_approval"),
-            (ForgeLabel.PRD_APPROVED, "spec_generation"),
-            (ForgeLabel.SPEC_DRAFTING, "spec_generation"),
-            (ForgeLabel.SPEC_PENDING, "spec_approval"),
-            (ForgeLabel.SPEC_APPROVED, "epic_decomposition"),
-            (ForgeLabel.PLAN_DRAFTING, "epic_decomposition"),
-            (ForgeLabel.PLAN_PENDING, "plan_approval"),
-            (ForgeLabel.PLAN_APPROVED, "task_generation"),
-            (ForgeLabel.TASK_GENERATED, "task_routing"),
-            (ForgeLabel.TASK_IMPLEMENTING, "implementation"),
-            (ForgeLabel.TASK_PR_CREATED, "pr_created"),
-            (ForgeLabel.TASK_CI_PENDING, "ci_evaluation"),
-            (ForgeLabel.TASK_CI_FAILED, "ci_fix"),
-            (ForgeLabel.TASK_REVIEW_PENDING, "human_review"),
-            (ForgeLabel.TASK_REVIEW_APPROVED, "complete"),
-            (ForgeLabel.RCA_DRAFTING, "rca_generation"),
-            (ForgeLabel.RCA_PENDING, "rca_approval"),
-            (ForgeLabel.RCA_APPROVED, "bug_fix"),
-            (ForgeLabel.BLOCKED, "blocked"),
-        ],
-    )
+    @pytest.mark.parametrize("label,expected_phase", [
+        (ForgeLabel.PRD_DRAFTING, "prd_generation"),
+        (ForgeLabel.PRD_PENDING, "prd_approval"),
+        (ForgeLabel.PRD_APPROVED, "spec_generation"),
+        (ForgeLabel.SPEC_DRAFTING, "spec_generation"),
+        (ForgeLabel.SPEC_PENDING, "spec_approval"),
+        (ForgeLabel.SPEC_APPROVED, "epic_decomposition"),
+        (ForgeLabel.PLAN_DRAFTING, "epic_decomposition"),
+        (ForgeLabel.PLAN_PENDING, "plan_approval"),
+        (ForgeLabel.PLAN_APPROVED, "task_generation"),
+        (ForgeLabel.TASK_GENERATED, "task_routing"),
+        (ForgeLabel.TASK_IMPLEMENTING, "implementation"),
+        (ForgeLabel.TASK_PR_CREATED, "pr_created"),
+        (ForgeLabel.TASK_CI_PENDING, "ci_evaluation"),
+        (ForgeLabel.TASK_CI_FAILED, "ci_fix"),
+        (ForgeLabel.TASK_REVIEW_PENDING, "human_review"),
+        (ForgeLabel.TASK_REVIEW_APPROVED, "complete"),
+        (ForgeLabel.RCA_DRAFTING, "rca_generation"),
+        (ForgeLabel.RCA_PENDING, "rca_approval"),
+        (ForgeLabel.RCA_APPROVED, "bug_fix"),
+        (ForgeLabel.BLOCKED, "blocked"),
+    ])
     def test_label_maps_to_phase(self, label: ForgeLabel, expected_phase: str):
         """Each label maps to the expected workflow phase."""
         labels = ["forge:managed", label.value]

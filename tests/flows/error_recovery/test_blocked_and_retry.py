@@ -1,5 +1,6 @@
 """Flow tests for blocked state escalation and forge:retry recovery."""
 
+
 from forge.models.workflow import TicketType
 from forge.workflow.bug.graph import route_entry
 from forge.workflow.feature.graph import route_by_ticket_type
@@ -72,8 +73,9 @@ class TestBlockedStateIsTerminal:
         state["is_blocked"] = True
 
         terminal_nodes = ("complete", "complete_tasks", "aggregate_feature_status")
-        is_terminal_or_blocked = state.get("current_node") in terminal_nodes or state.get(
-            "is_blocked", False
+        is_terminal_or_blocked = (
+            state.get("current_node") in terminal_nodes
+            or state.get("is_blocked", False)
         )
 
         assert is_terminal_or_blocked is True
@@ -91,8 +93,9 @@ class TestBlockedStateIsTerminal:
         state["is_blocked"] = False
 
         terminal_nodes = ("complete", "complete_tasks", "aggregate_feature_status")
-        is_terminal_or_blocked = state.get("current_node") in terminal_nodes or state.get(
-            "is_blocked", False
+        is_terminal_or_blocked = (
+            state.get("current_node") in terminal_nodes
+            or state.get("is_blocked", False)
         )
 
         assert is_terminal_or_blocked is False

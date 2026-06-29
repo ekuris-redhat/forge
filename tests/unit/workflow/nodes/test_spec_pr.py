@@ -15,7 +15,9 @@ class TestCreateSpecProposalPr:
 
         mock_gh = MagicMock()
         mock_gh.create_branch = AsyncMock(return_value={"ref": "refs/heads/forge/spec/test-123"})
-        mock_gh.create_or_update_file = AsyncMock(return_value={"content": {"sha": "filesha"}})
+        mock_gh.create_or_update_file = AsyncMock(
+            return_value={"content": {"sha": "filesha"}}
+        )
         mock_gh.create_pull_request = AsyncMock(
             return_value={
                 "number": 12,
@@ -65,7 +67,9 @@ class TestCreateSpecProposalPr:
 
         mock_gh = MagicMock()
         mock_gh.create_branch = AsyncMock(return_value={"ref": "refs/heads/forge/spec/test-456"})
-        mock_gh.create_or_update_file = AsyncMock(return_value={"content": {"sha": "filesha"}})
+        mock_gh.create_or_update_file = AsyncMock(
+            return_value={"content": {"sha": "filesha"}}
+        )
         mock_gh.create_pull_request = AsyncMock(
             return_value={
                 "number": 15,
@@ -109,7 +113,9 @@ class TestUpdateSpecProposalPr:
         mock_gh.get_file_contents = AsyncMock(
             return_value={"sha": "oldsha", "path": "TEST-123/design.md"}
         )
-        mock_gh.create_or_update_file = AsyncMock(return_value={"content": {"sha": "newsha"}})
+        mock_gh.create_or_update_file = AsyncMock(
+            return_value={"content": {"sha": "newsha"}}
+        )
         mock_gh.create_issue_comment = AsyncMock()
         mock_gh.close = AsyncMock()
 

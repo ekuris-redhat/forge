@@ -36,10 +36,12 @@ class TestRunTaskTraceResolution:
 
         with (
             patch.object(agent, "_run_agent", new_callable=AsyncMock) as mock_run,
-            patch("forge.integrations.agents.agent.resolve_trace_fields") as mock_resolve,
+            patch(
+                "forge.integrations.agents.agent.resolve_trace_fields"
+            ) as mock_resolve,
             patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
         ):
-            mock_run.return_value = ("result", 0, 0)
+            mock_run.return_value = "result"
             mock_resolve.return_value = (["PROJ-42"], {"ticket_key": "PROJ-42"})
 
             await agent.run_task(task="generate-prd", prompt="test", context=context)
@@ -62,7 +64,7 @@ class TestRunTaskTraceResolution:
             ),
             patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
         ):
-            mock_run.return_value = ("result", 0, 0)
+            mock_run.return_value = "result"
             await agent.run_task(
                 task="test-task",
                 prompt="test",
@@ -85,7 +87,7 @@ class TestRunTaskTraceResolution:
             ),
             patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
         ):
-            mock_run.return_value = ("result", 0, 0)
+            mock_run.return_value = "result"
             await agent.run_task(
                 task="test-task",
                 prompt="test",
@@ -108,7 +110,7 @@ class TestRunTaskTraceResolution:
             ),
             patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
         ):
-            mock_run.return_value = ("result", 0, 0)
+            mock_run.return_value = "result"
             await agent.run_task(task="test-task", prompt="test", context={})
 
         call_kwargs = mock_run.call_args.kwargs
@@ -121,10 +123,12 @@ class TestRunTaskTraceResolution:
     ) -> None:
         with (
             patch.object(agent, "_run_agent", new_callable=AsyncMock) as mock_run,
-            patch("forge.integrations.agents.agent.resolve_trace_fields") as mock_resolve,
+            patch(
+                "forge.integrations.agents.agent.resolve_trace_fields"
+            ) as mock_resolve,
             patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
         ):
-            mock_run.return_value = ("result", 0, 0)
+            mock_run.return_value = "result"
             mock_resolve.return_value = ([], {})
             await agent.run_task(task="test-task", prompt="test", context=None)
 
@@ -144,7 +148,7 @@ class TestRunTaskTraceResolution:
             ),
             patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
         ):
-            mock_run.return_value = ("result", 0, 0)
+            mock_run.return_value = "result"
             await agent.run_task(task="generate-prd", prompt="test")
 
         assert mock_run.call_args.kwargs["trace_name"] == "task:generate-prd"
@@ -159,7 +163,9 @@ class TestRunTaskTraceResolution:
             ),
             patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
         ):
-            mock_run.return_value = ("result", 0, 0)
-            await agent.run_task(task="test", prompt="test", context={"ticket_key": "PROJ-42"})
+            mock_run.return_value = "result"
+            await agent.run_task(
+                task="test", prompt="test", context={"ticket_key": "PROJ-42"}
+            )
 
         assert mock_run.call_args.kwargs["session_id"] == "PROJ-42"

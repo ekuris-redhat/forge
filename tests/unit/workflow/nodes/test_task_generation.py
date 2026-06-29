@@ -76,7 +76,7 @@ class TestTaskRevisionState:
             patch(
                 "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
                 new_callable=AsyncMock,
-                return_value=(mock_tasks_data, 100, 50),
+                return_value=mock_tasks_data,
             ),
         ):
             mock_jira = AsyncMock()
@@ -118,7 +118,7 @@ class TestTaskRevisionState:
             patch(
                 "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
                 new_callable=AsyncMock,
-                return_value=(mock_tasks_data, 100, 50),
+                return_value=mock_tasks_data,
             ) as mock_generate,
         ):
             mock_jira = AsyncMock()
@@ -252,11 +252,7 @@ class TestRegenerateEpicTasks:
             patch(
                 "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
                 new_callable=AsyncMock,
-                return_value=(
-                    [{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
-                    100,
-                    50,
-                ),
+                return_value=[{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
             ),
         ):
             mock_jira = AsyncMock()
@@ -298,11 +294,7 @@ class TestRegenerateEpicTasks:
             patch(
                 "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
                 new_callable=AsyncMock,
-                return_value=(
-                    [{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
-                    100,
-                    50,
-                ),
+                return_value=[{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
             ),
         ):
             mock_jira = AsyncMock()
@@ -340,11 +332,7 @@ class TestRegenerateEpicTasks:
             patch(
                 "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
                 new_callable=AsyncMock,
-                return_value=(
-                    [{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
-                    100,
-                    50,
-                ),
+                return_value=[{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
             ),
         ):
             mock_jira = AsyncMock()
@@ -379,7 +367,7 @@ class TestRegenerateEpicTasks:
 
         async def fake_generate(_agent, _epic_plan, _epic_summary, context, **_kwargs):
             captured_context.update(context)
-            return [], 0, 0
+            return []
 
         with (
             patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
@@ -419,7 +407,7 @@ class TestRegenerateEpicTasks:
             patch(
                 "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
                 new_callable=AsyncMock,
-                return_value=([], 0, 0),
+                return_value=[],
             ),
         ):
             mock_jira = AsyncMock()
@@ -460,14 +448,10 @@ class TestRegenerateEpicTasks:
             patch(
                 "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
                 new_callable=AsyncMock,
-                return_value=(
-                    [
-                        {"summary": "New Task 1", "description": "D1", "repo": "acme/backend"},
-                        {"summary": "New Task 2", "description": "D2", "repo": "acme/backend"},
-                    ],
-                    100,
-                    50,
-                ),
+                return_value=[
+                    {"summary": "New Task 1", "description": "D1", "repo": "acme/backend"},
+                    {"summary": "New Task 2", "description": "D2", "repo": "acme/backend"},
+                ],
             ),
         ):
             mock_jira = AsyncMock()
@@ -534,7 +518,7 @@ class TestRegenerateEpicTasks:
             patch(
                 "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
                 new_callable=AsyncMock,
-                return_value=([], 0, 0),
+                return_value=[],
             ),
         ):
             mock_jira = AsyncMock()

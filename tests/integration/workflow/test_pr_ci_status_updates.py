@@ -22,7 +22,7 @@ from forge.workflow.nodes.ci_evaluator import attempt_ci_fix, wait_for_ci_gate
 
 def create_mock_jira_client():
     """Create a mock JiraClient with required methods for testing.
-
+    
     Returns:
         MagicMock: Mock JiraClient with async methods for comment posting and label management.
     """
@@ -36,7 +36,7 @@ def create_mock_jira_client():
 
 def create_mock_container_runner():
     """Create a mock ContainerRunner that succeeds.
-
+    
     Returns:
         MagicMock: Mock ContainerRunner with async run method.
     """
@@ -47,7 +47,7 @@ def create_mock_container_runner():
 
 def create_mock_github_client():
     """Create a mock GitHubClient.
-
+    
     Returns:
         MagicMock: Mock GitHubClient with async close method.
     """
@@ -62,7 +62,7 @@ class TestPRCreationWithPRNumber:
     @pytest.mark.asyncio
     async def test_pr_creation_posts_comment_with_pr_number(self):
         """TS-006: Verify comment posted with PR number when available.
-
+        
         This test ensures that when a PR is created successfully with a valid
         PR number, the status comment includes the PR number in the expected format.
         """
@@ -83,10 +83,7 @@ class TestPRCreationWithPRNumber:
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
         assert comment_call[0][0] == "FEAT-200"
-        assert (
-            comment_call[0][1]
-            == "🚀 Pull request #123 created and submitted. Waiting for CI checks to complete."
-        )
+        assert comment_call[0][1] == "🚀 Pull request #123 created and submitted. Waiting for CI checks to complete."
 
         # Verify workflow paused
         assert result["is_paused"] is True
@@ -95,7 +92,7 @@ class TestPRCreationWithPRNumber:
     @pytest.mark.asyncio
     async def test_pr_creation_removes_implementing_label(self):
         """TS-006: Verify forge:implementing label removed from feature ticket.
-
+        
         This test ensures the label transition removes the implementing label
         when PR creation occurs.
         """
@@ -121,7 +118,7 @@ class TestPRCreationWithPRNumber:
     @pytest.mark.asyncio
     async def test_pr_creation_adds_ci_pending_label(self):
         """TS-006: Verify forge:ci-pending label added to feature ticket.
-
+        
         This test ensures the label transition adds the ci-pending label
         when PR creation occurs.
         """
@@ -144,13 +141,12 @@ class TestPRCreationWithPRNumber:
         assert label_call[0][0] == "FEAT-200"
         # Check that it's the CI_PENDING label (value is "forge:ci-pending")
         from forge.models.workflow import ForgeLabel
-
         assert label_call[0][1] == ForgeLabel.TASK_CI_PENDING
 
     @pytest.mark.asyncio
     async def test_pr_creation_jira_client_properly_closed(self):
         """TS-006: Verify JiraClient properly closed after operations.
-
+        
         This test ensures proper resource cleanup by verifying the JiraClient
         is closed in the finally block.
         """
@@ -177,7 +173,7 @@ class TestCIFixAttemptStatusComments:
     @pytest.mark.asyncio
     async def test_first_attempt_posts_comment_with_1_of_3(self):
         """TS-007: Verify first CI fix attempt posts comment with '1/3' format.
-
+        
         This test ensures the first fix attempt shows the correct count format.
         """
         mock_jira = create_mock_jira_client()
@@ -203,36 +199,23 @@ class TestCIFixAttemptStatusComments:
         state["ci_fix_max_attempts"] = 3
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                await attempt_ci_fix(state)
 
         # Verify status comment posted with correct format "1/3"
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
         assert comment_call[0][0] == "FEAT-300"
-        assert (
-            comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (1/3)."
-        )
+        assert comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (1/3)."
 
         # Verify JiraClient closed
         assert mock_jira.close.call_count == 1
@@ -240,7 +223,7 @@ class TestCIFixAttemptStatusComments:
     @pytest.mark.asyncio
     async def test_second_attempt_posts_comment_with_2_of_3(self):
         """TS-007: Verify second CI fix attempt posts comment with '2/3' format.
-
+        
         This test ensures the second fix attempt shows the correct count format.
         """
         mock_jira = create_mock_jira_client()
@@ -266,41 +249,28 @@ class TestCIFixAttemptStatusComments:
         state["ci_fix_max_attempts"] = 3
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                await attempt_ci_fix(state)
 
         # Verify status comment posted with correct format "2/3"
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
         assert comment_call[0][0] == "FEAT-301"
-        assert (
-            comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (2/3)."
-        )
+        assert comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (2/3)."
 
     @pytest.mark.asyncio
     async def test_third_attempt_posts_comment_with_3_of_3(self):
         """TS-007: Verify third CI fix attempt posts comment with '3/3' format.
-
+        
         This test ensures the final fix attempt shows the correct count format.
         """
         mock_jira = create_mock_jira_client()
@@ -326,36 +296,23 @@ class TestCIFixAttemptStatusComments:
         state["ci_fix_max_attempts"] = 3
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                await attempt_ci_fix(state)
 
         # Verify status comment posted with correct format "3/3"
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
         assert comment_call[0][0] == "FEAT-302"
-        assert (
-            comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (3/3)."
-        )
+        assert comment_call[0][1] == "🔧 CI checks failed. Analyzing failure and attempting fix (3/3)."
 
 
 class TestPRCreationFallbackWithoutPRNumber:
@@ -364,7 +321,7 @@ class TestPRCreationFallbackWithoutPRNumber:
     @pytest.mark.asyncio
     async def test_pr_creation_posts_fallback_comment_without_pr_number(self):
         """TS-014: Verify fallback comment posted when PR number unavailable.
-
+        
         This test ensures that when GitHub PR creation doesn't return a PR number,
         the fallback comment text is used instead of including a null/missing number.
         """
@@ -386,10 +343,7 @@ class TestPRCreationFallbackWithoutPRNumber:
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
         assert comment_call[0][0] == "FEAT-201"
-        assert (
-            comment_call[0][1]
-            == "🚀 Pull request created and submitted. Waiting for CI checks to complete."
-        )
+        assert comment_call[0][1] == "🚀 Pull request created and submitted. Waiting for CI checks to complete."
 
         # Verify workflow still paused correctly
         assert result["is_paused"] is True
@@ -398,7 +352,7 @@ class TestPRCreationFallbackWithoutPRNumber:
     @pytest.mark.asyncio
     async def test_pr_creation_without_pr_number_still_updates_labels(self):
         """TS-014: Verify label transitions still occur when PR number unavailable.
-
+        
         This test ensures that missing PR number doesn't prevent label transitions
         from occurring correctly.
         """
@@ -427,7 +381,6 @@ class TestPRCreationFallbackWithoutPRNumber:
         label_call = mock_jira.set_workflow_label.call_args
         assert label_call[0][0] == "FEAT-202"
         from forge.models.workflow import ForgeLabel
-
         assert label_call[0][1] == ForgeLabel.TASK_CI_PENDING
 
 
@@ -437,7 +390,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_workflow_continues_when_pr_comment_posting_fails(self, caplog):
         """Verify workflow continues when PR creation comment posting fails.
-
+        
         This test ensures that Jira API failures don't block the workflow from
         continuing to the next state.
         """
@@ -466,7 +419,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_workflow_continues_when_label_removal_fails(self, caplog):
         """Verify workflow continues when label removal fails.
-
+        
         This test ensures that label API failures are properly suppressed and logged.
         """
         mock_jira = create_mock_jira_client()
@@ -494,7 +447,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_workflow_continues_when_ci_attempt_comment_posting_fails(self, caplog):
         """Verify workflow continues when CI attempt comment posting fails.
-
+        
         This test ensures that Jira failures during CI fix attempts don't block
         the workflow from continuing.
         """
@@ -523,28 +476,17 @@ class TestErrorHandling:
         state["ci_fix_max_attempts"] = 3
 
         with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira):
-            with patch(
-                "forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner
-            ):
-                with patch(
-                    "forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github
-                ):
-                    with patch(
-                        "forge.workflow.nodes.ci_evaluator.prepare_workspace"
-                    ) as mock_prepare:
+            with patch("forge.workflow.nodes.ci_evaluator.ContainerRunner", return_value=mock_runner):
+                with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
+                    with patch("forge.workflow.nodes.ci_evaluator.prepare_workspace") as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
-                            with patch("pathlib.Path.exists", return_value=False):
-                                result = await attempt_ci_fix(state)
+                        with patch("forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts", AsyncMock()):
+                            with patch("forge.workflow.nodes.ci_evaluator._collect_error_info", return_value="errors"):
+                                with patch("forge.workflow.nodes.ci_evaluator.load_prompt", return_value="prompt"):
+                                    with patch("pathlib.Path.mkdir"):
+                                        with patch("pathlib.Path.write_text"):
+                                            with patch("pathlib.Path.exists", return_value=False):
+                                                result = await attempt_ci_fix(state)
 
         # Verify workflow continues despite failure
         assert "next_node" in result or "error" in result or result is not None

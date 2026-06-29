@@ -63,6 +63,7 @@ def mock_jira_client() -> Generator[MagicMock, None, None]:
     mock.create_task = AsyncMock(return_value="TEST-125")
     mock.delete_issue = AsyncMock()
     mock.add_comment = AsyncMock()
+    mock.add_structured_comment = AsyncMock()
     mock.close = AsyncMock()
     yield mock
 

@@ -7,6 +7,8 @@ get_langfuse_context() metadata parameter.
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from forge.integrations.langfuse.tracing import (
     AsyncLangfuseContext,
     get_langfuse_config,

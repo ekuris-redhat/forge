@@ -51,46 +51,34 @@ def worker():
 
 class TestIsPrdPrEvent:
     def test_true_for_matching_repo_and_pr(self, worker):
-        msg = _make_message(
-            "pull_request_review:submitted",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "pull_request": {"number": 7},
-            },
-        )
+        msg = _make_message("pull_request_review:submitted", {
+            "repository": {"full_name": "org/proposals"},
+            "pull_request": {"number": 7},
+        })
         state = _prd_gate_state()
         assert worker._is_prd_pr_event(msg, state) is True
 
     def test_false_for_wrong_repo(self, worker):
-        msg = _make_message(
-            "pull_request_review:submitted",
-            {
-                "repository": {"full_name": "org/other-repo"},
-                "pull_request": {"number": 7},
-            },
-        )
+        msg = _make_message("pull_request_review:submitted", {
+            "repository": {"full_name": "org/other-repo"},
+            "pull_request": {"number": 7},
+        })
         state = _prd_gate_state()
         assert worker._is_prd_pr_event(msg, state) is False
 
     def test_false_for_wrong_pr_number(self, worker):
-        msg = _make_message(
-            "pull_request_review:submitted",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "pull_request": {"number": 99},
-            },
-        )
+        msg = _make_message("pull_request_review:submitted", {
+            "repository": {"full_name": "org/proposals"},
+            "pull_request": {"number": 99},
+        })
         state = _prd_gate_state()
         assert worker._is_prd_pr_event(msg, state) is False
 
     def test_false_when_no_prd_pr_in_state(self, worker):
-        msg = _make_message(
-            "pull_request_review:submitted",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "pull_request": {"number": 7},
-            },
-        )
+        msg = _make_message("pull_request_review:submitted", {
+            "repository": {"full_name": "org/proposals"},
+            "pull_request": {"number": 7},
+        })
         state = _prd_gate_state(prd_pr_number=None, prd_pr_repo=None)
         assert worker._is_prd_pr_event(msg, state) is False
 
@@ -107,13 +95,10 @@ class TestIsPrdPrEvent:
         assert worker._is_prd_pr_event(msg, state) is False
 
     def test_matches_issue_comment_with_issue_number(self, worker):
-        msg = _make_message(
-            "issue_comment:created",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "issue": {"number": 7},
-            },
-        )
+        msg = _make_message("issue_comment:created", {
+            "repository": {"full_name": "org/proposals"},
+            "issue": {"number": 7},
+        })
         state = _prd_gate_state()
         assert worker._is_prd_pr_event(msg, state) is True
 
@@ -121,13 +106,10 @@ class TestIsPrdPrEvent:
 class TestHandlePrdPrMerge:
     @pytest.mark.asyncio
     async def test_pr_merge_sets_approved(self, worker):
-        msg = _make_message(
-            "pull_request:closed",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "pull_request": {"number": 7, "merged": True},
-            },
-        )
+        msg = _make_message("pull_request:closed", {
+            "repository": {"full_name": "org/proposals"},
+            "pull_request": {"number": 7, "merged": True},
+        })
         state = _prd_gate_state()
 
         with patch("forge.orchestrator.worker.JiraClient") as MockJira:
@@ -143,13 +125,10 @@ class TestHandlePrdPrMerge:
 
     @pytest.mark.asyncio
     async def test_pr_close_without_merge_is_ignored(self, worker):
-        msg = _make_message(
-            "pull_request:closed",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "pull_request": {"number": 7, "merged": False},
-            },
-        )
+        msg = _make_message("pull_request:closed", {
+            "repository": {"full_name": "org/proposals"},
+            "pull_request": {"number": 7, "merged": False},
+        })
         state = _prd_gate_state()
 
         result = await worker._handle_resume_event(msg, state)
@@ -161,18 +140,11 @@ class TestHandlePrdPrMerge:
 class TestHandlePrdPrReview:
     @pytest.mark.asyncio
     async def test_changes_requested_sets_feedback(self, worker):
-        msg = _make_message(
-            "pull_request_review:submitted",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "pull_request": {"number": 7},
-                "review": {
-                    "id": 101,
-                    "state": "changes_requested",
-                    "body": "Please add more detail",
-                },
-            },
-        )
+        msg = _make_message("pull_request_review:submitted", {
+            "repository": {"full_name": "org/proposals"},
+            "pull_request": {"number": 7},
+            "review": {"id": 101, "state": "changes_requested", "body": "Please add more detail"},
+        })
         state = _prd_gate_state()
 
         with patch("forge.orchestrator.worker.GitHubClient") as MockGH:
@@ -190,14 +162,11 @@ class TestHandlePrdPrReview:
 
     @pytest.mark.asyncio
     async def test_approved_review_is_ignored(self, worker):
-        msg = _make_message(
-            "pull_request_review:submitted",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "pull_request": {"number": 7},
-                "review": {"state": "approved", "body": "LGTM"},
-            },
-        )
+        msg = _make_message("pull_request_review:submitted", {
+            "repository": {"full_name": "org/proposals"},
+            "pull_request": {"number": 7},
+            "review": {"state": "approved", "body": "LGTM"},
+        })
         state = _prd_gate_state()
 
         result = await worker._handle_resume_event(msg, state)
@@ -209,18 +178,15 @@ class TestHandlePrdPrReview:
 class TestHandlePrdPrComment:
     @pytest.mark.asyncio
     async def test_comment_sets_feedback(self, worker):
-        msg = _make_message(
-            "issue_comment:created",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "issue": {"number": 7},
-                "comment": {
-                    "body": "Please expand the scope section",
-                    "user": {"login": "reviewer"},
-                },
-                "sender": {"login": "reviewer"},
+        msg = _make_message("issue_comment:created", {
+            "repository": {"full_name": "org/proposals"},
+            "issue": {"number": 7},
+            "comment": {
+                "body": "Please expand the scope section",
+                "user": {"login": "reviewer"},
             },
-        )
+            "sender": {"login": "reviewer"},
+        })
         state = _prd_gate_state()
 
         with patch("forge.orchestrator.worker.GitHubClient") as MockGH:
@@ -237,18 +203,15 @@ class TestHandlePrdPrComment:
 
     @pytest.mark.asyncio
     async def test_self_comment_is_ignored(self, worker):
-        msg = _make_message(
-            "issue_comment:created",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "issue": {"number": 7},
-                "comment": {
-                    "body": "PRD has been revised based on feedback.",
-                    "user": {"login": "forge-bot"},
-                },
-                "sender": {"login": "forge-bot"},
+        msg = _make_message("issue_comment:created", {
+            "repository": {"full_name": "org/proposals"},
+            "issue": {"number": 7},
+            "comment": {
+                "body": "PRD has been revised based on feedback.",
+                "user": {"login": "forge-bot"},
             },
-        )
+            "sender": {"login": "forge-bot"},
+        })
         state = _prd_gate_state()
 
         with patch("forge.orchestrator.worker.GitHubClient") as MockGH:
@@ -264,18 +227,15 @@ class TestHandlePrdPrComment:
 
     @pytest.mark.asyncio
     async def test_question_comment_sets_question_flag(self, worker):
-        msg = _make_message(
-            "issue_comment:created",
-            {
-                "repository": {"full_name": "org/proposals"},
-                "issue": {"number": 7},
-                "comment": {
-                    "body": "?Why did you choose REST over GraphQL?",
-                    "user": {"login": "reviewer"},
-                },
-                "sender": {"login": "reviewer"},
+        msg = _make_message("issue_comment:created", {
+            "repository": {"full_name": "org/proposals"},
+            "issue": {"number": 7},
+            "comment": {
+                "body": "?Why did you choose REST over GraphQL?",
+                "user": {"login": "reviewer"},
             },
-        )
+            "sender": {"login": "reviewer"},
+        })
         state = _prd_gate_state()
 
         with patch("forge.orchestrator.worker.GitHubClient") as MockGH:

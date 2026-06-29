@@ -3,11 +3,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from tests.fixtures.workflow_states import make_workflow_state
 
 from forge.models.events import EventSource
 from forge.orchestrator.worker import OrchestratorWorker
 from forge.queue.models import QueueMessage
-from tests.fixtures.workflow_states import make_workflow_state
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -85,17 +85,16 @@ def ci_state():
 
 
 class TestCISkippedChecksStateField:
+
     def test_ci_skipped_checks_in_ci_integration_state(self):
         """ci_skipped_checks must be a field in CIIntegrationState."""
         from forge.workflow.base import CIIntegrationState
-
         assert "ci_skipped_checks" in CIIntegrationState.__annotations__
 
     def test_initial_feature_state_has_empty_skipped_checks(self):
         """Fresh feature state initialises ci_skipped_checks to []."""
         from forge.models.workflow import TicketType
         from forge.workflow.feature.state import create_initial_feature_state
-
         state = create_initial_feature_state(
             thread_id="t", ticket_key="TEST-1", ticket_type=TicketType.FEATURE
         )
@@ -105,7 +104,6 @@ class TestCISkippedChecksStateField:
         """Fresh bug state initialises ci_skipped_checks to []."""
         from forge.models.workflow import TicketType
         from forge.workflow.bug.state import create_initial_bug_state
-
         state = create_initial_bug_state(
             thread_id="t", ticket_key="TEST-2", ticket_type=TicketType.BUG
         )
@@ -116,8 +114,11 @@ class TestCISkippedChecksStateField:
 
 
 class TestWorkerSkipGateDetection:
+
     @pytest.mark.asyncio
-    async def test_skip_gate_adds_check_to_skipped_list(self, worker, base_message, ci_state):
+    async def test_skip_gate_adds_check_to_skipped_list(
+        self, worker, base_message, ci_state
+    ):
         """/forge skip-gate appends the check name to ci_skipped_checks."""
         msg = _skip_gate_message(base_message, "epoxy")
 
@@ -127,7 +128,9 @@ class TestWorkerSkipGateDetection:
         assert "epoxy" in result.get("ci_skipped_checks", [])
 
     @pytest.mark.asyncio
-    async def test_skip_gate_routes_to_ci_evaluator(self, worker, base_message, ci_state):
+    async def test_skip_gate_routes_to_ci_evaluator(
+        self, worker, base_message, ci_state
+    ):
         """/forge skip-gate unpauses and routes to ci_evaluator."""
         msg = _skip_gate_message(base_message, "epoxy")
 
@@ -153,7 +156,9 @@ class TestWorkerSkipGateDetection:
         assert "flamingo" in skipped
 
     @pytest.mark.asyncio
-    async def test_skip_gate_deduplicates(self, worker, base_message, ci_state):
+    async def test_skip_gate_deduplicates(
+        self, worker, base_message, ci_state
+    ):
         """Skipping the same check twice doesn't add a duplicate."""
         ci_state["ci_skipped_checks"] = ["epoxy"]
         msg = _skip_gate_message(base_message, "epoxy")
@@ -164,7 +169,9 @@ class TestWorkerSkipGateDetection:
         assert result["ci_skipped_checks"].count("epoxy") == 1
 
     @pytest.mark.asyncio
-    async def test_skip_gate_ignored_outside_ci_stages(self, worker, base_message):
+    async def test_skip_gate_ignored_outside_ci_stages(
+        self, worker, base_message
+    ):
         """/forge skip-gate has no effect when workflow is not at a CI stage."""
         planning_state = make_workflow_state(
             current_node="prd_approval_gate",
@@ -178,7 +185,9 @@ class TestWorkerSkipGateDetection:
         assert result.get("is_paused") is True  # unchanged
 
     @pytest.mark.asyncio
-    async def test_skip_gate_posts_feedback(self, worker, base_message, ci_state):
+    async def test_skip_gate_posts_feedback(
+        self, worker, base_message, ci_state
+    ):
         """/forge skip-gate calls _post_skip_gate_feedback."""
         msg = _skip_gate_message(base_message, "epoxy")
         mock_feedback = AsyncMock()
@@ -189,7 +198,9 @@ class TestWorkerSkipGateDetection:
         mock_feedback.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_case_insensitive_command_detection(self, worker, base_message, ci_state):
+    async def test_case_insensitive_command_detection(
+        self, worker, base_message, ci_state
+    ):
         """Command prefix matching is case-insensitive."""
         msg = _skip_gate_message(base_message, "epoxy")
         msg = QueueMessage(
@@ -214,6 +225,7 @@ class TestWorkerSkipGateDetection:
 
 
 class TestPostSkipGateFeedback:
+
     @pytest.mark.asyncio
     async def test_posts_github_reply_and_jira_comment(self):
         """Posts a GitHub PR comment and a Jira audit comment."""
@@ -227,10 +239,8 @@ class TestPostSkipGateFeedback:
         mock_jira.add_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
-        with (
-            patch("forge.orchestrator.worker.GitHubClient", return_value=mock_github),
-            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
-        ):
+        with patch("forge.orchestrator.worker.GitHubClient", return_value=mock_github), \
+             patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
             await worker._post_skip_gate_feedback(
                 ticket_key="TEST-123",
                 owner="org",
@@ -257,10 +267,8 @@ class TestPostSkipGateFeedback:
         mock_jira.add_comment = AsyncMock()
         mock_jira.close = AsyncMock()
 
-        with (
-            patch("forge.orchestrator.worker.GitHubClient", return_value=mock_github),
-            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
-        ):
+        with patch("forge.orchestrator.worker.GitHubClient", return_value=mock_github), \
+             patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
             await worker._post_skip_gate_feedback(
                 ticket_key="TEST-123",
                 owner="org",
@@ -279,6 +287,7 @@ class TestPostSkipGateFeedback:
 
 
 class TestEvaluateCIStatusSkipsChecks:
+
     @pytest.mark.asyncio
     async def test_skipped_check_does_not_count_as_failure(self):
         """A check whose name matches a ci_skipped_checks entry is treated as passing."""
@@ -292,20 +301,12 @@ class TestEvaluateCIStatusSkipsChecks:
 
         mock_github = MagicMock()
         mock_github.get_pull_request = AsyncMock(return_value={"head": {"sha": "abc"}})
-        mock_github.get_check_runs = AsyncMock(
-            return_value=[
-                {
-                    "name": "Run acceptance tests against OpenStack epoxy",
-                    "status": "completed",
-                    "conclusion": "failure",
-                },
-                {
-                    "name": "Run acceptance tests against OpenStack flamingo",
-                    "status": "completed",
-                    "conclusion": "success",
-                },
-            ]
-        )
+        mock_github.get_check_runs = AsyncMock(return_value=[
+            {"name": "Run acceptance tests against OpenStack epoxy",
+             "status": "completed", "conclusion": "failure"},
+            {"name": "Run acceptance tests against OpenStack flamingo",
+             "status": "completed", "conclusion": "success"},
+        ])
         mock_github.close = AsyncMock()
 
         with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
@@ -327,20 +328,12 @@ class TestEvaluateCIStatusSkipsChecks:
 
         mock_github = MagicMock()
         mock_github.get_pull_request = AsyncMock(return_value={"head": {"sha": "abc"}})
-        mock_github.get_check_runs = AsyncMock(
-            return_value=[
-                {
-                    "name": "Run acceptance tests against OpenStack epoxy",
-                    "status": "completed",
-                    "conclusion": "failure",
-                },
-                {
-                    "name": "Run acceptance tests against OpenStack flamingo",
-                    "status": "completed",
-                    "conclusion": "failure",
-                },
-            ]
-        )
+        mock_github.get_check_runs = AsyncMock(return_value=[
+            {"name": "Run acceptance tests against OpenStack epoxy",
+             "status": "completed", "conclusion": "failure"},
+            {"name": "Run acceptance tests against OpenStack flamingo",
+             "status": "completed", "conclusion": "failure"},
+        ])
         mock_github.close = AsyncMock()
 
         with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
@@ -362,16 +355,12 @@ class TestEvaluateCIStatusSkipsChecks:
 
         mock_github = MagicMock()
         mock_github.get_pull_request = AsyncMock(return_value={"head": {"sha": "abc"}})
-        mock_github.get_check_runs = AsyncMock(
-            return_value=[
-                {
-                    "name": "Run acceptance tests against OpenStack epoxy",
-                    "status": "completed",
-                    "conclusion": "failure",
-                },
-                {"name": "unit-tests", "status": "completed", "conclusion": "failure"},
-            ]
-        )
+        mock_github.get_check_runs = AsyncMock(return_value=[
+            {"name": "Run acceptance tests against OpenStack epoxy",
+             "status": "completed", "conclusion": "failure"},
+            {"name": "unit-tests",
+             "status": "completed", "conclusion": "failure"},
+        ])
         mock_github.close = AsyncMock()
 
         with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
@@ -394,15 +383,10 @@ class TestEvaluateCIStatusSkipsChecks:
 
         mock_github = MagicMock()
         mock_github.get_pull_request = AsyncMock(return_value={"head": {"sha": "abc"}})
-        mock_github.get_check_runs = AsyncMock(
-            return_value=[
-                {
-                    "name": "Run acceptance tests against OpenStack epoxy",
-                    "status": "completed",
-                    "conclusion": "failure",
-                },
-            ]
-        )
+        mock_github.get_check_runs = AsyncMock(return_value=[
+            {"name": "Run acceptance tests against OpenStack epoxy",
+             "status": "completed", "conclusion": "failure"},
+        ])
         mock_github.close = AsyncMock()
 
         with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
@@ -427,20 +411,15 @@ class TestEvaluateCIStatusSkipsChecks:
 
         mock_github = MagicMock()
         mock_github.get_pull_request = AsyncMock(return_value={"head": {"sha": "abc"}})
-        mock_github.get_check_runs = AsyncMock(
-            return_value=[
-                # Openstack e2e Prow checks — skipped by human override
-                {
-                    "name": "ci/prow/e2e-openstack-ovn",
-                    "status": "completed",
-                    "conclusion": "failure",
-                },
-                # tide — always pending, explicitly filtered by name
-                {"name": "tide", "status": "pending", "conclusion": None},
-                # Real check that passed
-                {"name": "ci/prow/unit", "status": "completed", "conclusion": "success"},
-            ]
-        )
+        mock_github.get_check_runs = AsyncMock(return_value=[
+            # Openstack e2e Prow checks — skipped by human override
+            {"name": "ci/prow/e2e-openstack-ovn",
+             "status": "completed", "conclusion": "failure"},
+            # tide — always pending, explicitly filtered by name
+            {"name": "tide", "status": "pending", "conclusion": None},
+            # Real check that passed
+            {"name": "ci/prow/unit", "status": "completed", "conclusion": "success"},
+        ])
         mock_github.close = AsyncMock()
 
         with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
@@ -463,17 +442,12 @@ class TestEvaluateCIStatusSkipsChecks:
 
         mock_github = MagicMock()
         mock_github.get_pull_request = AsyncMock(return_value={"head": {"sha": "abc"}})
-        mock_github.get_check_runs = AsyncMock(
-            return_value=[
-                {
-                    "name": "ci/prow/e2e-openstack-ovn",
-                    "status": "completed",
-                    "conclusion": "failure",
-                },
-                # golint still running — real check, must block
-                {"name": "ci/prow/golint", "status": "in_progress", "conclusion": None},
-            ]
-        )
+        mock_github.get_check_runs = AsyncMock(return_value=[
+            {"name": "ci/prow/e2e-openstack-ovn",
+             "status": "completed", "conclusion": "failure"},
+            # golint still running — real check, must block
+            {"name": "ci/prow/golint", "status": "in_progress", "conclusion": None},
+        ])
         mock_github.close = AsyncMock()
 
         with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):
@@ -495,11 +469,9 @@ class TestEvaluateCIStatusSkipsChecks:
 
         mock_github = MagicMock()
         mock_github.get_pull_request = AsyncMock(return_value={"head": {"sha": "abc"}})
-        mock_github.get_check_runs = AsyncMock(
-            return_value=[
-                {"name": "unit-tests", "status": "completed", "conclusion": "failure"},
-            ]
-        )
+        mock_github.get_check_runs = AsyncMock(return_value=[
+            {"name": "unit-tests", "status": "completed", "conclusion": "failure"},
+        ])
         mock_github.close = AsyncMock()
 
         with patch("forge.workflow.nodes.ci_evaluator.GitHubClient", return_value=mock_github):

@@ -12,7 +12,10 @@ class TestMetricsEndpoint:
     @pytest.mark.asyncio
     async def test_metrics_returns_200(self):
         """Metrics endpoint returns 200."""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test"
+        ) as client:
             response = await client.get("/metrics")
 
         assert response.status_code == 200
@@ -20,7 +23,10 @@ class TestMetricsEndpoint:
     @pytest.mark.asyncio
     async def test_metrics_returns_prometheus_format(self):
         """Metrics endpoint returns Prometheus format."""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test"
+        ) as client:
             response = await client.get("/metrics")
 
         content_type = response.headers.get("content-type", "")
@@ -29,7 +35,10 @@ class TestMetricsEndpoint:
     @pytest.mark.asyncio
     async def test_metrics_includes_forge_metrics(self):
         """Metrics includes forge-related counters."""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test"
+        ) as client:
             response = await client.get("/metrics")
 
         body = response.text
@@ -39,7 +48,10 @@ class TestMetricsEndpoint:
     @pytest.mark.asyncio
     async def test_metrics_includes_workflow_metrics(self):
         """Metrics includes workflow-related counters."""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test"
+        ) as client:
             response = await client.get("/metrics")
 
         body = response.text

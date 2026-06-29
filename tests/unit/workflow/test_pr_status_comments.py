@@ -71,10 +71,7 @@ class TestPRNumberExtraction:
         # Verify fallback message used
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
-        assert (
-            comment_call[0][1]
-            == "🚀 Pull request created and submitted. Waiting for CI checks to complete."
-        )
+        assert comment_call[0][1] == "🚀 Pull request created and submitted. Waiting for CI checks to complete."
         assert "#" not in comment_call[0][1]
 
     @pytest.mark.asyncio
@@ -96,10 +93,7 @@ class TestPRNumberExtraction:
         # Verify fallback message used when key is missing
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
-        assert (
-            comment_call[0][1]
-            == "🚀 Pull request created and submitted. Waiting for CI checks to complete."
-        )
+        assert comment_call[0][1] == "🚀 Pull request created and submitted. Waiting for CI checks to complete."
 
 
 class TestPRStatusCommentPosting:
@@ -124,7 +118,7 @@ class TestPRStatusCommentPosting:
         # Verify comment posted to correct ticket with correct message
         mock_jira.add_comment.assert_called_once_with(
             "TEST-200",
-            "🚀 Pull request #999 created and submitted. Waiting for CI checks to complete.",
+            "🚀 Pull request #999 created and submitted. Waiting for CI checks to complete."
         )
 
     @pytest.mark.asyncio
@@ -145,7 +139,8 @@ class TestPRStatusCommentPosting:
 
         # Verify fallback comment posted to correct ticket
         mock_jira.add_comment.assert_called_once_with(
-            "TEST-201", "🚀 Pull request created and submitted. Waiting for CI checks to complete."
+            "TEST-201",
+            "🚀 Pull request created and submitted. Waiting for CI checks to complete."
         )
 
     @pytest.mark.asyncio
@@ -188,7 +183,10 @@ class TestLabelRemoval:
             result = await wait_for_ci_gate(state)
 
         # Verify remove_labels called with correct parameters
-        mock_jira.remove_labels.assert_called_once_with("TEST-300", ["forge:implementing"])
+        mock_jira.remove_labels.assert_called_once_with(
+            "TEST-300",
+            ["forge:implementing"]
+        )
         # Verify workflow continues
         assert result["is_paused"] is True
         assert result["current_node"] == "wait_for_ci_gate"
@@ -215,11 +213,8 @@ class TestLabelRemoval:
         assert result["is_paused"] is True
         assert result["current_node"] == "wait_for_ci_gate"
         # Verify error logged (via post_status_comment utility)
-        assert any(
-            "Failed to remove implementing label" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
+        assert any("Failed to remove implementing label" in record.message 
+                   for record in caplog.records if record.levelname == "WARNING")
 
     @pytest.mark.asyncio
     async def test_label_removal_api_error(self, caplog):
@@ -243,11 +238,8 @@ class TestLabelRemoval:
         assert result["is_paused"] is True
         assert result["current_node"] == "wait_for_ci_gate"
         # Verify error logged at WARNING level
-        assert any(
-            "Failed to remove implementing label" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
+        assert any("Failed to remove implementing label" in record.message 
+                   for record in caplog.records if record.levelname == "WARNING")
 
     @pytest.mark.asyncio
     async def test_label_removal_not_called_on_reentry(self):
@@ -290,8 +282,10 @@ class TestLabelAddition:
 
         # Verify set_workflow_label called with forge:ci-pending
         from forge.models.workflow import ForgeLabel
-
-        mock_jira.set_workflow_label.assert_called_once_with("TEST-400", ForgeLabel.TASK_CI_PENDING)
+        mock_jira.set_workflow_label.assert_called_once_with(
+            "TEST-400",
+            ForgeLabel.TASK_CI_PENDING
+        )
         # Verify workflow continues
         assert result["is_paused"] is True
         assert result["current_node"] == "wait_for_ci_gate"
@@ -318,11 +312,8 @@ class TestLabelAddition:
         assert result["is_paused"] is True
         assert result["current_node"] == "wait_for_ci_gate"
         # Verify error logged at WARNING level
-        assert any(
-            "Failed to set ci-pending label" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
+        assert any("Failed to set ci-pending label" in record.message 
+                   for record in caplog.records if record.levelname == "WARNING")
 
     @pytest.mark.asyncio
     async def test_label_addition_not_called_on_reentry(self):
@@ -368,11 +359,8 @@ class TestErrorSuppressionAndLogging:
         assert result["is_paused"] is True
         assert result["current_node"] == "wait_for_ci_gate"
         # Verify error logged
-        assert any(
-            "Failed to post status comment" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
+        assert any("Failed to post status comment" in record.message 
+                   for record in caplog.records if record.levelname == "WARNING")
 
     @pytest.mark.asyncio
     async def test_label_removal_error_logged_and_suppressed(self, caplog):
@@ -394,11 +382,8 @@ class TestErrorSuppressionAndLogging:
         # Verify workflow continues
         assert result["is_paused"] is True
         # Verify error logged
-        assert any(
-            "Failed to remove implementing label" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
+        assert any("Failed to remove implementing label" in record.message 
+                   for record in caplog.records if record.levelname == "WARNING")
 
     @pytest.mark.asyncio
     async def test_label_addition_error_logged_and_suppressed(self, caplog):
@@ -420,11 +405,8 @@ class TestErrorSuppressionAndLogging:
         # Verify workflow continues
         assert result["is_paused"] is True
         # Verify error logged
-        assert any(
-            "Failed to set ci-pending label" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
+        assert any("Failed to set ci-pending label" in record.message 
+                   for record in caplog.records if record.levelname == "WARNING")
 
     @pytest.mark.asyncio
     async def test_all_operations_fail_workflow_still_continues(self, caplog):
@@ -450,9 +432,7 @@ class TestErrorSuppressionAndLogging:
         assert result["is_paused"] is True
         assert result["current_node"] == "wait_for_ci_gate"
         # Verify all errors logged
-        warning_messages = [
-            record.message for record in caplog.records if record.levelname == "WARNING"
-        ]
+        warning_messages = [record.message for record in caplog.records if record.levelname == "WARNING"]
         assert any("Failed to post status comment" in msg for msg in warning_messages)
         assert any("Failed to remove implementing label" in msg for msg in warning_messages)
         assert any("Failed to set ci-pending label" in msg for msg in warning_messages)

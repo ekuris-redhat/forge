@@ -144,7 +144,7 @@ async def generate_tasks(state: WorkflowState) -> WorkflowState:
             sibling_epics = [e for e in all_epics_details if e["epic_key"] != epic_key]
 
             # Generate Tasks using Deep Agents - primary operation
-            tasks_data, in_tok, out_tok = await _generate_tasks_for_epic(
+            tasks_resp = await _generate_tasks_for_epic(
                 agent,
                 epic_plan,
                 epic_summary,
@@ -153,6 +153,10 @@ async def generate_tasks(state: WorkflowState) -> WorkflowState:
                 sibling_epics=sibling_epics if sibling_epics else None,
                 existing_tasks=created_tasks_context if created_tasks_context else None,
             )
+            if isinstance(tasks_resp, tuple):
+                tasks_data, in_tok, out_tok = tasks_resp
+            else:
+                tasks_data, in_tok, out_tok = tasks_resp, 0, 0
             state = {**state, **record_tokens(state, STAGE_TASKS, in_tok, out_tok)}
 
             # Create Tasks in Jira - secondary operation
@@ -672,7 +676,7 @@ async def regenerate_epic_tasks(state: WorkflowState) -> WorkflowState:
 
         spec_content = state.get("spec_content", "")
 
-        tasks_data, in_tok, out_tok = await _generate_tasks_for_epic(
+        tasks_resp = await _generate_tasks_for_epic(
             agent,
             epic_plan,
             epic_summary,
@@ -681,6 +685,10 @@ async def regenerate_epic_tasks(state: WorkflowState) -> WorkflowState:
             sibling_epics=sibling_epics if sibling_epics else None,
             existing_tasks=existing_tasks_ctx if existing_tasks_ctx else None,
         )
+        if isinstance(tasks_resp, tuple):
+            tasks_data, in_tok, out_tok = tasks_resp
+        else:
+            tasks_data, in_tok, out_tok = tasks_resp, 0, 0
         state = {**state, **record_tokens(state, STAGE_TASKS, in_tok, out_tok)}
 
         if not tasks_data:

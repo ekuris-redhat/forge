@@ -114,10 +114,10 @@ class TestParsePullRequestEvents:
                 "merged": True,
                 "title": "PROJ-104: OAuth implementation",
                 "head": {"ref": "feature/PROJ-104"},
-                "html_url": "https://github.com/acme/backend/pull/42",
+                "html_url": "https://github.com/acme/backend/pull/42"
             },
             "repository": {"full_name": "acme/backend"},
-            "sender": {"login": "senior-dev"},
+            "sender": {"login": "senior-dev"}
         }
         data = parse_github_webhook(
             payload=payload,
@@ -139,10 +139,10 @@ class TestParsePullRequestEvents:
                 "merged": False,
                 "title": "WIP: Experimental feature",
                 "head": {"ref": "feature/experiment"},
-                "html_url": "https://github.com/acme/backend/pull/43",
+                "html_url": "https://github.com/acme/backend/pull/43"
             },
             "repository": {"full_name": "acme/backend"},
-            "sender": {"login": "dev-user"},
+            "sender": {"login": "dev-user"}
         }
         data = parse_github_webhook(
             payload=payload,
@@ -186,17 +186,17 @@ class TestParsePullRequestReviewEvents:
                 "user": {"login": "senior-dev"},
                 "body": "Please add error handling for the token refresh.",
                 "state": "changes_requested",
-                "submitted_at": "2024-03-20T15:00:00Z",
+                "submitted_at": "2024-03-20T15:00:00Z"
             },
             "pull_request": {
                 "number": 42,
                 "state": "open",
                 "title": "PROJ-104: OAuth implementation",
                 "head": {"ref": "feature/PROJ-104"},
-                "html_url": "https://github.com/acme/backend/pull/42",
+                "html_url": "https://github.com/acme/backend/pull/42"
             },
             "repository": {"full_name": "acme/backend"},
-            "sender": {"login": "senior-dev"},
+            "sender": {"login": "senior-dev"}
         }
         data = parse_github_webhook(
             payload=payload,
@@ -220,10 +220,10 @@ class TestTicketKeyExtraction:
                 "state": "open",
                 "title": "[PROJ-123] Fix login bug",
                 "head": {"ref": "fix-login"},
-                "html_url": "https://github.com/org/repo/pull/1",
+                "html_url": "https://github.com/org/repo/pull/1"
             },
             "repository": {"full_name": "org/repo"},
-            "sender": {"login": "user"},
+            "sender": {"login": "user"}
         }
         data = parse_github_webhook(payload, "pull_request", "id-1")
         assert data.ticket_key == "PROJ-123"
@@ -237,10 +237,10 @@ class TestTicketKeyExtraction:
                 "state": "open",
                 "title": "Fix login bug",
                 "head": {"ref": "feature/PROJ-456-login"},
-                "html_url": "https://github.com/org/repo/pull/1",
+                "html_url": "https://github.com/org/repo/pull/1"
             },
             "repository": {"full_name": "org/repo"},
-            "sender": {"login": "user"},
+            "sender": {"login": "user"}
         }
         data = parse_github_webhook(payload, "pull_request", "id-2")
         assert data.ticket_key == "PROJ-456"
@@ -266,10 +266,10 @@ class TestTicketKeyExtraction:
                     "state": "open",
                     "title": text,
                     "head": {"ref": "main"},
-                    "html_url": "https://github.com/org/repo/pull/1",
+                    "html_url": "https://github.com/org/repo/pull/1"
                 },
                 "repository": {"full_name": "org/repo"},
-                "sender": {"login": "user"},
+                "sender": {"login": "user"}
             }
             data = parse_github_webhook(payload, "pull_request", "id")
             assert data.ticket_key == expected_key, f"Failed for: {text}"
@@ -283,10 +283,10 @@ class TestTicketKeyExtraction:
                 "state": "open",
                 "title": "Fix some bug",
                 "head": {"ref": "fix-bug"},
-                "html_url": "https://github.com/org/repo/pull/1",
+                "html_url": "https://github.com/org/repo/pull/1"
             },
             "repository": {"full_name": "org/repo"},
-            "sender": {"login": "user"},
+            "sender": {"login": "user"}
         }
         data = parse_github_webhook(payload, "pull_request", "id")
         assert data.ticket_key is None
@@ -302,7 +302,7 @@ class TestPushEvents:
             "after": "newcommitsha123456789012345678901234",
             "before": "oldcommitsha123456789012345678901234",
             "repository": {"full_name": "acme/backend"},
-            "sender": {"login": "developer"},
+            "sender": {"login": "developer"}
         }
         data = parse_github_webhook(payload, "push", "delivery-push-1")
 
@@ -317,7 +317,11 @@ class TestEdgeCases:
 
     def test_minimal_payload(self):
         """Handle minimal payload with missing optional fields."""
-        payload = {"action": "created", "repository": {}, "sender": {}}
+        payload = {
+            "action": "created",
+            "repository": {},
+            "sender": {}
+        }
         data = parse_github_webhook(payload, "unknown", "id-1")
 
         assert data.event_type == "unknown"
@@ -336,10 +340,10 @@ class TestEdgeCases:
                 "status": "completed",
                 "conclusion": "success",
                 "head_sha": "sha123",
-                "pull_requests": [],  # No associated PRs
+                "pull_requests": []  # No associated PRs
             },
             "repository": {"full_name": "acme/repo"},
-            "sender": {"login": "bot"},
+            "sender": {"login": "bot"}
         }
         data = parse_github_webhook(payload, "check_run", "id-1")
 
@@ -354,7 +358,7 @@ class TestEdgeCases:
             "action": "opened",
             "custom_field": "custom_value",
             "repository": {"full_name": "org/repo"},
-            "sender": {"login": "user"},
+            "sender": {"login": "user"}
         }
         data = parse_github_webhook(payload, "test", "id-1")
 
@@ -373,11 +377,16 @@ class TestIssueCommentEvents:
                 "number": 42,
                 "title": "PROJ-104: OAuth implementation",
                 "html_url": "https://github.com/acme/backend/pull/42",
-                "pull_request": {"url": "https://api.github.com/repos/acme/backend/pulls/42"},
+                "pull_request": {
+                    "url": "https://api.github.com/repos/acme/backend/pulls/42"
+                }
             },
-            "comment": {"id": 12345, "body": "Looks good, just one question..."},
+            "comment": {
+                "id": 12345,
+                "body": "Looks good, just one question..."
+            },
             "repository": {"full_name": "acme/backend"},
-            "sender": {"login": "reviewer"},
+            "sender": {"login": "reviewer"}
         }
         data = parse_github_webhook(payload, "issue_comment", "id-1")
 
@@ -394,12 +403,15 @@ class TestIssueCommentEvents:
             "issue": {
                 "number": 100,
                 "title": "Bug report",
-                "html_url": "https://github.com/acme/backend/issues/100",
+                "html_url": "https://github.com/acme/backend/issues/100"
                 # No pull_request field
             },
-            "comment": {"id": 12346, "body": "Can you provide more details?"},
+            "comment": {
+                "id": 12346,
+                "body": "Can you provide more details?"
+            },
             "repository": {"full_name": "acme/backend"},
-            "sender": {"login": "maintainer"},
+            "sender": {"login": "maintainer"}
         }
         data = parse_github_webhook(payload, "issue_comment", "id-2")
 

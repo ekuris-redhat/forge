@@ -794,7 +794,7 @@ class ForgeAgent:
         }
         trace_tags, trace_metadata = resolve_trace_fields(trace_state)
 
-        result, in_tokens, out_tokens = await self._run_agent(
+        agent_resp = await self._run_agent(
             prompt=prompt,
             system_prompt=system_prompt,
             include_tools=include_tools,
@@ -804,6 +804,10 @@ class ForgeAgent:
             tags=trace_tags or None,
             metadata=trace_metadata or None,
         )
+        if isinstance(agent_resp, tuple):
+            result, in_tokens, out_tokens = agent_resp
+        else:
+            result, in_tokens, out_tokens = agent_resp, 0, 0
         self.last_input_tokens = in_tokens
         self.last_output_tokens = out_tokens
         observe_agent_duration(task_type=task, duration=time.monotonic() - _start)

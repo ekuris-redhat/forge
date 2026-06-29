@@ -1,5 +1,7 @@
 """Tests for BugWorkflow."""
 
+
+
 from forge.models.workflow import TicketType
 from forge.workflow.bug.state import create_initial_bug_state
 
@@ -73,7 +75,6 @@ class TestBugStateNewFields:
     def test_old_state_without_new_fields_does_not_crash_route_entry(self):
         """A state dict missing all new fields can be passed to route_entry without KeyError."""
         from forge.workflow.bug.graph import route_entry
-
         minimal_old_state = {
             "ticket_key": "BUG-OLD",
             "ticket_type": "bug",
@@ -87,7 +88,6 @@ class TestBugStateNewFields:
     def test_rca_approval_gate_checkpoint_maps_correctly(self):
         """In-flight state with current_node='rca_approval_gate' routes to rca_option_gate."""
         from forge.workflow.bug.graph import route_entry
-
         state = {
             "ticket_key": "BUG-OLD",
             "current_node": "rca_approval_gate",
@@ -98,7 +98,6 @@ class TestBugStateNewFields:
     def test_new_fields_not_required_for_route_entry(self):
         """route_entry handles state dicts missing new fields — uses .get() throughout."""
         from forge.workflow.bug.graph import route_entry
-
         for node, expected in [
             ("triage_check", "triage_check"),
             ("analyze_bug", "analyze_bug"),
@@ -115,7 +114,6 @@ class TestTasksByRepoInBugState:
     def test_tasks_by_repo_declared_in_bug_state_annotations(self):
         """tasks_by_repo is declared in BugState so LangGraph includes it in the checkpoint schema."""
         from forge.workflow.bug.state import BugState
-
         all_annotations: dict = {}
         for cls in BugState.__mro__:
             all_annotations.update(getattr(cls, "__annotations__", {}))
@@ -136,7 +134,6 @@ class TestNewStateFixtures:
     def test_state_triage_pending_has_correct_fields(self):
         """STATE_TRIAGE_PENDING represents a paused triage state correctly."""
         from tests.fixtures.workflow_states import STATE_TRIAGE_PENDING
-
         assert STATE_TRIAGE_PENDING["is_paused"] is True
         assert STATE_TRIAGE_PENDING["current_node"] == "triage_gate"
         assert STATE_TRIAGE_PENDING["triage_passed"] is False
@@ -145,7 +142,6 @@ class TestNewStateFixtures:
     def test_state_rca_option_pending_has_options(self):
         """STATE_RCA_OPTION_PENDING has at least 2 RCA options with required keys."""
         from tests.fixtures.workflow_states import STATE_RCA_OPTION_PENDING
-
         options = STATE_RCA_OPTION_PENDING.get("rca_options", [])
         assert len(options) >= 2
         for opt in options:
@@ -156,20 +152,19 @@ class TestNewStateFixtures:
     def test_state_bug_plan_pending_has_plan_content(self):
         """STATE_BUG_PLAN_PENDING has non-empty plan_content."""
         from tests.fixtures.workflow_states import STATE_BUG_PLAN_PENDING
-
         assert STATE_BUG_PLAN_PENDING["current_node"] == "plan_approval_gate"
         assert STATE_BUG_PLAN_PENDING.get("plan_content", "")
 
     def test_triage_pending_fixture_routes_to_triage_gate(self):
         """STATE_TRIAGE_PENDING route_entry returns 'triage_gate'."""
-        from forge.workflow.bug.graph import route_entry
         from tests.fixtures.workflow_states import STATE_TRIAGE_PENDING
 
+        from forge.workflow.bug.graph import route_entry
         assert route_entry(STATE_TRIAGE_PENDING) == "triage_gate"
 
     def test_rca_option_pending_fixture_routes_to_rca_option_gate(self):
         """STATE_RCA_OPTION_PENDING route_entry returns 'rca_option_gate'."""
-        from forge.workflow.bug.graph import route_entry
         from tests.fixtures.workflow_states import STATE_RCA_OPTION_PENDING
 
+        from forge.workflow.bug.graph import route_entry
         assert route_entry(STATE_RCA_OPTION_PENDING) == "rca_option_gate"

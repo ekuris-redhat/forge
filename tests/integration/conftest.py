@@ -185,7 +185,6 @@ def _container_runtime_available() -> bool:
     """Check if Podman/Docker is available for testcontainers."""
     try:
         import docker
-
         client = docker.from_env()
         client.ping()
         return True

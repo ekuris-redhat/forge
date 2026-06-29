@@ -131,7 +131,6 @@ class TestBaseWorkflow:
             @property
             def state_schema(self):
                 from forge.workflow.base import BaseState
-
                 return BaseState
 
             def matches(self, ticket_type, labels, event):

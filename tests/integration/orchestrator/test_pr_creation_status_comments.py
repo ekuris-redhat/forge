@@ -50,10 +50,7 @@ class TestPRCreationStatusCommentsTS006:
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
         assert comment_call[0][0] == "FEAT-200"
-        assert (
-            comment_call[0][1]
-            == "🚀 Pull request #123 created and submitted. Waiting for CI checks to complete."
-        )
+        assert comment_call[0][1] == "🚀 Pull request #123 created and submitted. Waiting for CI checks to complete."
 
         # Verify workflow paused
         assert result["is_paused"] is True
@@ -103,7 +100,6 @@ class TestPRCreationStatusCommentsTS006:
         assert label_call[0][0] == "FEAT-200"
         # Check that it's the CI_PENDING label (value is "forge:ci-pending")
         from forge.models.workflow import ForgeLabel
-
         assert label_call[0][1] == ForgeLabel.TASK_CI_PENDING
 
     @pytest.mark.asyncio
@@ -150,10 +146,7 @@ class TestPRCreationStatusCommentsTS014:
         assert mock_jira.add_comment.call_count == 1
         comment_call = mock_jira.add_comment.call_args
         assert comment_call[0][0] == "FEAT-201"
-        assert (
-            comment_call[0][1]
-            == "🚀 Pull request created and submitted. Waiting for CI checks to complete."
-        )
+        assert comment_call[0][1] == "🚀 Pull request created and submitted. Waiting for CI checks to complete."
 
         # Verify workflow paused
         assert result["is_paused"] is True
@@ -232,9 +225,7 @@ class TestPRCreationErrorHandling:
         assert result["current_node"] == "wait_for_ci_gate"
 
         # Verify error logged
-        assert any(
-            "Failed to remove implementing label" in record.message for record in caplog.records
-        )
+        assert any("Failed to remove implementing label" in record.message for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_workflow_continues_when_label_setting_fails(self, caplog):

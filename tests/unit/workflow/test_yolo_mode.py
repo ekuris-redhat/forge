@@ -2,9 +2,9 @@
 
 import pytest
 
-from forge.models.workflow import ForgeLabel
-from forge.workflow.bug.state import create_initial_bug_state
+from forge.models.workflow import ForgeLabel, TicketType
 from forge.workflow.feature.state import create_initial_feature_state
+from forge.workflow.bug.state import create_initial_bug_state
 
 
 class TestForgeLabelYolo:
@@ -38,9 +38,7 @@ class TestBuildInitialStateYoloMode:
 
     def _make_worker(self):
         from unittest.mock import MagicMock
-
         from forge.orchestrator.worker import OrchestratorWorker
-
         worker = OrchestratorWorker.__new__(OrchestratorWorker)
         worker.settings = MagicMock()
         worker.router = MagicMock()
@@ -48,9 +46,7 @@ class TestBuildInitialStateYoloMode:
 
     def _make_message(self, labels: list):
         from unittest.mock import MagicMock
-
         from forge.models.events import EventSource
-
         msg = MagicMock()
         msg.ticket_key = "TEST-1"
         msg.source = EventSource.JIRA
@@ -87,9 +83,7 @@ class TestBuildInitialStateYoloMode:
 
     def test_yolo_mode_false_for_github_source(self):
         from unittest.mock import MagicMock
-
         from forge.models.events import EventSource
-
         msg = MagicMock()
         msg.ticket_key = "TEST-1"
         msg.source = EventSource.GITHUB
@@ -105,12 +99,9 @@ class TestBuildInitialStateYoloMode:
 class TestYoloLabelAddedMidWorkflow:
     """When forge:yolo is added while paused at a gate, yolo_mode is set and workflow unpauses."""
 
-    def _make_yolo_label_message(
-        self, current_labels: str, previous_labels: str = ""
-    ) -> "QueueMessage":
+    def _make_yolo_label_message(self, current_labels: str, previous_labels: str = "") -> "QueueMessage":
         from forge.models.events import EventSource
         from forge.queue.models import QueueMessage
-
         return QueueMessage(
             message_id="1234567890-0",
             event_id="test-event-yolo",
@@ -148,7 +139,6 @@ class TestYoloLabelAddedMidWorkflow:
     @pytest.mark.asyncio
     async def test_yolo_label_addition_at_prd_gate_activates_yolo(self):
         from forge.orchestrator.worker import OrchestratorWorker
-
         worker = OrchestratorWorker(consumer_name="test-worker")
         message = self._make_yolo_label_message(
             current_labels="forge:managed forge:yolo",
@@ -162,7 +152,6 @@ class TestYoloLabelAddedMidWorkflow:
     @pytest.mark.asyncio
     async def test_yolo_label_addition_outside_gate_does_not_activate(self):
         from forge.orchestrator.worker import OrchestratorWorker
-
         worker = OrchestratorWorker(consumer_name="test-worker")
         message = self._make_yolo_label_message(
             current_labels="forge:managed forge:yolo",
@@ -177,7 +166,6 @@ class TestYoloLabelAddedMidWorkflow:
     @pytest.mark.asyncio
     async def test_yolo_label_already_present_does_not_re_trigger(self):
         from forge.orchestrator.worker import OrchestratorWorker
-
         worker = OrchestratorWorker(consumer_name="test-worker")
         # forge:yolo was already in fromString — not a new addition
         message = self._make_yolo_label_message(
@@ -196,7 +184,6 @@ class TestYoloGateRouting:
 
     def _feature_state(self, current_node: str, **extra) -> dict:
         from forge.workflow.feature.state import create_initial_feature_state
-
         state = create_initial_feature_state("TEST-1")
         state["current_node"] = current_node
         state["is_paused"] = True
@@ -206,34 +193,28 @@ class TestYoloGateRouting:
 
     def test_prd_route_auto_approves_in_yolo_mode(self):
         from forge.workflow.gates.prd_approval import route_prd_approval
-
         state = self._feature_state("prd_approval_gate", prd_content="# PRD")
         assert route_prd_approval(state) == "generate_spec"
 
     def test_spec_route_auto_approves_in_yolo_mode(self):
         from forge.workflow.gates.spec_approval import route_spec_approval
-
         state = self._feature_state("spec_approval_gate", spec_content="# Spec")
         assert route_spec_approval(state) == "decompose_epics"
 
     def test_plan_route_auto_approves_in_yolo_mode(self):
         from forge.workflow.gates.plan_approval import route_plan_approval
-
         state = self._feature_state("plan_approval_gate", epic_keys=["EPIC-1"])
         assert route_plan_approval(state) == "generate_tasks"
 
     def test_task_route_auto_approves_in_yolo_mode(self):
         from forge.workflow.gates.task_approval import route_task_approval
-
         state = self._feature_state("task_approval_gate", task_keys=["TASK-1"])
         assert route_task_approval(state) == "task_router"
 
     def test_yolo_false_still_pauses_at_prd_gate(self):
         from langgraph.graph import END
-
-        from forge.workflow.feature.state import create_initial_feature_state
         from forge.workflow.gates.prd_approval import route_prd_approval
-
+        from forge.workflow.feature.state import create_initial_feature_state
         state = create_initial_feature_state("TEST-1")
         state["current_node"] = "prd_approval_gate"
         state["is_paused"] = True
@@ -243,7 +224,6 @@ class TestYoloGateRouting:
 
     def test_yolo_does_not_override_question_routing(self):
         from forge.workflow.gates.prd_approval import route_prd_approval
-
         state = self._feature_state("prd_approval_gate", prd_content="# PRD")
         state["is_question"] = True
         state["feedback_comment"] = "?Why REST?"
@@ -279,7 +259,6 @@ class TestYoloRcaOptionGate:
     @pytest.mark.asyncio
     async def test_yolo_selects_option_1_without_pausing(self):
         from unittest.mock import AsyncMock, patch
-
         from forge.workflow.nodes.rca_option_gate import rca_option_gate
 
         state = self._rca_state()
@@ -299,7 +278,6 @@ class TestYoloRcaOptionGate:
     async def test_yolo_still_posts_rca_comment(self):
         """RCA comment is posted even in yolo mode (audit trail preserved)."""
         from unittest.mock import AsyncMock, patch
-
         from forge.workflow.nodes.rca_option_gate import rca_option_gate
 
         state = self._rca_state()
@@ -317,7 +295,6 @@ class TestYoloRcaOptionGate:
     async def test_non_yolo_still_pauses(self):
         """With yolo_mode=False, gate pauses normally."""
         from unittest.mock import AsyncMock, patch
-
         from forge.workflow.nodes.rca_option_gate import rca_option_gate
 
         state = self._rca_state(yolo_mode=False)

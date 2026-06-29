@@ -1,6 +1,7 @@
 """Tests for Jira status utility functions."""
 
-from unittest.mock import AsyncMock, MagicMock, call
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import httpx
 import pytest
@@ -49,7 +50,7 @@ class TestPostStatusComment:
     async def test_post_status_comment_timeout(self, caplog) -> None:
         """Should suppress TimeoutError and log warning."""
         mock_jira = MagicMock()
-        timeout_error = TimeoutError()
+        timeout_error = asyncio.TimeoutError()
         mock_jira.add_comment = AsyncMock(side_effect=timeout_error)
 
         # Should not raise
@@ -87,15 +88,18 @@ class TestTransitionTasksToInProgress:
 
         # Verify success logs for each task
         assert any(
-            "Transitioned TASK-1 to In Progress" in record.message and record.levelname == "INFO"
+            "Transitioned TASK-1 to In Progress" in record.message
+            and record.levelname == "INFO"
             for record in caplog.records
         )
         assert any(
-            "Transitioned TASK-2 to In Progress" in record.message and record.levelname == "INFO"
+            "Transitioned TASK-2 to In Progress" in record.message
+            and record.levelname == "INFO"
             for record in caplog.records
         )
         assert any(
-            "Transitioned TASK-3 to In Progress" in record.message and record.levelname == "INFO"
+            "Transitioned TASK-3 to In Progress" in record.message
+            and record.levelname == "INFO"
             for record in caplog.records
         )
 
@@ -119,11 +123,13 @@ class TestTransitionTasksToInProgress:
 
         # Verify success logs for tasks 1 and 3
         assert any(
-            "Transitioned TASK-1 to In Progress" in record.message and record.levelname == "INFO"
+            "Transitioned TASK-1 to In Progress" in record.message
+            and record.levelname == "INFO"
             for record in caplog.records
         )
         assert any(
-            "Transitioned TASK-3 to In Progress" in record.message and record.levelname == "INFO"
+            "Transitioned TASK-3 to In Progress" in record.message
+            and record.levelname == "INFO"
             for record in caplog.records
         )
 
@@ -155,11 +161,13 @@ class TestTransitionTasksToInProgress:
 
         # Verify success logs for tasks 1 and 3
         assert any(
-            "Transitioned TASK-1 to In Progress" in record.message and record.levelname == "INFO"
+            "Transitioned TASK-1 to In Progress" in record.message
+            and record.levelname == "INFO"
             for record in caplog.records
         )
         assert any(
-            "Transitioned TASK-3 to In Progress" in record.message and record.levelname == "INFO"
+            "Transitioned TASK-3 to In Progress" in record.message
+            and record.levelname == "INFO"
             for record in caplog.records
         )
 

@@ -52,7 +52,9 @@ def test_clone_failure_redacts_token_from_git_error(tmp_path):
 
 def test_git_error_constructor_redacts_tokens():
     token = "gh" + "p_" + "abcdefghijklmnopqrstuvwxyz123456"
-    error = GitError(f"remote: https://x-access-token:{token}@github.com/org/repo.git")
+    error = GitError(
+        f"remote: https://x-access-token:{token}@github.com/org/repo.git"
+    )
 
     assert "ghp_" not in str(error)
     assert "https://[REDACTED]@github.com/org/repo.git" in str(error)

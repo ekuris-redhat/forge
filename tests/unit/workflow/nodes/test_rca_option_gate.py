@@ -139,7 +139,7 @@ class TestRcaOptionGate:
         """Truncation happens at the last \\n\\n before the limit, not mid-sentence."""
         # Build rca_content with paragraphs separated by \n\n
         paragraph = "Word " * 100  # ~500 chars per paragraph
-        rca = "\n\n".join([paragraph] * 60)  # ~30k chars
+        rca = ("\n\n".join([paragraph] * 60))  # ~30k chars
         state = make_rca_option_state(rca_content=rca)
         mock_jira = _make_mock_jira()
 

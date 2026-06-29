@@ -54,7 +54,9 @@ class TestPRDGenerationContext:
         )
 
         mock_agent = create_mock_forge_agent()
-        mock_agent.generate_prd = AsyncMock(return_value="# Generated PRD\n\nContent here.")
+        mock_agent.generate_prd = AsyncMock(
+            return_value="# Generated PRD\n\nContent here."
+        )
 
         state = create_initial_feature_state(
             ticket_key="TEST-123",
@@ -101,7 +103,9 @@ class TestPRDGenerationContext:
         )
 
         mock_agent = create_mock_forge_agent()
-        mock_agent.generate_prd = AsyncMock(return_value="# PRD Content")
+        mock_agent.generate_prd = AsyncMock(
+            return_value="# PRD Content"
+        )
 
         state = create_initial_feature_state(
             ticket_key="TEST-123",
@@ -137,7 +141,9 @@ class TestSpecGenerationContext:
 
         mock_jira = create_mock_jira_client()
         mock_agent = create_mock_forge_agent()
-        mock_agent.generate_spec = AsyncMock(return_value="# Generated Spec\n\nContent here.")
+        mock_agent.generate_spec = AsyncMock(
+            return_value="# Generated Spec\n\nContent here."
+        )
 
         state = create_initial_feature_state(
             ticket_key="TEST-123",
@@ -176,7 +182,9 @@ class TestSpecGenerationContext:
 
         mock_jira = create_mock_jira_client()
         mock_agent = create_mock_forge_agent()
-        mock_agent.generate_spec = AsyncMock(return_value="# Spec Content")
+        mock_agent.generate_spec = AsyncMock(
+            return_value="# Spec Content"
+        )
 
         state = create_initial_feature_state(
             ticket_key="TEST-123",

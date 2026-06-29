@@ -69,9 +69,7 @@ class TestBugPrBody:
 
     def test_no_warning_when_review_passed(self):
         """qualitative_review_failed=False → no warning block."""
-        body = _build_pr_body(
-            _bug_state(qualitative_review_failed=False), implemented_tasks=["BUG-50"]
-        )
+        body = _build_pr_body(_bug_state(qualitative_review_failed=False), implemented_tasks=["BUG-50"])
         assert "automated qualitative review" not in body.lower()
 
     def test_warning_and_release_note_both_appear_when_review_failed(self):
