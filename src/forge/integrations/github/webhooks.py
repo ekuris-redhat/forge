@@ -135,6 +135,16 @@ def parse_github_webhook(
             pr_title = issue.get("title", "")
             ticket_key = _extract_ticket_key(pr_title)
 
+    # Handle pull_request_review_comment events
+    elif event_type == "pull_request_review_comment":
+        pr = payload.get("pull_request", {})
+        pr_number = pr.get("number")
+        pr_url = pr.get("html_url")
+        pr_state = pr.get("state")
+        branch_name = pr.get("head", {}).get("ref", "")
+        pr_title = pr.get("title", "")
+        ticket_key = _extract_ticket_key(pr_title) or _extract_ticket_key(branch_name)
+
     return GitHubWebhookData(
         event_id=event_id,
         event_type=event_type,

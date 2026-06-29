@@ -464,17 +464,22 @@ class OrchestratorWorker:
                 else:
                     is_ci_webhook = True
                     logger.info(f"Detected GitHub CI webhook signal for {current_node}")
-            elif "issue_comment" not in event:
+            elif "issue_comment" not in event and "pull_request_review_comment" not in event:
                 is_ci_webhook = True
                 logger.info(f"Detected GitHub CI webhook signal for {current_node}")
 
         # GitHub issue_comment events: detect /forge skip-gate and /forge unskip-gate
         # commands posted as PR comments.
         _CI_STAGES = ("wait_for_ci_gate", "ci_evaluator", "attempt_ci_fix")
-        if message.source == EventSource.GITHUB and "issue_comment" in message.event_type:
+        if message.source == EventSource.GITHUB and (
+            "issue_comment" in message.event_type
+            or "pull_request_review_comment" in message.event_type
+        ):
             gh_comment_body = payload.get("comment", {}).get("body", "").strip()
             repo_full = payload.get("repository", {}).get("full_name", "")
-            pr_number = payload.get("issue", {}).get("number")
+            pr_number = payload.get("issue", {}).get("number") or payload.get(
+                "pull_request", {}
+            ).get("number")
             sender = payload.get("sender", {}).get("login", "")
             _owner, _, _repo = repo_full.partition("/")
 

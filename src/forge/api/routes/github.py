@@ -106,6 +106,20 @@ async def receive_github_webhook(
         event_id = x_github_delivery or _generate_event_id(payload)
         span.set_attribute("forge.event_id", event_id)
 
+        # Process comment events for commands and authorization
+        if x_github_event in ("issue_comment", "pull_request_review_comment"):
+            from forge.webhooks.github_handler import process_comment_webhook
+
+            comment_result = await process_comment_webhook(payload, x_github_event)
+            if comment_result.get("status") == "rejected":
+                span.set_attribute("forge.rejected", True)
+                span.set_attribute("forge.reject_reason", comment_result.get("reason"))
+                return {
+                    "status": "rejected",
+                    "event_id": event_id,
+                    "reason": comment_result.get("reason"),
+                }
+
         # Parse webhook data
         webhook_data = parse_github_webhook(payload, x_github_event, event_id)
 
