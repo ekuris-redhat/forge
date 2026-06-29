@@ -56,7 +56,6 @@ def _make_successful_runner():
 
 
 class TestImplementTaskStartedComment:
-
     @pytest.mark.asyncio
     async def test_posts_comment_on_task_ticket_before_container(self):
         """A comment is posted on the task ticket (not parent) when implementation starts."""
@@ -80,7 +79,7 @@ class TestImplementTaskStartedComment:
 
         mock_jira.add_comment.assert_any_call(
             "TASK-456",
-            "🔨 Forge started implementing [TASK-456]: Fix null pointer in AuthService",
+            "🔨 Forge is implementing this task.",
         )
 
     @pytest.mark.asyncio
@@ -112,8 +111,7 @@ class TestImplementTaskStartedComment:
 
         call_args = mock_jira.add_comment.call_args_list[0]
         assert call_args[0][0] == "TASK-100"
-        assert "TASK-100" in call_args[0][1]
-        assert "Add retry logic" in call_args[0][1]
+        assert call_args[0][1] == "🔨 Forge is implementing this task."
 
     @pytest.mark.asyncio
     async def test_comment_failure_does_not_block_implementation(self):
@@ -143,7 +141,6 @@ class TestImplementTaskStartedComment:
 
 
 class TestImplementationNodeRouting:
-
     @pytest.mark.asyncio
     async def test_feature_missing_workspace_uses_feature_implementation_node(self):
         """Feature implementation failures must resume at implement_task."""

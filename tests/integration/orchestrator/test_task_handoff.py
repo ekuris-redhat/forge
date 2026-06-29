@@ -41,7 +41,7 @@ class TestForgeDirectorySetup:
 
     async def test_workspace_setup_node_creates_forge_directory(self):
         """The setup_workspace node should create .forge directory structure."""
-        from forge.orchestrator.nodes import setup_workspace
+        from forge.workflow.nodes import setup_workspace
 
         initial_state = create_initial_state(
             thread_id="TEST-123",
@@ -50,14 +50,17 @@ class TestForgeDirectorySetup:
         )
         initial_state["tasks_by_repo"] = {"test-org/test-repo": ["TASK-1", "TASK-2"]}
 
-        with patch("forge.workflow.nodes.workspace_setup.GitOperations") as MockGit, \
-             patch("forge.workflow.nodes.workspace_setup.GuardrailsLoader") as MockGuardrails:
-
+        with (
+            patch("forge.workflow.nodes.workspace_setup.GitOperations") as MockGit,
+            patch("forge.workflow.nodes.workspace_setup.GuardrailsLoader") as MockGuardrails,
+        ):
             mock_git = MagicMock()
             MockGit.return_value = mock_git
 
             mock_guardrails = MagicMock()
-            mock_guardrails.load.return_value = MagicMock(get_system_context=MagicMock(return_value=""))
+            mock_guardrails.load.return_value = MagicMock(
+                get_system_context=MagicMock(return_value="")
+            )
             MockGuardrails.return_value = mock_guardrails
 
             result = await setup_workspace(initial_state)
@@ -66,7 +69,9 @@ class TestForgeDirectorySetup:
             if result.get("workspace_path"):
                 workspace_path = Path(result["workspace_path"])
                 assert (workspace_path / ".forge").exists(), ".forge should be created"
-                assert (workspace_path / ".forge" / "history").exists(), ".forge/history should be created"
+                assert (workspace_path / ".forge" / "history").exists(), (
+                    ".forge/history should be created"
+                )
 
 
 class TestPreviousTaskKeysPassing:
@@ -80,9 +85,10 @@ class TestPreviousTaskKeysPassing:
             workspace = Path(workspace_dir)
 
             # Mock podman and settings
-            with patch("forge.sandbox.runner.shutil.which", return_value="/usr/bin/podman"), \
-                 patch("forge.sandbox.runner.get_settings") as mock_settings:
-
+            with (
+                patch("forge.sandbox.runner.shutil.which", return_value="/usr/bin/podman"),
+                patch("forge.sandbox.runner.get_settings") as mock_settings,
+            ):
                 settings = MagicMock()
                 settings.anthropic_api_key.get_secret_value.return_value = "test-key"
                 settings.use_vertex_ai = False
@@ -96,9 +102,10 @@ class TestPreviousTaskKeysPassing:
                 runner = ContainerRunner(settings)
 
                 # Mock the actual run to just create the task file
-                with patch.object(runner, "_build_podman_command", return_value=["echo", "test"]), \
-                     patch("asyncio.create_subprocess_exec") as mock_exec:
-
+                with (
+                    patch.object(runner, "_build_podman_command", return_value=["echo", "test"]),
+                    patch("asyncio.create_subprocess_exec") as mock_exec,
+                ):
                     mock_process = AsyncMock()
                     mock_process.communicate = AsyncMock(return_value=(b"", b""))
                     mock_process.returncode = 0
@@ -118,8 +125,8 @@ class TestPreviousTaskKeysPassing:
 
     async def test_implementation_node_passes_implemented_tasks(self):
         """Implementation node should pass implemented_tasks as previous_task_keys."""
-        from forge.orchestrator.nodes import implement_task
         from forge.workflow.feature.state import FeatureState as WorkflowState
+        from forge.workflow.nodes import implement_task
 
         with tempfile.TemporaryDirectory() as workspace_dir:
             state: WorkflowState = {
@@ -133,10 +140,11 @@ class TestPreviousTaskKeysPassing:
                 "context": {"guardrails": ""},
             }
 
-            with patch("forge.workflow.nodes.implementation.JiraClient") as MockJira, \
-                 patch("forge.workflow.nodes.implementation.ContainerRunner") as MockRunner, \
-                 patch("forge.workflow.nodes.implementation.get_settings") as mock_settings:
-
+            with (
+                patch("forge.workflow.nodes.implementation.JiraClient") as MockJira,
+                patch("forge.workflow.nodes.implementation.ContainerRunner") as MockRunner,
+                patch("forge.workflow.nodes.implementation.get_settings") as mock_settings,
+            ):
                 # Setup mocks
                 mock_jira = MagicMock()
                 mock_jira.get_issue = AsyncMock(
@@ -149,9 +157,7 @@ class TestPreviousTaskKeysPassing:
                 MockJira.return_value = mock_jira
 
                 mock_runner = MagicMock()
-                mock_runner.run = AsyncMock(
-                    return_value=MagicMock(success=True, exit_code=0)
-                )
+                mock_runner.run = AsyncMock(return_value=MagicMock(success=True, exit_code=0))
                 MockRunner.return_value = mock_runner
 
                 mock_settings.return_value = MagicMock()
@@ -178,8 +184,9 @@ class TestHandoffPromptFormat:
         assert ".forge/history/" in prompt, "Prompt should reference history directory"
 
         # Check for handoff writing instructions
-        assert "Update handoff" in prompt or "update `.forge/handoff.md`" in prompt, \
+        assert "Update handoff" in prompt or "update `.forge/handoff.md`" in prompt, (
             "Prompt should instruct agent to update handoff"
+        )
 
     def test_entrypoint_builds_prompt_with_previous_task_keys(self):
         """Entrypoint build_system_prompt should include previous task keys."""
@@ -228,8 +235,9 @@ class TestHandoffPromptFormat:
             )
 
             # Should indicate this is the first task
-            assert "first task" in prompt.lower() or "none" in prompt.lower(), \
+            assert "first task" in prompt.lower() or "none" in prompt.lower(), (
                 "Prompt should indicate no previous tasks"
+            )
         finally:
             sys.path.remove(str(containers_path))
 
@@ -301,8 +309,9 @@ class TestGitIgnoreSafeguard:
 
         # Prompt should warn against committing .forge/ (using "NEVER commit" wording)
         assert ".forge/" in prompt, "Prompt should mention .forge/ directory"
-        assert "NEVER commit" in prompt or "never commit" in prompt.lower(), \
+        assert "NEVER commit" in prompt or "never commit" in prompt.lower(), (
             "Prompt should warn against committing .forge/"
+        )
 
 
 class TestHistoryPersistence:

@@ -5,7 +5,6 @@ post_status_comment() utility function at the right times with the
 correct parameters, independent of the Jira client implementation.
 """
 
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -68,9 +67,7 @@ class TestImplementationStatusInstrumentationStartComment:
         with (
             patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.implementation.ContainerRunner", return_value=mock_runner),
-            patch(
-                "forge.workflow.nodes.implementation.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.implementation.post_status_comment") as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             result = await implement_task(state)
@@ -82,7 +79,7 @@ class TestImplementationStatusInstrumentationStartComment:
         first_call = mock_post_status.call_args_list[0]
         assert first_call[0][0] == mock_jira  # JiraClient instance
         assert first_call[0][1] == "TASK-1"  # task_key
-        assert first_call[0][2] == "🔨 Forge started implementing [TASK-1]: Task summary"  # start message
+        assert first_call[0][2] == "🔨 Forge is implementing this task."  # start message
 
     @pytest.mark.asyncio
     async def test_post_status_comment_called_before_container_execution(self):
@@ -149,9 +146,7 @@ class TestImplementationStatusInstrumentationCompletionComment:
         with (
             patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.implementation.ContainerRunner", return_value=mock_runner),
-            patch(
-                "forge.workflow.nodes.implementation.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.implementation.post_status_comment") as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             result = await implement_task(state)
@@ -164,8 +159,7 @@ class TestImplementationStatusInstrumentationCompletionComment:
         assert second_call[0][0] == mock_jira  # JiraClient instance
         assert second_call[0][1] == "TASK-1"  # task_key
         assert (
-            second_call[0][2]
-            == "✅ Implementation complete. Running local code review before PR."
+            second_call[0][2] == "✅ Implementation complete. Running local code review before PR."
         )
 
     @pytest.mark.asyncio
@@ -186,9 +180,7 @@ class TestImplementationStatusInstrumentationCompletionComment:
         with (
             patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.implementation.ContainerRunner", return_value=mock_runner),
-            patch(
-                "forge.workflow.nodes.implementation.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.implementation.post_status_comment") as mock_post_status,
             patch("forge.workflow.nodes.implementation.notify_error", new=AsyncMock()),
         ):
             mock_post_status.return_value = AsyncMock()
@@ -199,7 +191,7 @@ class TestImplementationStatusInstrumentationCompletionComment:
 
         # Verify only call was the start comment
         first_call = mock_post_status.call_args_list[0]
-        assert first_call[0][2] == "🔨 Forge started implementing [TASK-1]: Task summary"
+        assert first_call[0][2] == "🔨 Forge is implementing this task."
 
 
 class TestImplementationStatusInstrumentationMultipleTasks:
@@ -225,9 +217,7 @@ class TestImplementationStatusInstrumentationMultipleTasks:
         with (
             patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock_jira1),
             patch("forge.workflow.nodes.implementation.ContainerRunner", return_value=mock_runner1),
-            patch(
-                "forge.workflow.nodes.implementation.post_status_comment"
-            ) as mock_post_status1,
+            patch("forge.workflow.nodes.implementation.post_status_comment") as mock_post_status1,
         ):
             mock_post_status1.return_value = AsyncMock()
             result1 = await implement_task(state1)
@@ -246,9 +236,7 @@ class TestImplementationStatusInstrumentationMultipleTasks:
         with (
             patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock_jira2),
             patch("forge.workflow.nodes.implementation.ContainerRunner", return_value=mock_runner2),
-            patch(
-                "forge.workflow.nodes.implementation.post_status_comment"
-            ) as mock_post_status2,
+            patch("forge.workflow.nodes.implementation.post_status_comment") as mock_post_status2,
         ):
             mock_post_status2.return_value = AsyncMock()
             result2 = await implement_task(state2)
@@ -267,9 +255,7 @@ class TestImplementationStatusInstrumentationMultipleTasks:
         with (
             patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock_jira3),
             patch("forge.workflow.nodes.implementation.ContainerRunner", return_value=mock_runner3),
-            patch(
-                "forge.workflow.nodes.implementation.post_status_comment"
-            ) as mock_post_status3,
+            patch("forge.workflow.nodes.implementation.post_status_comment") as mock_post_status3,
         ):
             mock_post_status3.return_value = AsyncMock()
             result3 = await implement_task(state3)
@@ -298,9 +284,7 @@ class TestImplementationStatusInstrumentationMultipleTasks:
         with (
             patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock_jira1),
             patch("forge.workflow.nodes.implementation.ContainerRunner", return_value=mock_runner1),
-            patch(
-                "forge.workflow.nodes.implementation.post_status_comment"
-            ) as mock_post_status1,
+            patch("forge.workflow.nodes.implementation.post_status_comment") as mock_post_status1,
         ):
             mock_post_status1.return_value = AsyncMock()
             result1 = await implement_task(state1)
@@ -321,9 +305,7 @@ class TestImplementationStatusInstrumentationMultipleTasks:
         with (
             patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock_jira2),
             patch("forge.workflow.nodes.implementation.ContainerRunner", return_value=mock_runner2),
-            patch(
-                "forge.workflow.nodes.implementation.post_status_comment"
-            ) as mock_post_status2,
+            patch("forge.workflow.nodes.implementation.post_status_comment") as mock_post_status2,
             patch("forge.workflow.nodes.implementation.notify_error", new=AsyncMock()),
         ):
             mock_post_status2.return_value = AsyncMock()
@@ -332,8 +314,4 @@ class TestImplementationStatusInstrumentationMultipleTasks:
         # Verify TASK-2 got only start comment (not completion)
         assert mock_post_status2.call_count == 1
         assert mock_post_status2.call_args_list[0][0][1] == "TASK-2"
-        assert (
-            mock_post_status2.call_args_list[0][0][2] == "🔨 Forge started implementing [TASK-2]: Task summary"
-        )
-
-
+        assert mock_post_status2.call_args_list[0][0][2] == "🔨 Forge is implementing this task."
