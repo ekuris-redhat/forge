@@ -129,11 +129,10 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
         **state,
         **record_stage_start(state, STAGE_IMPLEMENTATION, model_name=settings.llm_model),
     }
-    if state.get("retry_count", 0) > 0:
-        state = {
-            **state,
-            **increment_revision(state, STAGE_IMPLEMENTATION),
-        }
+    state = {
+        **state,
+        **increment_revision(state, STAGE_IMPLEMENTATION),
+    }
     node_start = time.monotonic()
 
     jira = JiraClient(settings)

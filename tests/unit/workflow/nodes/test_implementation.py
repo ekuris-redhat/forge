@@ -263,3 +263,35 @@ class TestImplementationRevisionIncrement:
         mock_increment_revision.assert_called_once()
         assert mock_increment_revision.call_args[0][1] == STAGE_IMPLEMENTATION
         assert result.get("revision_incremented") is True
+
+    @pytest.mark.asyncio
+    @patch("forge.workflow.nodes.implementation.increment_revision")
+    async def test_increment_revision_on_first_run(self, mock_increment_revision):
+        """When retry_count is 0, implement_task must still call increment_revision."""
+        from forge.workflow.nodes.implementation import implement_task
+        from forge.workflow.stats import STAGE_IMPLEMENTATION
+
+        mock_jira = _make_mock_jira()
+        runner = _make_successful_runner()
+        mock_increment_revision.return_value = {"revision_incremented": True}
+
+        state = _make_state()
+        state["retry_count"] = 0  # first run
+
+        with (
+            patch(
+                "forge.workflow.nodes.implementation.JiraClient",
+                return_value=mock_jira,
+            ),
+            patch(
+                "forge.workflow.nodes.implementation.ContainerRunner",
+                return_value=runner,
+            ),
+            patch("forge.workflow.nodes.implementation.get_settings"),
+        ):
+            result = await implement_task(state)
+
+        # increment_revision should have been called for STAGE_IMPLEMENTATION
+        mock_increment_revision.assert_called_once()
+        assert mock_increment_revision.call_args[0][1] == STAGE_IMPLEMENTATION
+        assert result.get("revision_incremented") is True

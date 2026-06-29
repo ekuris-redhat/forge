@@ -38,6 +38,31 @@ from forge.workflow.stats.weekly_report import (
 # ---------------------------------------------------------------------------
 
 _NOW = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _patch_get_checkpoint_state():
+    async def mock_get_state(ticket_key: str):
+        from forge.workflow.stats.weekly_report import get_redis_client
+
+        try:
+            redis_client = await get_redis_client()
+            key = f"checkpoint:{ticket_key}"
+            val = await redis_client.get(key)
+            if val is not None:
+                import json
+
+                return json.loads(val)
+        except Exception:
+            pass
+        return None
+
+    with patch(
+        "forge.workflow.stats.weekly_report.get_checkpoint_state", side_effect=mock_get_state
+    ):
+        yield
+
+
 _ONE_DAY_AGO = (_NOW - timedelta(days=1)).isoformat()
 _TWO_WEEKS_AGO = (_NOW - timedelta(weeks=2)).isoformat()
 _TICKET = "AISOS-100"
@@ -630,6 +655,7 @@ def _make_redis_mock(keys: list[str], states: dict[str, dict]) -> MagicMock:
 
     # scan returns (cursor, keys_list); call it once and return 0 to stop loop
     async def scan_side_effect(cursor, match, count):
+        _ = count
         if cursor == 0:
             # Filter keys by match pattern (simple prefix check)
             prefix = match.rstrip("*")
@@ -707,7 +733,7 @@ def _patch_now(fixed_now: datetime):
 
     class _FakeDatetime(datetime):
         @classmethod
-        def now(cls, tz=None):  # type: ignore[override]
+        def now(cls, _tz=None):  # type: ignore[override]
             return fixed_now
 
     return patch("forge.workflow.stats.weekly_report.datetime", _FakeDatetime)
@@ -861,6 +887,7 @@ class TestCollectWeeklyData:
         mock = MagicMock()
 
         async def scan_side_effect(cursor, match, count):
+            _ = (match, count)
             if cursor == 0:
                 return (0, [redis_key])
             return (0, [])
@@ -936,6 +963,7 @@ class TestCollectWeeklyData:
         mock = MagicMock()
 
         async def scan_side_effect(cursor, match, count):
+            _ = (match, count)
             if cursor == 0:
                 return (0, [redis_key])
             return (0, [])

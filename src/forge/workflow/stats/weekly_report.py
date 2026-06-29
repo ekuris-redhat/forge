@@ -17,14 +17,13 @@ Usage::
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from forge.integrations.jira.client import JiraClient
-from forge.orchestrator.checkpointer import get_redis_client
+from forge.orchestrator.checkpointer import get_checkpoint_state, get_redis_client
 
 #: Sentinel key used to group tickets that could not be linked to any Feature.
 UNASSIGNED_FEATURE_KEY = "Unassigned"
@@ -689,29 +688,37 @@ async def collect_weekly_data(
 
         logger.debug("Found %d checkpoint keys for project=%s", len(scanned_keys), project)
 
+        unique_ticket_keys: set[str] = set()
         for key in scanned_keys:
+            if key.startswith(_CHECKPOINT_KEY_PREFIX):
+                remaining = key[len(_CHECKPOINT_KEY_PREFIX) :]
+                ticket_key = remaining.split(":", 1)[0]
+                unique_ticket_keys.add(ticket_key)
+
+        for ticket_key in sorted(unique_ticket_keys):
             try:
-                raw = await redis_client.get(key)
-                if raw is None:
+                state = await get_checkpoint_state(ticket_key)
+                if state is None:
                     continue
-                state = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
                 if not isinstance(state, dict):
-                    logger.debug("Unexpected checkpoint value type at key %s; skipping", key)
+                    logger.debug(
+                        "Unexpected checkpoint value type for ticket %s; skipping", ticket_key
+                    )
                     continue
 
                 # Filter by time window
                 if not _is_within_window(state, cutoff):
-                    logger.debug("Checkpoint %s outside reporting window; skipping", key)
+                    logger.debug("Checkpoint for %s outside reporting window; skipping", ticket_key)
                     continue
 
                 ticket = _parse_checkpoint_stats(state)
                 if ticket is not None:
                     all_tickets.append(ticket)
 
-            except (json.JSONDecodeError, ValueError, TypeError) as exc:
-                logger.warning("Could not parse checkpoint at key %s: %s", key, exc)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Unexpected error reading checkpoint at key %s: %s", key, exc)
+                logger.warning(
+                    "Unexpected error reading checkpoint for ticket %s: %s", ticket_key, exc
+                )
 
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to scan Redis for project=%s: %s", project, exc)
