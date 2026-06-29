@@ -1,0 +1,162 @@
+{
+  "site_name": "Forge SDLC Guide",
+  "site_url": "https://forge-sdlc.github.io/forge/",
+  "site_description": "AI-powered SDLC orchestrator — from Jira ticket to shipped PR",
+  "repo_url": "https://github.com/forge-sdlc/forge",
+  "repo_name": "forge-sdlc/forge",
+  "edit_uri": "edit/main/docs/",
+  "extra_css": [
+    "assets/css/custom.css"
+  ],
+  "extra_javascript": [
+    "assets/js/custom.js"
+  ],
+  "theme": {
+    "custom_dir": "docs/assets/templates",
+    "logo": "images/logo.png",
+    "favicon": "images/logo.png",
+    "language": "en",
+    "features": [
+      "navigation.tabs",
+      "navigation.sections",
+      "navigation.expand",
+      "navigation.top",
+      "toc.follow",
+      "search.suggest",
+      "search.highlight",
+      "content.code.copy",
+      "content.code.annotate",
+      "content.action.edit"
+    ],
+    "palette": [
+      {
+        "media": "(prefers-color-scheme: light)",
+        "scheme": "default",
+        "primary": "indigo",
+        "accent": "indigo",
+        "toggle": {
+          "icon": "lucide/sun",
+          "name": "Switch to dark mode"
+        }
+      },
+      {
+        "media": "(prefers-color-scheme: dark)",
+        "scheme": "slate",
+        "primary": "indigo",
+        "accent": "indigo",
+        "toggle": {
+          "icon": "lucide/moon",
+          "name": "Switch to light mode"
+        }
+      }
+    ]
+  },
+  "extra": {
+    "social": [
+      {
+        "icon": "fontawesome/brands/github",
+        "link": "https://github.com/forge-sdlc/forge"
+      }
+    ]
+  },
+  "markdown_extensions": {
+    "admonition": {},
+    "pymdownx.details": {},
+    "pymdownx.superfences": {
+      "custom_fences": [
+        {
+          "name": "mermaid",
+          "class": "mermaid",
+          "format": "pymdownx.superfences.fence_code_format"
+        }
+      ]
+    },
+    "pymdownx.tabbed": {
+      "alternate_style": true
+    },
+    "pymdownx.highlight": {
+      "anchor_linenums": true
+    },
+    "pymdownx.inlinehilite": {},
+    "pymdownx.snippets": {},
+    "pymdownx.emoji": {
+      "emoji_index": "zensical.extensions.emoji.twemoji",
+      "emoji_generator": "zensical.extensions.emoji.to_svg"
+    },
+    "attr_list": {},
+    "md_in_html": {},
+    "tables": {}
+  },
+  "nav": [
+    {
+      "Home": "index.md"
+    },
+    {
+      "Architecture": "architecture.md"
+    },
+    {
+      "Workflows": "workflows.md"
+    },
+    {
+      "Getting Started": "getting-started.md"
+    },
+    {
+      "User Guide": [
+        {
+          "Feature Workflow": "guide/feature-workflow.md"
+        },
+        {
+          "Bug Workflow": "guide/bug-workflow.md"
+        },
+        {
+          "Jira Labels": "guide/labels.md"
+        },
+        {
+          "PR Commands": "guide/pr-commands.md"
+        }
+      ]
+    },
+    {
+      "Developer Guide": [
+        {
+          "Overview": "developer-guide.md"
+        },
+        {
+          "Local Setup": "dev/setup.md"
+        },
+        {
+          "Testing": "dev/testing.md"
+        },
+        {
+          "Contributing": "dev/contributing.md"
+        }
+      ]
+    },
+    {
+      "Skills": [
+        {
+          "Overview": "skills/index.md"
+        },
+        {
+          "Authoring Guide": "skills/authoring.md"
+        },
+        {
+          "Default Skills": "skills/defaults.md"
+        }
+      ]
+    },
+    {
+      "Reference": [
+        {
+          "API Endpoints": "reference/api.md"
+        },
+        {
+          "Configuration": "reference/config.md"
+        },
+        {
+          "Proposals": "reference/proposals.md"
+        }
+      ]
+    }
+  ]
+}

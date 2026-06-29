@@ -1,0 +1,51 @@
+/* Custom Styles for Forge SDLC Documentation Portal */
+
+:root {
+  --md-primary-color: #4f46e5; /* Indigo-600 */
+  --md-primary-color--dark: #3730a3; /* Indigo-800 */
+}
+
+/* Ensure the layout is fully responsive and behaves nicely on mobile */
+@media screen and (max-width: 76.25em) {
+  .md-nav--primary .md-nav__title {
+    font-weight: 700;
+    color: var(--md-primary-color);
+  }
+}
+
+/* Customized responsive menu enhancements */
+.md-header__button.md-icon {
+  transition: transform 0.2s ease-in-out;
+}
+
+.md-header__button.md-icon:hover {
+  transform: scale(1.1);
+}
+
+/* Mermaid diagram centering and responsiveness */
+.mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1.5rem 0;
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* Customized scrollbar for better desktop presentation */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+[data-md-color-scheme="slate"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
