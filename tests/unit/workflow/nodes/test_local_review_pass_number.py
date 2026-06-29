@@ -26,6 +26,17 @@ def create_mock_jira_client():
     return mock
 
 
+@pytest.fixture(autouse=True)
+def mock_jira_client_global():
+    """Globally patch JiraClient to prevent real API calls and hangs."""
+    mock = create_mock_jira_client()
+    with (
+        patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock),
+        patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock),
+    ):
+        yield mock
+
+
 def create_mock_container_runner(success=True, has_unfixed_issues=False):
     """Create a mock ContainerRunner."""
     mock = MagicMock()

@@ -76,6 +76,8 @@ class TestPrdGenerationTraceContext:
         mock_jira.add_structured_comment = AsyncMock()
         mock_jira.update_description = AsyncMock()
         mock_jira.set_workflow_label = AsyncMock()
+        mock_jira.get_prd_proposals_repo = AsyncMock(return_value=None)
+        mock_jira.get_proposals_path = AsyncMock(return_value=None)
 
         mock_agent = MagicMock()
         mock_agent.close = AsyncMock()

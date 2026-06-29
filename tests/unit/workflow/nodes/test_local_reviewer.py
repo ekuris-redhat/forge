@@ -1,6 +1,6 @@
 """Unit tests for local_review_changes bug-specific enhancements."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -74,6 +74,17 @@ def _make_mock_git(has_changes=False):
     git.stage_all = MagicMock()
     git.commit = MagicMock()
     return git
+
+
+@pytest.fixture(autouse=True)
+def mock_jira_client_global():
+    """Globally patch JiraClient to prevent real API calls and hangs."""
+    mock = MagicMock()
+    mock.close = AsyncMock()
+    mock.add_comment = AsyncMock()
+    mock.get_issue = AsyncMock()
+    with patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock):
+        yield mock
 
 
 class TestParseBugVerdict:

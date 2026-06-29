@@ -70,6 +70,16 @@ def create_mock_workspace():
     return mock
 
 
+@pytest.fixture(autouse=True)
+def mock_generate_pr_body_global():
+    """Globally patch _generate_pr_body_with_agent to prevent real LLM calls and hangs."""
+    with patch(
+        "forge.workflow.nodes.pr_creation._generate_pr_body_with_agent",
+        return_value="## Mocked PR Body\n\n- Task 1",
+    ):
+        yield
+
+
 class TestPRNumberExtractionSuccess:
     """Test cases for successful PR number extraction from GitHub API response."""
 
@@ -134,7 +144,7 @@ class TestPRNumberExtractionSuccess:
             ),
             patch("forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock),
         ):
-            result = await create_pull_request(state)
+            await create_pull_request(state)
 
         # Verify Jira remote link uses PR number
         mock_jira.create_remote_link.assert_called_once()
@@ -168,7 +178,7 @@ class TestPRNumberExtractionSuccess:
             ),
             patch("forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock),
         ):
-            result = await create_pull_request(state)
+            await create_pull_request(state)
 
         # Verify info log includes PR number
         assert any(
@@ -279,7 +289,7 @@ class TestPRNumberExtractionMissing:
             ),
             patch("forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock),
         ):
-            result = await create_pull_request(state)
+            await create_pull_request(state)
 
         # Verify warning log includes diagnostic information
         warning_logs = [r for r in caplog.records if r.levelname == "WARNING"]
@@ -317,7 +327,7 @@ class TestPRNumberExtractionMissing:
             ),
             patch("forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock),
         ):
-            result = await create_pull_request(state)
+            await create_pull_request(state)
 
         # Verify Jira remote link uses generic label
         mock_jira.create_remote_link.assert_called_once()
@@ -352,7 +362,7 @@ class TestPRNumberExtractionMissing:
             ),
             patch("forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock),
         ):
-            result = await create_pull_request(state)
+            await create_pull_request(state)
 
         # Verify info log indicates number unavailable
         info_logs = [r for r in caplog.records if r.levelname == "INFO"]

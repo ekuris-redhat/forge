@@ -50,7 +50,7 @@ class TestEscalateToBlockedSetsIsBlocked:
 
         with (
             patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+            patch("forge.workflow.nodes.ci_evaluator.notify_error", AsyncMock()),
         ):
             result = await escalate_to_blocked(state_at_ci)
 
@@ -63,7 +63,7 @@ class TestEscalateToBlockedSetsIsBlocked:
 
         with (
             patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+            patch("forge.workflow.nodes.ci_evaluator.notify_error", AsyncMock()),
         ):
             result = await escalate_to_blocked(state_at_workspace)
 
@@ -80,7 +80,7 @@ class TestEscalateToBlockedPreservesCurrentNode:
 
         with (
             patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+            patch("forge.workflow.nodes.ci_evaluator.notify_error", AsyncMock()),
         ):
             result = await escalate_to_blocked(state_at_ci)
 
@@ -93,7 +93,7 @@ class TestEscalateToBlockedPreservesCurrentNode:
 
         with (
             patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+            patch("forge.workflow.nodes.ci_evaluator.notify_error", AsyncMock()),
         ):
             result = await escalate_to_blocked(state_at_workspace)
 
@@ -106,7 +106,7 @@ class TestEscalateToBlockedPreservesCurrentNode:
 
         with (
             patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+            patch("forge.workflow.nodes.ci_evaluator.notify_error", AsyncMock()),
         ):
             result = await escalate_to_blocked(state_at_ci)
 
@@ -124,7 +124,7 @@ class TestEscalateToBlockedExistingBehaviourUnchanged:
 
         with (
             patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+            patch("forge.workflow.nodes.ci_evaluator.notify_error", AsyncMock()),
         ):
             await escalate_to_blocked(state_at_ci)
 
@@ -139,7 +139,7 @@ class TestEscalateToBlockedExistingBehaviourUnchanged:
 
         with (
             patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+            patch("forge.workflow.nodes.ci_evaluator.notify_error", AsyncMock()),
         ):
             result = await escalate_to_blocked(state_at_ci)
 
