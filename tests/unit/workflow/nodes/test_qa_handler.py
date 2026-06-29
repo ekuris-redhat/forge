@@ -20,11 +20,20 @@ class TestExtractQuestionText:
 
     def test_strips_question_mark_prefix(self):
         """extract_question_text removes leading ? prefix."""
-        assert extract_question_text("?What is this feature about?") == "What is this feature about?"
+        assert (
+            extract_question_text("?What is this feature about?") == "What is this feature about?"
+        )
 
     def test_strips_question_mark_prefix_with_whitespace(self):
         """extract_question_text handles ? with leading/trailing whitespace."""
         assert extract_question_text("  ?  What is this?  ") == "What is this?"
+
+    def test_strips_multiple_question_mark_prefixes(self):
+        """extract_question_text removes multiple leading ? prefixes."""
+        assert (
+            extract_question_text("???What is this feature about?") == "What is this feature about?"
+        )
+        assert extract_question_text("  ???  What is this?  ") == "What is this?"
 
     def test_strips_at_forge_ask_prefix(self):
         """extract_question_text removes @forge ask prefix."""
@@ -523,6 +532,56 @@ class TestAnswerQuestion:
 
         mock_jira.add_comment.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_qa_response_does_not_alter_workflow_labels(self):
+        """Verify that Q&A response does not alter workflow labels."""
+        mock_jira = create_mock_jira_client()
+        mock_jira.set_workflow_label = AsyncMock()
+        mock_agent = create_mock_forge_agent()
+
+        state = create_initial_feature_state(
+            ticket_key="TEST-123",
+            ticket_type=TicketType.FEATURE,
+        )
+        state["feedback_comment"] = "?What does this feature do?"
+        state["current_node"] = "spec_approval_gate"
+        state["spec_content"] = "# Spec Content"
+        state["is_question"] = True
+
+        with (
+            patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent),
+        ):
+            await answer_question(state)
+
+        # Ensure set_workflow_label is never called
+        mock_jira.set_workflow_label.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_qa_response_does_not_regenerate_spec(self):
+        """Verify that Q&A response does not regenerate specs."""
+        mock_jira = create_mock_jira_client()
+        mock_agent = create_mock_forge_agent()
+        mock_agent.regenerate_with_feedback = AsyncMock()
+
+        state = create_initial_feature_state(
+            ticket_key="TEST-123",
+            ticket_type=TicketType.FEATURE,
+        )
+        state["feedback_comment"] = "?What does this feature do?"
+        state["current_node"] = "spec_approval_gate"
+        state["spec_content"] = "# Spec Content"
+        state["is_question"] = True
+
+        with (
+            patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent),
+        ):
+            await answer_question(state)
+
+        # Ensure regenerate_with_feedback is never called
+        mock_agent.regenerate_with_feedback.assert_not_called()
+
 
 class TestDetermineArtifactTypeBugGates:
     """Bug workflow gate artifact type detection."""
@@ -573,7 +632,6 @@ class TestGetArtifactContentBugGates:
     def test_rca_returns_rca_content(self):
         state = {"ticket_key": "BUG-1", "rca_content": "## Root Cause"}
         assert _get_artifact_content(state, "rca") == "## Root Cause"
-
 
 
 class TestAnswerQuestionBugGates:

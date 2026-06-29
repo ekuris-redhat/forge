@@ -53,13 +53,20 @@ def extract_question_text(comment: str) -> str:
     Returns:
         The question text without the prefix.
     """
-    text = comment.strip()
-    if text.startswith("?"):
-        return text[1:].strip()
-    lower = text.lower()
-    if lower.startswith("@forge ask"):
-        return text[10:].strip()
-    return text
+    if not comment:
+        return ""
+
+    comment = comment.strip()
+
+    import re
+
+    if re.match(r"^\?+", comment):
+        return re.sub(r"^\?+\s*", "", comment)
+
+    if re.match(r"^@forge\s+ask", comment, re.IGNORECASE):
+        return re.sub(r"^@forge\s+ask\s*", "", comment, flags=re.IGNORECASE)
+
+    return comment
 
 
 async def answer_question(state: WorkflowState) -> WorkflowState:

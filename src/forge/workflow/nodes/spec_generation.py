@@ -286,6 +286,10 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
         logger.warning(f"No feedback provided for spec regeneration on {ticket_key}")
         return state
 
+    from forge.workflow.utils.comment_classifier import strip_comment_prefix
+
+    feedback = strip_comment_prefix(feedback)
+
     logger.info(f"Regenerating spec for {ticket_key} with feedback")
 
     jira = JiraClient()
@@ -340,6 +344,9 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
                 ticket_key,
                 "Specification has been revised based on feedback. Please review.",
             )
+
+        # Preserve forge:spec-pending label
+        await jira.set_workflow_label(ticket_key, ForgeLabel.SPEC_PENDING)
 
         logger.info(f"Spec regenerated for {ticket_key} ({len(new_spec)} chars)")
 
