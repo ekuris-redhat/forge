@@ -4,7 +4,6 @@ These tests verify that AI responses are parsed correctly without calling real L
 They use realistic AI output samples to test extraction and parsing logic.
 """
 
-
 from forge.integrations.agents.agent import ForgeAgent
 
 
@@ -322,12 +321,7 @@ class TestExpandEnvVars:
         monkeypatch.setenv("API_TOKEN", "token123")
 
         config = {
-            "server": {
-                "url": "${BASE_URL}/v1",
-                "headers": {
-                    "Authorization": "Bearer ${API_TOKEN}"
-                }
-            }
+            "server": {"url": "${BASE_URL}/v1", "headers": {"Authorization": "Bearer ${API_TOKEN}"}}
         }
 
         result = agent._expand_env_vars(config)

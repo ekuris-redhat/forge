@@ -1,6 +1,5 @@
 """Unit tests for workflow models."""
 
-
 from forge.models.workflow import (
     ForgeLabel,
     JiraStatus,

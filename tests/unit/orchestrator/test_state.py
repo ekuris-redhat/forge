@@ -1,6 +1,5 @@
 """Unit tests for workflow state management."""
 
-
 from forge.models.workflow import TicketType
 from forge.workflow.bug.state import create_initial_bug_state
 from forge.workflow.feature.state import create_initial_feature_state as create_initial_state

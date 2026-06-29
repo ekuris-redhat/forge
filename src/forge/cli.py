@@ -356,7 +356,7 @@ async def cmd_list(_args: argparse.Namespace) -> int:
         while True:
             cursor, keys = await redis_client.scan(
                 cursor=cursor,
-                match="langgraph:checkpoint:*",
+                match="checkpoint:*",
                 count=100,
             )
 
@@ -364,8 +364,8 @@ async def cmd_list(_args: argparse.Namespace) -> int:
                 # Extract ticket ID from key
                 key_str = key.decode() if isinstance(key, bytes) else key
                 parts = key_str.split(":")
-                if len(parts) >= 3:
-                    ticket_id = parts[2]
+                if len(parts) >= 2:
+                    ticket_id = parts[1]
                     # Get checkpoint data
                     data = await redis_client.get(key)
                     if data:
@@ -447,7 +447,7 @@ async def cmd_logs(args: argparse.Namespace) -> int:
 
         if not logs:
             # Try to get checkpoint state for any info
-            checkpoint_key = f"langgraph:checkpoint:{args.ticket}"
+            checkpoint_key = f"checkpoint:{args.ticket}"
             data = await redis_client.get(checkpoint_key)
             if data:
                 print(f"No logs found, but checkpoint exists for {args.ticket}")

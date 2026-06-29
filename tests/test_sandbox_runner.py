@@ -21,6 +21,7 @@ class TestContainerRunner:
     def test_podman_exists(self):
         """Test podman is available."""
         import shutil
+
         assert shutil.which("podman") is not None
 
     @pytest.mark.asyncio
@@ -46,10 +47,14 @@ class TestContainerRunner:
 
             result = subprocess.run(
                 [
-                    "podman", "run", "--rm",
-                    "-v", f"{workspace}:/workspace:Z",
+                    "podman",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{workspace}:/workspace:Z",
                     "alpine:latest",
-                    "cat", "/workspace/test.txt",
+                    "cat",
+                    "/workspace/test.txt",
                 ],
                 capture_output=True,
                 text=True,

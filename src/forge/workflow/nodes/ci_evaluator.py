@@ -64,7 +64,7 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
     ci_fix_max = state.get("ci_fix_max_attempts", 5)
     settings = get_settings()
 
-    state = {**state, **record_stage_start(state, STAGE_CI, model_name=settings.llm_model)}
+    state = {**state, **record_stage_start(state, STAGE_CI, model_name=settings.container_model)}
     node_start = time.monotonic()
 
     if not pr_urls:
@@ -293,7 +293,7 @@ async def attempt_ci_fix(state: WorkflowState) -> WorkflowState:
     logger.info(f"Attempting CI fix for {ticket_key}")
 
     settings = get_settings()
-    state = {**state, **record_stage_start(state, STAGE_CI, model_name=settings.llm_model)}
+    state = {**state, **record_stage_start(state, STAGE_CI, model_name=settings.container_model)}
     state = {**state, **increment_revision(state, STAGE_CI)}
     node_start = time.monotonic()
 

@@ -90,9 +90,7 @@ def mock_github_client() -> MagicMock:
         }
     )
     mock.get_check_runs = AsyncMock(
-        return_value=[
-            {"name": "CI / Tests", "conclusion": "success", "status": "completed"}
-        ]
+        return_value=[{"name": "CI / Tests", "conclusion": "success", "status": "completed"}]
     )
     mock.create_issue_comment = AsyncMock()
     mock.create_review = AsyncMock()
@@ -106,9 +104,7 @@ def mock_github_client() -> MagicMock:
 def mock_forge_agent() -> MagicMock:
     """Create a mock ForgeAgent with all methods mocked."""
     mock = MagicMock()
-    mock.generate_prd = AsyncMock(
-        return_value="# PRD\n\n## Overview\nGenerated PRD content."
-    )
+    mock.generate_prd = AsyncMock(return_value="# PRD\n\n## Overview\nGenerated PRD content.")
     mock.generate_spec = AsyncMock(
         return_value="# Spec\n\n## User Stories\nGenerated spec content."
     )

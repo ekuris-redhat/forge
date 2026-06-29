@@ -16,9 +16,7 @@ class MockWorkflow(BaseWorkflow):
     def state_schema(self) -> type:
         return BaseState
 
-    def matches(
-        self, ticket_type: TicketType, _labels: list[str], _event: dict
-    ) -> bool:
+    def matches(self, ticket_type: TicketType, _labels: list[str], _event: dict) -> bool:
         return ticket_type == TicketType.FEATURE
 
     def build_graph(self) -> StateGraph:
@@ -38,9 +36,7 @@ class MockBugWorkflow(BaseWorkflow):
     def state_schema(self) -> type:
         return BaseState
 
-    def matches(
-        self, ticket_type: TicketType, _labels: list[str], _event: dict
-    ) -> bool:
+    def matches(self, ticket_type: TicketType, _labels: list[str], _event: dict) -> bool:
         return ticket_type == TicketType.BUG
 
     def build_graph(self) -> StateGraph:

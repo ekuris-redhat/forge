@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
+
+from forge.main import app
 from tests.fixtures.github_payloads import (
     WEBHOOK_CHECK_RUN_COMPLETED_FAILURE,
     WEBHOOK_CHECK_RUN_COMPLETED_SUCCESS,
     WEBHOOK_PULL_REQUEST_REVIEW_APPROVED,
 )
-
-from forge.main import app
 
 
 def compute_signature(payload: bytes, secret: str) -> str:
@@ -46,8 +46,7 @@ class TestGitHubWebhookRoute:
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.github.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app),
-                    base_url="http://test"
+                    transport=ASGITransport(app=app), base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/github",
@@ -72,8 +71,7 @@ class TestGitHubWebhookRoute:
 
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             async with AsyncClient(
-                transport=ASGITransport(app=app),
-                base_url="http://test"
+                transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
                 response = await client.post(
                     "/api/v1/webhooks/github",
@@ -97,8 +95,7 @@ class TestGitHubWebhookRoute:
 
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             async with AsyncClient(
-                transport=ASGITransport(app=app),
-                base_url="http://test"
+                transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
                 response = await client.post(
                     "/api/v1/webhooks/github",
@@ -127,8 +124,7 @@ class TestGitHubWebhookRoute:
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.github.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app),
-                    base_url="http://test"
+                    transport=ASGITransport(app=app), base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/github",
@@ -160,8 +156,7 @@ class TestGitHubWebhookRoute:
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.github.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app),
-                    base_url="http://test"
+                    transport=ASGITransport(app=app), base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/github",
@@ -193,8 +188,7 @@ class TestGitHubWebhookRoute:
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.github.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app),
-                    base_url="http://test"
+                    transport=ASGITransport(app=app), base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/github",
@@ -224,8 +218,12 @@ class TestGitHubWebhookParsing:
         """Extract check run conclusion."""
         from forge.integrations.github.webhooks import parse_github_webhook
 
-        success_data = parse_github_webhook(WEBHOOK_CHECK_RUN_COMPLETED_SUCCESS, "check_run", "evt-001")
-        failure_data = parse_github_webhook(WEBHOOK_CHECK_RUN_COMPLETED_FAILURE, "check_run", "evt-002")
+        success_data = parse_github_webhook(
+            WEBHOOK_CHECK_RUN_COMPLETED_SUCCESS, "check_run", "evt-001"
+        )
+        failure_data = parse_github_webhook(
+            WEBHOOK_CHECK_RUN_COMPLETED_FAILURE, "check_run", "evt-002"
+        )
 
         assert success_data.check_conclusion == "success"
         assert failure_data.check_conclusion == "failure"

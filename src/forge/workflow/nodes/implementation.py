@@ -22,7 +22,12 @@ from forge.sandbox import ContainerRunner
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.nodes.error_handler import notify_error
 from forge.workflow.stats import STAGE_IMPLEMENTATION
-from forge.workflow.stats_utils import record_stage_end, record_stage_start, record_tokens
+from forge.workflow.stats_utils import (
+    increment_revision,
+    record_stage_end,
+    record_stage_start,
+    record_tokens,
+)
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import post_status_comment
 from forge.workspace.git_ops import GitOperations
@@ -124,6 +129,11 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
         **state,
         **record_stage_start(state, STAGE_IMPLEMENTATION, model_name=settings.llm_model),
     }
+    if state.get("retry_count", 0) > 0:
+        state = {
+            **state,
+            **increment_revision(state, STAGE_IMPLEMENTATION),
+        }
     node_start = time.monotonic()
 
     jira = JiraClient(settings)

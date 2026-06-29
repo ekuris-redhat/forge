@@ -200,14 +200,13 @@ def mock_jira_responses() -> MagicMock:
 def _build_redis_mock(checkpoints: dict[str, dict]) -> MagicMock:
     """Build a mock Redis client returning checkpoints keyed by Redis pattern.
 
-    The checkpoint key format is ``langgraph:checkpoint:{ticket_key}``.
+    The checkpoint key format is ``checkpoint:{ticket_key}``.
     The ``scan`` mock is pattern-aware so only matching keys are returned.
     """
     redis = MagicMock()
 
     key_map: dict[str, str] = {
-        f"langgraph:checkpoint:{ticket_key}": json.dumps(state)
-        for ticket_key, state in checkpoints.items()
+        f"checkpoint:{ticket_key}": json.dumps(state) for ticket_key, state in checkpoints.items()
     }
 
     async def _scan(cursor: int, match: str, count: int) -> tuple[int, list[str]]:
@@ -632,8 +631,8 @@ class TestCollectWeeklyDataFiltersByProject:
 
         redis = MagicMock()
         key_map = {
-            "langgraph:checkpoint:PROJ-1": json.dumps(proj_checkpoint),
-            "langgraph:checkpoint:OTHER-1": json.dumps(other_checkpoint),
+            "checkpoint:PROJ-1": json.dumps(proj_checkpoint),
+            "checkpoint:OTHER-1": json.dumps(other_checkpoint),
         }
 
         async def _scan(cursor: int, match: str, count: int) -> tuple[int, list[str]]:
@@ -674,8 +673,8 @@ class TestCollectWeeklyDataFiltersByProject:
 
         redis = MagicMock()
         key_map = {
-            "langgraph:checkpoint:PROJ-1": json.dumps(proj_checkpoint),
-            "langgraph:checkpoint:OTHER-1": json.dumps(other_checkpoint),
+            "checkpoint:PROJ-1": json.dumps(proj_checkpoint),
+            "checkpoint:OTHER-1": json.dumps(other_checkpoint),
         }
 
         async def _scan(cursor: int, match: str, count: int) -> tuple[int, list[str]]:

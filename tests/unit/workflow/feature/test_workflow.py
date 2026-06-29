@@ -1,6 +1,5 @@
 """Tests for FeatureWorkflow."""
 
-
 from langgraph.graph import END
 
 from forge.models.workflow import TicketType

@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from tests.fixtures.workflow_states import make_workflow_state
 
 
@@ -29,10 +30,12 @@ def mock_jira():
     jira = MagicMock()
     jira.set_workflow_label = AsyncMock()
     jira.add_comment = AsyncMock()
-    jira.get_issue = AsyncMock(return_value=MagicMock(
-        reporter="reporter@example.com",
-        assignee="assignee@example.com",
-    ))
+    jira.get_issue = AsyncMock(
+        return_value=MagicMock(
+            reporter="reporter@example.com",
+            assignee="assignee@example.com",
+        )
+    )
     jira.close = AsyncMock()
     return jira
 
@@ -45,8 +48,10 @@ class TestEscalateToBlockedSetsIsBlocked:
         """Result state has is_blocked=True."""
         from forge.workflow.nodes.ci_evaluator import escalate_to_blocked
 
-        with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira), \
-             patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()):
+        with (
+            patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+        ):
             result = await escalate_to_blocked(state_at_ci)
 
         assert result.get("is_blocked") is True
@@ -56,8 +61,10 @@ class TestEscalateToBlockedSetsIsBlocked:
         """is_blocked=True regardless of which node triggered escalation."""
         from forge.workflow.nodes.ci_evaluator import escalate_to_blocked
 
-        with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira), \
-             patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()):
+        with (
+            patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+        ):
             result = await escalate_to_blocked(state_at_workspace)
 
         assert result.get("is_blocked") is True
@@ -71,8 +78,10 @@ class TestEscalateToBlockedPreservesCurrentNode:
         """current_node stays 'ci_evaluator' after CI exhaustion escalation."""
         from forge.workflow.nodes.ci_evaluator import escalate_to_blocked
 
-        with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira), \
-             patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()):
+        with (
+            patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+        ):
             result = await escalate_to_blocked(state_at_ci)
 
         assert result["current_node"] == "ci_evaluator"
@@ -82,8 +91,10 @@ class TestEscalateToBlockedPreservesCurrentNode:
         """current_node stays 'setup_workspace' after workspace failure."""
         from forge.workflow.nodes.ci_evaluator import escalate_to_blocked
 
-        with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira), \
-             patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()):
+        with (
+            patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+        ):
             result = await escalate_to_blocked(state_at_workspace)
 
         assert result["current_node"] == "setup_workspace"
@@ -93,8 +104,10 @@ class TestEscalateToBlockedPreservesCurrentNode:
         """current_node must never be set to 'complete' by escalation."""
         from forge.workflow.nodes.ci_evaluator import escalate_to_blocked
 
-        with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira), \
-             patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()):
+        with (
+            patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+        ):
             result = await escalate_to_blocked(state_at_ci)
 
         assert result["current_node"] != "complete"
@@ -109,8 +122,10 @@ class TestEscalateToBlockedExistingBehaviourUnchanged:
         from forge.models.workflow import ForgeLabel
         from forge.workflow.nodes.ci_evaluator import escalate_to_blocked
 
-        with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira), \
-             patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()):
+        with (
+            patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+        ):
             await escalate_to_blocked(state_at_ci)
 
         mock_jira.set_workflow_label.assert_called_once_with(
@@ -122,8 +137,10 @@ class TestEscalateToBlockedExistingBehaviourUnchanged:
         """ci_status is set to 'blocked' in the returned state."""
         from forge.workflow.nodes.ci_evaluator import escalate_to_blocked
 
-        with patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira), \
-             patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()):
+        with (
+            patch("forge.workflow.nodes.ci_evaluator.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.error_handler.notify_error", AsyncMock()),
+        ):
             result = await escalate_to_blocked(state_at_ci)
 
         assert result.get("ci_status") == "blocked"

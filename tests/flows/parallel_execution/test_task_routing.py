@@ -26,8 +26,11 @@ class TestTaskRouterByRepo:
             tasks_by_repo={"org/backend": ["TEST-200", "TEST-201"]},
         )
 
-        with patch("forge.workflow.nodes.task_router.update_state_timestamp", side_effect=lambda s: s):
+        with patch(
+            "forge.workflow.nodes.task_router.update_state_timestamp", side_effect=lambda s: s
+        ):
             from forge.workflow.nodes.task_router import route_tasks_by_repo
+
             result = await route_tasks_by_repo(state)
 
         assert result["repos_to_process"] == ["org/backend"]
@@ -46,8 +49,11 @@ class TestTaskRouterByRepo:
             },
         )
 
-        with patch("forge.workflow.nodes.task_router.update_state_timestamp", side_effect=lambda s: s):
+        with patch(
+            "forge.workflow.nodes.task_router.update_state_timestamp", side_effect=lambda s: s
+        ):
             from forge.workflow.nodes.task_router import route_tasks_by_repo
+
             result = await route_tasks_by_repo(state)
 
         assert len(result["repos_to_process"]) == 2
@@ -62,8 +68,11 @@ class TestTaskRouterByRepo:
             tasks_by_repo={},
         )
 
-        with patch("forge.workflow.nodes.task_router.update_state_timestamp", side_effect=lambda s: s):
+        with patch(
+            "forge.workflow.nodes.task_router.update_state_timestamp", side_effect=lambda s: s
+        ):
             from forge.workflow.nodes.task_router import route_tasks_by_repo
+
             result = await route_tasks_by_repo(state)
 
         assert result["last_error"] is not None

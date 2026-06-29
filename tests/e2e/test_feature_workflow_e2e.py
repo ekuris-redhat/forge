@@ -227,9 +227,10 @@ class TestFeatureWorkflowE2E:
                 ticket_type=TicketType.FEATURE,
             )
 
-            with patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira, \
-                 patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent:
-
+            with (
+                patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira,
+                patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent,
+            ):
                 MockJira.return_value = mock_jira_client
                 MockAgent.return_value = mock_agent
 
@@ -285,6 +286,7 @@ class TestFeatureWorkflowE2E:
         }
 
         from langgraph.graph import END
+
         route = route_prd_approval(state_waiting)
         assert route == END, "Waiting PRD should return END (pause)"
 
@@ -313,9 +315,10 @@ class TestFeatureWorkflowE2E:
                 ticket_type=TicketType.FEATURE,
             )
 
-            with patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira, \
-                 patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent:
-
+            with (
+                patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira,
+                patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent,
+            ):
                 MockJira.return_value = mock_jira_client
                 MockAgent.return_value = mock_agent
 
@@ -330,12 +333,11 @@ class TestFeatureWorkflowE2E:
 
                 # Verify timestamps are valid ISO format
                 from datetime import datetime
+
                 datetime.fromisoformat(result["created_at"])
                 datetime.fromisoformat(result["updated_at"])
 
-    async def test_error_handling_preserves_state(
-        self, temp_checkpoint_db, mock_jira_client
-    ):
+    async def test_error_handling_preserves_state(self, temp_checkpoint_db, mock_jira_client):
         """Errors should be captured in state without losing progress."""
         async with AsyncSqliteSaver.from_conn_string(str(temp_checkpoint_db)) as checkpointer:
             workflow = compile_workflow(checkpointer=checkpointer)
@@ -353,9 +355,10 @@ class TestFeatureWorkflowE2E:
             )
             mock_failing_agent.close = AsyncMock()
 
-            with patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira, \
-                 patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent:
-
+            with (
+                patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira,
+                patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent,
+            ):
                 MockJira.return_value = mock_jira_client
                 MockAgent.return_value = mock_failing_agent
 
@@ -376,7 +379,9 @@ class TestFeatureWorkflowE2E:
 class TestWorkflowCheckpointing:
     """Test checkpoint persistence and recovery."""
 
-    async def test_checkpoint_survives_restart(self, temp_checkpoint_db, mock_jira_client, mock_agent):
+    async def test_checkpoint_survives_restart(
+        self, temp_checkpoint_db, mock_jira_client, mock_agent
+    ):
         """Checkpointed state should survive 'restart' (new checkpointer instance)."""
         config = {"configurable": {"thread_id": "PERSIST-123"}}
 
@@ -390,9 +395,10 @@ class TestWorkflowCheckpointing:
                 ticket_type=TicketType.FEATURE,
             )
 
-            with patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira, \
-                 patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent:
-
+            with (
+                patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira,
+                patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent,
+            ):
                 MockJira.return_value = mock_jira_client
                 MockAgent.return_value = mock_agent
 
@@ -414,7 +420,9 @@ class TestWorkflowCheckpointing:
 class TestWorkflowRouting:
     """Test workflow routing decisions."""
 
-    async def test_revision_requested_routes_to_regenerate(self, temp_checkpoint_db, mock_jira_client, mock_agent):
+    async def test_revision_requested_routes_to_regenerate(
+        self, temp_checkpoint_db, mock_jira_client, mock_agent
+    ):
         """When revision is requested, workflow routes to regenerate node."""
         from forge.orchestrator.gates import route_prd_approval
 

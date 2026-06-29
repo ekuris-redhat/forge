@@ -20,7 +20,9 @@ class TestExtractQuestionText:
 
     def test_strips_question_mark_prefix(self):
         """extract_question_text removes leading ? prefix."""
-        assert extract_question_text("?What is this feature about?") == "What is this feature about?"
+        assert (
+            extract_question_text("?What is this feature about?") == "What is this feature about?"
+        )
 
     def test_strips_question_mark_prefix_with_whitespace(self):
         """extract_question_text handles ? with leading/trailing whitespace."""
@@ -573,7 +575,6 @@ class TestGetArtifactContentBugGates:
     def test_rca_returns_rca_content(self):
         state = {"ticket_key": "BUG-1", "rca_content": "## Root Cause"}
         assert _get_artifact_content(state, "rca") == "## Root Cause"
-
 
 
 class TestAnswerQuestionBugGates:

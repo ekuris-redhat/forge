@@ -654,8 +654,8 @@ def _redis_mock_with_data():
     """Fixture providing a Redis mock with two checkpoints in the window."""
     ticket1 = "AISOS-1"
     ticket2 = "AISOS-2"
-    key1 = f"langgraph:checkpoint:{ticket1}"
-    key2 = f"langgraph:checkpoint:{ticket2}"
+    key1 = f"checkpoint:{ticket1}"
+    key2 = f"checkpoint:{ticket2}"
     state1 = _make_state(
         ticket_key=ticket1,
         workflow_outcome="Completed",
@@ -812,7 +812,7 @@ class TestCollectWeeklyData:
     @pytest.mark.asyncio
     async def test_tickets_outside_window_excluded(self) -> None:
         ticket_key = "AISOS-99"
-        redis_key = f"langgraph:checkpoint:{ticket_key}"
+        redis_key = f"checkpoint:{ticket_key}"
         # All timestamps are two weeks ago — outside a 7-day window
         old_state = _make_state(
             ticket_key=ticket_key,
@@ -836,7 +836,7 @@ class TestCollectWeeklyData:
     @pytest.mark.asyncio
     async def test_blocked_ticket_categorised(self) -> None:
         ticket_key = "AISOS-77"
-        redis_key = f"langgraph:checkpoint:{ticket_key}"
+        redis_key = f"checkpoint:{ticket_key}"
         state = _make_state(
             ticket_key=ticket_key,
             workflow_outcome=None,
@@ -857,7 +857,7 @@ class TestCollectWeeklyData:
 
     @pytest.mark.asyncio
     async def test_malformed_json_skipped(self) -> None:
-        redis_key = "langgraph:checkpoint:AISOS-BAD"
+        redis_key = "checkpoint:AISOS-BAD"
         mock = MagicMock()
 
         async def scan_side_effect(cursor, match, count):
@@ -932,7 +932,7 @@ class TestCollectWeeklyData:
 
     @pytest.mark.asyncio
     async def test_null_value_from_redis_skipped(self) -> None:
-        redis_key = "langgraph:checkpoint:AISOS-NULL"
+        redis_key = "checkpoint:AISOS-NULL"
         mock = MagicMock()
 
         async def scan_side_effect(cursor, match, count):

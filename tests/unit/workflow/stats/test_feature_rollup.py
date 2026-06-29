@@ -634,7 +634,7 @@ class TestCollectWeeklyDataFeatureRollups:
         mock_jira.get_issue = AsyncMock(side_effect=[task_issue, feature_issue, feature_issue])
         mock_jira.close = AsyncMock()
 
-        redis_key = "langgraph:checkpoint:AISOS-100"
+        redis_key = "checkpoint:AISOS-100"
         redis_state = _make_state("AISOS-100")
 
         async def _scan(cursor, **_kwargs):
@@ -664,7 +664,7 @@ class TestCollectWeeklyDataFeatureRollups:
         mock_jira.get_issue = AsyncMock(return_value=task_issue)
         mock_jira.close = AsyncMock()
 
-        redis_key = "langgraph:checkpoint:AISOS-100"
+        redis_key = "checkpoint:AISOS-100"
         redis_state = _make_state("AISOS-100")
 
         async def _scan(cursor, **_kwargs):

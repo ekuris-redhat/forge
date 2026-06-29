@@ -115,7 +115,9 @@ class TestDecomposeEpicsRepoResolution:
             patch("forge.workflow.nodes.epic_decomposition.JiraClient") as MockJira,
             patch("forge.workflow.nodes.epic_decomposition.ForgeAgent") as MockAgent,
             patch("forge.workflow.nodes.epic_decomposition.post_qa_summary_if_needed"),
-            patch("forge.workflow.nodes.epic_decomposition.get_settings", return_value=mock_settings),
+            patch(
+                "forge.workflow.nodes.epic_decomposition.get_settings", return_value=mock_settings
+            ),
         ):
             mock_jira = AsyncMock()
             MockJira.return_value = mock_jira
@@ -136,9 +138,7 @@ class TestDecomposeEpicsRepoResolution:
         assert "forge.repos" in comment_text
         assert "forge:retry" in comment_text
 
-        mock_jira.set_workflow_label.assert_called_once_with(
-            "MYPROJ-1", ForgeLabel.BLOCKED
-        )
+        mock_jira.set_workflow_label.assert_called_once_with("MYPROJ-1", ForgeLabel.BLOCKED)
 
         assert result["last_error"]
         assert result["current_node"] == "decompose_epics"
@@ -153,7 +153,9 @@ class TestDecomposeEpicsRepoResolution:
             patch("forge.workflow.nodes.epic_decomposition.JiraClient") as MockJira,
             patch("forge.workflow.nodes.epic_decomposition.ForgeAgent") as MockAgent,
             patch("forge.workflow.nodes.epic_decomposition.post_qa_summary_if_needed"),
-            patch("forge.workflow.nodes.epic_decomposition.get_settings", return_value=mock_settings),
+            patch(
+                "forge.workflow.nodes.epic_decomposition.get_settings", return_value=mock_settings
+            ),
         ):
             mock_jira = AsyncMock()
             MockJira.return_value = mock_jira
@@ -171,9 +173,7 @@ class TestDecomposeEpicsRepoResolution:
 
             result = await decompose_epics(base_state)
 
-        mock_jira.set_workflow_label.assert_called_once_with(
-            "MYPROJ-1", ForgeLabel.BLOCKED
-        )
+        mock_jira.set_workflow_label.assert_called_once_with("MYPROJ-1", ForgeLabel.BLOCKED)
         assert result["last_error"]
 
 

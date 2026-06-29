@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 #: Prefix used by langgraph-checkpoint-redis for checkpoint storage.
-_CHECKPOINT_KEY_PREFIX = "langgraph:checkpoint:"
+_CHECKPOINT_KEY_PREFIX = "checkpoint:"
 
 
 # ---------------------------------------------------------------------------

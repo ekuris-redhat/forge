@@ -110,7 +110,11 @@ class TestBugStateNewFields:
         state["rca_options"] = [{"title": "Fix A", "description": "desc", "tradeoffs": "none"}]
         state["reproducibility_assessment"] = "Unit test feasible"
         state["selected_fix_option"] = 1
-        state["selected_fix_approach"] = {"title": "Fix A", "description": "desc", "tradeoffs": "none"}
+        state["selected_fix_approach"] = {
+            "title": "Fix A",
+            "description": "desc",
+            "tradeoffs": "none",
+        }
         state["plan_content"] = "## Plan\nChange src/auth.py"
         state["linked_task_keys"] = ["BUG-2", "BUG-3"]
         state["local_review_verdict"] = "adequate"

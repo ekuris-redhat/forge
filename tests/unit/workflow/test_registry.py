@@ -1,6 +1,5 @@
 """Tests for workflow registry."""
 
-
 from forge.models.workflow import TicketType
 
 

@@ -194,13 +194,13 @@ class TestPromptEdgeCases:
         """Variables with special characters should be handled."""
         result = load_prompt(
             "generate-prd",
-            raw_requirements="Test with $pecial ch@racters & symbols < > \"quotes\"",
+            raw_requirements='Test with $pecial ch@racters & symbols < > "quotes"',
             context="Normal context",
         )
 
         assert "$pecial" in result
         assert "ch@racters" in result
-        assert "\"quotes\"" in result
+        assert '"quotes"' in result
 
     def test_prompt_with_multiline_value(self):
         """Multiline variable values should be preserved."""
@@ -237,7 +237,7 @@ Line 3 with indent
         # This documents current behavior
         result = load_prompt(
             "generate-prd",
-            raw_requirements="JSON: {\"key\": \"value\"}",
+            raw_requirements='JSON: {"key": "value"}',
             context="Normal",
         )
 

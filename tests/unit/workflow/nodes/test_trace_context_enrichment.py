@@ -354,9 +354,7 @@ class TestEpicDecompositionTraceContext:
 
         mock_jira = MagicMock()
         mock_jira.close = AsyncMock()
-        mock_jira.get_issue = AsyncMock(
-            return_value=MagicMock(description="Original epic")
-        )
+        mock_jira.get_issue = AsyncMock(return_value=MagicMock(description="Original epic"))
         mock_jira.update_description = AsyncMock()
         mock_jira.add_comment = AsyncMock()
 
@@ -404,9 +402,7 @@ class TestTaskGenerationTraceContext:
 
         mock_jira = MagicMock()
         mock_jira.close = AsyncMock()
-        mock_jira.get_issue = AsyncMock(
-            return_value=MagicMock(description="Original task")
-        )
+        mock_jira.get_issue = AsyncMock(return_value=MagicMock(description="Original task"))
         mock_jira.update_description = AsyncMock()
         mock_jira.add_comment = AsyncMock()
 

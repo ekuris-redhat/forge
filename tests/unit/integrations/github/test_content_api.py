@@ -171,9 +171,7 @@ class TestGetFileContents:
         response = MagicMock()
         response.status_code = 404
         response.raise_for_status = MagicMock(
-            side_effect=httpx.HTTPStatusError(
-                "Not Found", request=MagicMock(), response=response
-            )
+            side_effect=httpx.HTTPStatusError("Not Found", request=MagicMock(), response=response)
         )
         mock_client.get = AsyncMock(return_value=response)
 

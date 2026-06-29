@@ -158,9 +158,10 @@ class TestFeatureWorkflowExecution:
             )
 
             # Mock external dependencies
-            with patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira, \
-                 patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent:
-
+            with (
+                patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira,
+                patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent,
+            ):
                 MockJira.return_value = mock_jira_client
                 MockAgent.return_value = mock_agent
 
@@ -195,9 +196,10 @@ class TestFeatureWorkflowExecution:
                 ticket_type=TicketType.FEATURE,
             )
 
-            with patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira, \
-                 patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent:
-
+            with (
+                patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira,
+                patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent,
+            ):
                 MockJira.return_value = mock_jira_client
                 MockAgent.return_value = mock_agent
 
@@ -224,6 +226,7 @@ class TestBugWorkflowExecution:
         """Bug workflow should generate RCA and pause at approval gate."""
         # Update mock for bug issue
         from forge.integrations.jira.models import JiraIssue
+
         mock_jira_client.get_issue = AsyncMock(
             return_value=JiraIssue(
                 key="BUG-456",
@@ -245,10 +248,11 @@ class TestBugWorkflowExecution:
                 ticket_type=TicketType.BUG,
             )
 
-            with patch("forge.workflow.nodes.bug_workflow.JiraClient") as MockJira, \
-                 patch("forge.workflow.nodes.bug_workflow.ForgeAgent") as MockAgent, \
-                 patch("forge.workflow.nodes.bug_workflow.get_settings") as mock_settings:
-
+            with (
+                patch("forge.workflow.nodes.bug_workflow.JiraClient") as MockJira,
+                patch("forge.workflow.nodes.bug_workflow.ForgeAgent") as MockAgent,
+                patch("forge.workflow.nodes.bug_workflow.get_settings") as mock_settings,
+            ):
                 MockJira.return_value = mock_jira_client
                 MockAgent.return_value = mock_agent
                 mock_settings.return_value = MagicMock()
@@ -282,9 +286,10 @@ class TestWorkflowResumption:
                 ticket_type=TicketType.FEATURE,
             )
 
-            with patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira, \
-                 patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent:
-
+            with (
+                patch("forge.workflow.nodes.prd_generation.JiraClient") as MockJira,
+                patch("forge.workflow.nodes.prd_generation.ForgeAgent") as MockAgent,
+            ):
                 MockJira.return_value = mock_jira_client
                 MockAgent.return_value = mock_agent
 

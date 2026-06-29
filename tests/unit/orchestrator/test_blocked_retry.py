@@ -54,7 +54,6 @@ def _make_retry_message(base: QueueMessage) -> QueueMessage:
     )
 
 
-
 class TestWorkerTerminalBlockedCheck:
     """Worker skips invocation when is_blocked=True, same as terminal nodes."""
 
@@ -78,10 +77,9 @@ class TestWorkerTerminalBlockedCheck:
             mock_state.values = blocked_state
 
             terminal_nodes = ("complete", "complete_tasks", "aggregate_feature_status")
-            is_terminal_or_blocked = (
-                blocked_state.get("current_node") in terminal_nodes
-                or blocked_state.get("is_blocked", False)
-            )
+            is_terminal_or_blocked = blocked_state.get(
+                "current_node"
+            ) in terminal_nodes or blocked_state.get("is_blocked", False)
 
             if is_terminal_or_blocked:
                 return  # skipped
@@ -103,9 +101,8 @@ class TestWorkerTerminalBlockedCheck:
         }
 
         terminal_nodes = ("complete", "complete_tasks", "aggregate_feature_status")
-        is_terminal_or_blocked = (
-            state.get("current_node") in terminal_nodes
-            or state.get("is_blocked", False)
+        is_terminal_or_blocked = state.get("current_node") in terminal_nodes or state.get(
+            "is_blocked", False
         )
 
         assert is_terminal_or_blocked is False
@@ -130,9 +127,7 @@ class TestRetryHandlerClearsBlockedState:
             "context": {},
         }
 
-        result = await worker._handle_resume_event(
-            _make_retry_message(base_message), blocked_state
-        )
+        result = await worker._handle_resume_event(_make_retry_message(base_message), blocked_state)
 
         assert result.get("is_blocked") is False
 
@@ -152,9 +147,7 @@ class TestRetryHandlerClearsBlockedState:
             "context": {},
         }
 
-        result = await worker._handle_resume_event(
-            _make_retry_message(base_message), blocked_state
-        )
+        result = await worker._handle_resume_event(_make_retry_message(base_message), blocked_state)
 
         assert result.get("ci_fix_attempt") == 0
 
@@ -174,9 +167,7 @@ class TestRetryHandlerClearsBlockedState:
             "context": {},
         }
 
-        result = await worker._handle_resume_event(
-            _make_retry_message(base_message), blocked_state
-        )
+        result = await worker._handle_resume_event(_make_retry_message(base_message), blocked_state)
 
         assert result.get("last_error") is None
 
@@ -196,9 +187,7 @@ class TestRetryHandlerClearsBlockedState:
             "context": {},
         }
 
-        result = await worker._handle_resume_event(
-            _make_retry_message(base_message), blocked_state
-        )
+        result = await worker._handle_resume_event(_make_retry_message(base_message), blocked_state)
 
         assert result.get("current_node") == "ci_evaluator"
 
@@ -218,9 +207,7 @@ class TestRetryHandlerClearsBlockedState:
             "context": {},
         }
 
-        result = await worker._handle_resume_event(
-            _make_retry_message(base_message), blocked_state
-        )
+        result = await worker._handle_resume_event(_make_retry_message(base_message), blocked_state)
 
         assert result.get("context", {}).get("force_fresh_invoke") is True
 
@@ -244,9 +231,7 @@ class TestRetryOnStuckNonTerminalNode:
             "context": {},
         }
 
-        result = await worker._handle_resume_event(
-            _make_retry_message(base_message), stuck_state
-        )
+        result = await worker._handle_resume_event(_make_retry_message(base_message), stuck_state)
 
         assert result.get("is_paused") is False
         assert result.get("last_error") is None
