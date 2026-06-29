@@ -22,6 +22,184 @@
   transform: scale(1.1);
 }
 
+/* Responsive navigation breakpoint at 1220px (76.25em) */
+@media screen and (min-width: 76.25em) {
+  .custom-hamburger {
+    display: none !important; /* Hide hamburger on desktop */
+  }
+  .md-sidebar--primary {
+    display: block !important;
+  }
+}
+
+@media screen and (max-width: 76.24em) {
+  /* Hide the default theme hamburger and label */
+  label[for="__drawer"] {
+    display: none !important;
+  }
+
+  .custom-hamburger {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    cursor: pointer;
+    margin-right: 1rem;
+    position: relative;
+    z-index: 100;
+  }
+  
+  /* Hamburger icon style: 3 bars */
+  .custom-hamburger__icon,
+  .custom-hamburger__icon::before,
+  .custom-hamburger__icon::after {
+    display: block;
+    width: 1.2rem;
+    height: 2px;
+    background-color: currentColor;
+    position: absolute;
+    transition: transform 0.2s ease, top 0.2s ease;
+  }
+  
+  .custom-hamburger__icon {
+    position: relative;
+  }
+
+  .custom-hamburger__icon::before {
+    content: "";
+    top: -6px;
+    left: 0;
+  }
+  
+  .custom-hamburger__icon::after {
+    content: "";
+    top: 6px;
+    left: 0;
+  }
+  
+  /* Transform to X when checked */
+  #custom-menu-toggle-cb:checked ~ header .custom-hamburger__icon {
+    background-color: transparent !important;
+  }
+  
+  #custom-menu-toggle-cb:checked ~ header .custom-hamburger__icon::before {
+    top: 0;
+    transform: rotate(45deg);
+  }
+  
+  #custom-menu-toggle-cb:checked ~ header .custom-hamburger__icon::after {
+    top: 0;
+    transform: rotate(-45deg);
+  }
+
+  /* Mobile Dropdown/Drawer Menu */
+  .md-sidebar--primary {
+    position: fixed;
+    top: 2.4rem; /* Just below header */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--md-default-bg-color, #ffffff);
+    z-index: 10;
+    display: none !important; /* Hidden by default */
+    padding: 1rem;
+    overflow-y: auto;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    transition: opacity 0.2s ease-in-out;
+  }
+  
+  /* Show when checkbox is checked */
+  #custom-menu-toggle-cb:checked ~ .md-container .md-sidebar--primary {
+    display: block !important;
+  }
+}
+
+/* Custom navigation menu styles */
+.custom-nav {
+  padding: 0.5rem;
+}
+
+.custom-nav__list, .custom-nav__sublist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.custom-nav__item {
+  margin-bottom: 0.5rem;
+}
+
+.custom-nav__link {
+  display: block;
+  padding: 0.4rem 0.8rem;
+  color: var(--md-default-fg-color, #3c3c3c);
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.custom-nav__link:hover {
+  background-color: rgba(79, 70, 229, 0.08); /* Transparent primary color */
+  color: var(--md-primary-color);
+}
+
+.custom-nav__link--active {
+  background-color: rgba(79, 70, 229, 0.12) !important;
+  color: var(--md-primary-color) !important;
+  font-weight: 700;
+}
+
+/* Section headings / Details styling */
+.custom-nav__details {
+  border: none;
+}
+
+.custom-nav__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--md-default-fg-color, #1e1e24);
+  list-style: none; /* Hide default arrow */
+}
+
+.custom-nav__summary::-webkit-details-marker {
+  display: none; /* Hide default arrow in Safari */
+}
+
+/* Custom indicator icon for nested menus */
+.custom-nav__icon {
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(135deg);
+  transition: transform 0.2s ease;
+  margin-right: 4px;
+}
+
+.custom-nav__details[open] .custom-nav__icon {
+  transform: rotate(-45deg);
+}
+
+.custom-nav__sublist {
+  padding-left: 1rem;
+  margin-top: 0.25rem;
+  border-left: 1px solid rgba(79, 70, 229, 0.2);
+}
+
+/* Color adaptations for dark scheme */
+[data-md-color-scheme="slate"] .md-sidebar--primary {
+  background-color: #1e1e24; /* Slate dark background */
+}
+
 /* Mermaid diagram centering and responsiveness */
 .mermaid {
   display: flex;

@@ -106,6 +106,7 @@
     {% set features = config.theme.features or [] %}
     <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
     <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <input class="custom-menu-toggle" type="checkbox" id="custom-menu-toggle-cb" style="display: none;" autocomplete="off">
     <label class="md-overlay" for="__drawer" aria-label="{{ lang.t('nav') }}"></label>
     <div data-md-component="skip">
       {% if page.toc | first is defined %}
@@ -150,7 +151,74 @@
       </div>
     {% endif %}
     {% block header %}
-      {% include "partials/header.html" %}
+      {% set class = "md-header" %}
+      {% if "navigation.tabs.sticky" in features %}
+        {% set class = class ~ " md-header--shadow md-header--lifted" %}
+      {% elif "navigation.tabs" not in features %}
+        {% set class = class ~ " md-header--shadow" %}
+      {% endif %}
+      <header class="{{ class }}" data-md-component="header">
+        <nav class="md-header__inner md-grid" aria-label="{{ lang.t('header') }}">
+          <a href="{{ config.extra.homepage | d(nav.homepage.url, true) | url }}" title="{{ config.site_name | e }}" class="md-header__button md-logo" aria-label="{{ config.site_name }}" data-md-component="logo">
+            {% include "partials/logo.html" %}
+          </a>
+          
+          {# Custom mobile menu hamburger toggle #}
+          <label class="custom-hamburger md-header__button md-icon" for="custom-menu-toggle-cb" aria-label="Toggle navigation menu">
+            <span class="custom-hamburger__icon"></span>
+          </label>
+
+          <div class="md-header__title" data-md-component="header-title">
+            <div class="md-header__ellipsis">
+              <div class="md-header__topic">
+                <span class="md-ellipsis">
+                  {{ config.site_name }}
+                </span>
+              </div>
+              <div class="md-header__topic" data-md-component="header-topic">
+                <span class="md-ellipsis">
+                  {% if page.meta and page.meta.title %}
+                    {{ page.meta.title }}
+                  {% else %}
+                    {{ page.title }}
+                  {% endif %}
+                </span>
+              </div>
+            </div>
+          </div>
+          {% if config.theme.palette %}
+            {% if not config.theme.palette is mapping %}
+              {% include "partials/palette.html" %}
+            {% endif %}
+          {% endif %}
+          {% if not config.theme.palette is mapping %}
+            {% include "partials/javascripts/palette.html" %}
+          {% endif %}
+          {% if config.extra.alternate %}
+            {% include "partials/alternate.html" %}
+          {% endif %}
+          {% if "search" in config.plugins %}
+            {% set search = config.plugins["search"] | attr("config") %}
+            {% if search.enabled %}
+              <label class="md-header__button md-icon" for="__search" aria-label="{{ lang.t('search') }}">
+                {% set icon = config.theme.icon.search or "material/magnify" %}
+                {% include ".icons/" ~ icon ~ ".svg" %}
+              </label>
+              {% include "partials/search.html" %}
+            {% endif %}
+          {% endif %}
+          <div class="md-header__source">
+            {% if config.repo_url %}
+              {% include "partials/source.html" %}
+            {% endif %}
+          </div>
+        </nav>
+        {% if "navigation.tabs.sticky" in features %}
+          {% if "navigation.tabs" in features %}
+            {% include "partials/tabs.html" %}
+          {% endif %}
+        {% endif %}
+      </header>
     {% endblock %}
     <div class="md-container" data-md-component="container">
       {% block hero %}{% endblock %}
@@ -171,7 +239,35 @@
               <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" {{ hidden }}>
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
-                    {% include "partials/nav.html" %}
+                    {% macro render_nav_item(item, depth=1) %}
+                      <li class="custom-nav__item {% if item.active %}custom-nav__item--active{% endif %}" data-depth="{{ depth }}">
+                        {% if item.children %}
+                          <details class="custom-nav__details" {% if item.active %}open{% endif %}>
+                            <summary class="custom-nav__summary">
+                              <span class="custom-nav__title-text">{{ item.title }}</span>
+                              <span class="custom-nav__icon"></span>
+                            </summary>
+                            <ul class="custom-nav__sublist">
+                              {% for child in item.children %}
+                                {{ render_nav_item(child, depth + 1) }}
+                              {% endfor %}
+                            </ul>
+                          </details>
+                        {% else %}
+                          <a href="{{ item.url | url }}" class="custom-nav__link {% if item.active %}custom-nav__link--active{% endif %}">
+                            {{ item.title }}
+                          </a>
+                        {% endif %}
+                      </li>
+                    {% endmacro %}
+
+                    <nav class="custom-nav" aria-label="Navigation">
+                      <ul class="custom-nav__list">
+                        {% for nav_item in nav.items %}
+                          {{ render_nav_item(nav_item, 1) }}
+                        {% endfor %}
+                      </ul>
+                    </nav>
                   </div>
                 </div>
               </div>

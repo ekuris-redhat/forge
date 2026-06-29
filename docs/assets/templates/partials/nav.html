@@ -1,0 +1,30 @@
+{#- Custom responsive and recursive navigation menu template -#}
+{% macro render_nav_item(item, depth=1) %}
+  <li class="custom-nav__item {% if item.active %}custom-nav__item--active{% endif %}" data-depth="{{ depth }}">
+    {% if item.children %}
+      <details class="custom-nav__details" {% if item.active %}open{% endif %}>
+        <summary class="custom-nav__summary">
+          <span class="custom-nav__title-text">{{ item.title }}</span>
+          <span class="custom-nav__icon"></span>
+        </summary>
+        <ul class="custom-nav__sublist">
+          {% for child in item.children %}
+            {{ render_nav_item(child, depth + 1) }}
+          {% endfor %}
+        </ul>
+      </details>
+    {% else %}
+      <a href="{{ item.url | url }}" class="custom-nav__link {% if item.active %}custom-nav__link--active{% endif %}">
+        {{ item.title }}
+      </a>
+    {% endif %}
+  </li>
+{% endmacro %}
+
+<nav class="custom-nav" aria-label="Navigation">
+  <ul class="custom-nav__list">
+    {% for nav_item in nav.items %}
+      {{ render_nav_item(nav_item, 1) }}
+    {% endfor %}
+  </ul>
+</nav>
