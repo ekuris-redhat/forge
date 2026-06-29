@@ -101,7 +101,7 @@ async def post_stats_comment(
         posted for this run), ``False`` otherwise.
     """
     # Resolve the run identifier from the explicit argument or from state.
-    effective_run_id: str | None = run_id or stats.get("workflow_run_id")  # type: ignore[call-overload]
+    effective_run_id: str | None = run_id or stats.get("workflow_run_id")
 
     # --- Idempotency pre-check -------------------------------------------
     if effective_run_id:

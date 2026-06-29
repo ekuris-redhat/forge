@@ -21,7 +21,7 @@ Usage::
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
@@ -30,6 +30,7 @@ from forge.stats.retrieval import WorkflowStats
 from forge.workflow.stats import (
     ALL_BUG_STAGES,
     ALL_FEATURE_STAGES,
+    StageStats,
 )
 
 # ---------------------------------------------------------------------------
@@ -108,7 +109,7 @@ def _colorize(text: str, color: str, *, use_color: bool) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _stage_row_values(label: str, stage: dict | None) -> tuple[str, str, str, str, str]:
+def _stage_row_values(label: str, stage: StageStats | None) -> tuple[str, str, str, str, str]:
     """Return the five cell values for a single stage row.
 
     When *stage* is ``None`` (stage was never executed), all metric cells
@@ -124,11 +125,11 @@ def _stage_row_values(label: str, stage: dict | None) -> tuple[str, str, str, st
     return (label, iterations, machine_time, tokens_in, tokens_out)
 
 
-def _totals_row_values(stages: dict[str, dict]) -> tuple[str, str, str, str, str]:
+def _totals_row_values(stages: dict[str, StageStats]) -> tuple[str, str, str, str, str]:
     """Return the five cell values for the summary totals row."""
-    total_machine = sum(s.get("machine_time_seconds", 0.0) for s in stages.values())
-    total_in = sum(s.get("input_tokens", 0) for s in stages.values())
-    total_out = sum(s.get("output_tokens", 0) for s in stages.values())
+    total_machine = sum(s.get("machine_time_seconds", 0.0) or 0.0 for s in stages.values())
+    total_in = sum(s.get("input_tokens", 0) or 0 for s in stages.values())
+    total_out = sum(s.get("output_tokens", 0) or 0 for s in stages.values())
     return (
         "TOTAL",
         "",
@@ -181,7 +182,7 @@ def _compute_col_widths(
     return widths
 
 
-def _determine_display_stages(stages: dict[str, dict]) -> list[str]:
+def _determine_display_stages(stages: dict[str, StageStats]) -> list[str]:
     """Return the ordered list of stage keys to display.
 
     Uses ``ALL_FEATURE_STAGES`` by default.  If the workflow contains any
@@ -260,8 +261,8 @@ def format_stats_table(
         lines.append(f"  Run ID:       {stats.workflow_run_id}")
 
     # Derive created_at / updated_at from stage timestamps.
-    all_started = [s.get("started_at") for s in stats.stages.values() if s.get("started_at")]
-    all_ended = [s.get("ended_at") for s in stats.stages.values() if s.get("ended_at")]
+    all_started = [str(s.get("started_at")) for s in stats.stages.values() if s.get("started_at")]
+    all_ended = [str(s.get("ended_at")) for s in stats.stages.values() if s.get("ended_at")]
     if all_started:
         lines.append(f"  Started:      {min(all_started)}")
     if all_ended:
@@ -274,7 +275,7 @@ def format_stats_table(
     # ------------------------------------------------------------------
     display_stages = _determine_display_stages(stats.stages)
 
-    data_rows: list[tuple[str, str, str, str, str, str]] = []
+    data_rows: list[tuple[str, str, str, str, str]] = []
     for stage_key in display_stages:
         label = _STAGE_LABELS.get(stage_key, stage_key.title())
         stage_data = stats.stages.get(stage_key)
@@ -320,7 +321,7 @@ def format_stats_json(stats: WorkflowStats) -> str:
     Returns:
         A pretty-printed JSON string.
     """
-    payload: dict = {
+    payload: dict[str, Any] = {
         "ticket_key": stats.ticket_key,
         "outcome": stats.outcome,
         "outcome_reason": stats.outcome_reason,

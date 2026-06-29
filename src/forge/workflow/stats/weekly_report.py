@@ -21,6 +21,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from forge.integrations.jira.client import JiraClient
 from forge.orchestrator.checkpointer import get_redis_client
@@ -209,7 +210,7 @@ def _parse_timestamp(ts: str | None) -> datetime | None:
         return None
 
 
-def _parse_checkpoint_stats(state: dict) -> TicketSummary | None:
+def _parse_checkpoint_stats(state: dict[str, Any]) -> TicketSummary | None:
     """Extract a :class:`TicketSummary` from a single checkpoint state dict.
 
     Reads the ``stage_timestamps``, ``stats_ci_cycles``, ``workflow_outcome``,
@@ -232,7 +233,7 @@ def _parse_checkpoint_stats(state: dict) -> TicketSummary | None:
         logger.debug("Checkpoint for %s has no stage_timestamps; skipping", ticket_key)
         return None
 
-    stats_stages: dict = state.get("stage_timestamps") or {}
+    stats_stages: dict[str, Any] = state.get("stage_timestamps") or {}
     if not isinstance(stats_stages, dict):
         logger.warning(
             "Malformed stage_timestamps for %s (type %s); treating as empty",
@@ -395,7 +396,7 @@ def _calculate_bottlenecks(tickets: list[TicketSummary]) -> BottleneckAnalysis:
     )
 
 
-def _is_within_window(state: dict, cutoff: datetime) -> bool:
+def _is_within_window(state: dict[str, Any], cutoff: datetime) -> bool:
     """Return True if the checkpoint falls within the reporting time window.
 
     A checkpoint is considered *within the window* when any of the following
@@ -730,17 +731,21 @@ async def collect_weekly_data(
     bottlenecks = _calculate_bottlenecks(all_tickets)
 
     # --- Per-Feature rollup ---
-    _owns_jira_client = jira_client is None
-    if _owns_jira_client:
-        jira_client = JiraClient()
+    _owns_jira_client = False
+    active_jira_client: JiraClient
+    if jira_client is None:
+        active_jira_client = JiraClient()
+        _owns_jira_client = True
+    else:
+        active_jira_client = jira_client
     try:
-        feature_rollups = await _group_by_feature(all_tickets, jira_client)
+        feature_rollups = await _group_by_feature(all_tickets, active_jira_client)
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to build feature rollups: %s", exc)
         feature_rollups = {}
     finally:
         if _owns_jira_client:
-            await jira_client.close()  # type: ignore[union-attr]
+            await active_jira_client.close()
 
     report = WeeklyReportData(
         project=project,

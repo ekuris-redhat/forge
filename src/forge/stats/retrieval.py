@@ -21,6 +21,7 @@ Usage::
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from forge.orchestrator.checkpointer import get_checkpoint_state
 from forge.workflow.stats import StageStats
@@ -73,7 +74,7 @@ class WorkflowStats:
 # ---------------------------------------------------------------------------
 
 
-def _extract_stats(ticket_key: str, state: dict) -> WorkflowStats | None:
+def _extract_stats(ticket_key: str, state: dict[str, Any]) -> WorkflowStats | None:
     """Extract and validate stats data from a checkpoint state dict.
 
     Args:

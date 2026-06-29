@@ -28,6 +28,7 @@ Usage::
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from forge.workflow.stats.weekly_report import (
     BottleneckAnalysis,
@@ -541,7 +542,7 @@ def format_weekly_report_json(data: WeeklyReportData) -> str:
         A pretty-printed, sorted-key JSON string.
     """
 
-    def _ticket_dict(t: TicketSummary) -> dict:
+    def _ticket_dict(t: TicketSummary) -> dict[str, Any]:
         return {
             "ticket_key": t.ticket_key,
             "ticket_type": t.ticket_type,
@@ -559,7 +560,7 @@ def format_weekly_report_json(data: WeeklyReportData) -> str:
             "stage_durations": t.stage_durations,
         }
 
-    def _rollup_dict(rollup: FeatureRollup) -> dict:
+    def _rollup_dict(rollup: FeatureRollup) -> dict[str, Any]:
         return {
             "feature_key": rollup.feature_key,
             "feature_summary": rollup.feature_summary,
@@ -572,7 +573,7 @@ def format_weekly_report_json(data: WeeklyReportData) -> str:
             "linked_tickets": [t.ticket_key for t in rollup.linked_tickets],
         }
 
-    payload: dict = {
+    payload: dict[str, Any] = {
         "project": data.project,
         "period_days": data.period_days,
         "report_start": data.report_start,
