@@ -1,6 +1,7 @@
 """Quick tests for container sandbox runner."""
 
 import asyncio
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -9,20 +10,24 @@ import pytest
 from forge.sandbox import ContainerRunner
 from forge.sandbox.runner import ContainerConfig
 
+has_podman = shutil.which("podman") is not None
+
 
 class TestContainerRunner:
     """Tests for ContainerRunner."""
 
+    @pytest.mark.skipif(not has_podman, reason="podman is not installed")
     def test_runner_init(self):
         """Test runner initializes correctly."""
         runner = ContainerRunner()
         assert runner is not None
 
+    @pytest.mark.skipif(not has_podman, reason="podman is not installed")
     def test_podman_exists(self):
         """Test podman is available."""
-        import shutil
         assert shutil.which("podman") is not None
 
+    @pytest.mark.skipif(not has_podman, reason="podman is not installed")
     @pytest.mark.asyncio
     async def test_image_exists_returns_false_for_missing(self):
         """Test image_exists returns False for non-existent image."""
@@ -30,6 +35,7 @@ class TestContainerRunner:
         exists = await runner.image_exists("nonexistent-image:latest")
         assert exists is False
 
+    @pytest.mark.skipif(not has_podman, reason="podman is not installed")
     @pytest.mark.asyncio
     async def test_simple_container_run(self):
         """Test running a simple container with alpine."""
@@ -46,10 +52,14 @@ class TestContainerRunner:
 
             result = subprocess.run(
                 [
-                    "podman", "run", "--rm",
-                    "-v", f"{workspace}:/workspace:Z",
+                    "podman",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{workspace}:/workspace:Z",
                     "alpine:latest",
-                    "cat", "/workspace/test.txt",
+                    "cat",
+                    "/workspace/test.txt",
                 ],
                 capture_output=True,
                 text=True,

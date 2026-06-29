@@ -183,7 +183,11 @@ class JiraIssue:
             return [block for block in blocks if block]
 
         blocks = extract_blocks(adf)
-        return "\n\n".join(blocks) if blocks else str(adf)
+        if not blocks:
+            if isinstance(adf, dict) and adf.get("type") == "doc":
+                return ""
+            return str(adf)
+        return "\n\n".join(blocks)
 
 
 @dataclass
