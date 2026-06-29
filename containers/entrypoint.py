@@ -35,7 +35,6 @@ logger = logging.getLogger(__name__)
 if os.environ.get("LANGCHAIN_VERBOSE", "").lower() in ("true", "1", "yes"):
     try:
         from langchain_core.globals import set_debug, set_verbose
-
         set_verbose(True)
         set_debug(True)
         logger.info("LangChain verbose/debug mode enabled")
@@ -305,9 +304,7 @@ async def run_agent_task(
         previous_task_keys: List of previously implemented task keys for handoff context.
     """
     # Support both new (LLM_MODEL) and legacy (CLAUDE_MODEL) env var names
-    model_name = os.environ.get("LLM_MODEL") or os.environ.get(
-        "CLAUDE_MODEL", "claude-sonnet-4-5@20250929"
-    )
+    model_name = os.environ.get("LLM_MODEL") or os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5@20250929")
     logger.info(f"Implementing task: {task_summary}")
     logger.info(f"Model: {model_name}")
 
@@ -445,7 +442,9 @@ async def run_agent_task(
 
         # Run the agent (with Langfuse session context if enabled)
         initial_message = {
-            "messages": [{"role": "user", "content": f"Implement this task:\n\n{task_description}"}]
+            "messages": [
+                {"role": "user", "content": f"Implement this task:\n\n{task_description}"}
+            ]
         }
 
         if langfuse_enabled:
@@ -641,18 +640,13 @@ def main():
     # Ensure changes are committed (agent should have done this, but as fallback).
     # Skip if workspace is not a git repo — analysis tasks (RCA, reflection) write
     # artifacts to .forge/ without needing a commit.
-    is_git_repo = (
-        subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            cwd=workspace,
-            capture_output=True,
-        ).returncode
-        == 0
-    )
+    is_git_repo = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=workspace,
+        capture_output=True,
+    ).returncode == 0
     if is_git_repo:
-        fallback_message = (
-            f"[{task_key}] {task_summary}\n\nAuto-committed by Forge container fallback."
-        )
+        fallback_message = f"[{task_key}] {task_summary}\n\nAuto-committed by Forge container fallback."
         if not git_commit(workspace, fallback_message):
             logger.error("Failed to commit changes")
             sys.exit(EXIT_TASK_FAILED)
