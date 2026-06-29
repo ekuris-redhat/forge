@@ -192,6 +192,29 @@ def mock_jira_responses() -> MagicMock:
     return jira
 
 
+@pytest.fixture(autouse=True)
+def _patch_get_checkpoint_state():
+    async def mock_get_state(ticket_key: str):
+        from forge.workflow.stats.weekly_report import get_redis_client
+
+        try:
+            redis_client = await get_redis_client()
+            key = f"checkpoint:{ticket_key}"
+            val = await redis_client.get(key)
+            if val is not None:
+                import json
+
+                return json.loads(val)
+        except Exception:
+            pass
+        return None
+
+    with patch(
+        "forge.workflow.stats.weekly_report.get_checkpoint_state", side_effect=mock_get_state
+    ):
+        yield
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
