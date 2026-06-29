@@ -1,0 +1,57 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'zensical.toml'
+      - 'zensical.config.json'
+      - 'CONTRIBUTING.md'
+      - 'README.md'
+      - 'skills/README.md'
+  workflow_dispatch:
+
+# Restrict permissions to only what's required for checking out code
+# and writing/deploying the documentation build to the gh-pages branch.
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: Build & Deploy Portal
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for ghp-import to work properly with full history
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra docs
+
+      - name: Build documentation
+        run: uv run zensical build
+
+      - name: Configure Git User
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Deploy to GitHub Pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uv run ghp-import -n -p -f site
