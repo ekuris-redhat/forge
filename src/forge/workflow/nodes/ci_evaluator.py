@@ -64,7 +64,7 @@ async def evaluate_ci_status(state: WorkflowState) -> WorkflowState:
     ci_fix_max = state.get("ci_fix_max_attempts", 5)
     settings = get_settings()
 
-    state = {**state, **record_stage_start(state, STAGE_CI, model_name=None)}
+    state = {**state, **record_stage_start(state, STAGE_CI, model_name=settings.llm_model)}
     node_start = time.monotonic()
 
     if not pr_urls:
