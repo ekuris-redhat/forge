@@ -15,8 +15,8 @@ class TestQAModeIntegration:
         """Verify comment classifier detects questions."""
         assert classify_comment("?Why REST?") == CommentType.QUESTION
         assert classify_comment("@forge ask explain") == CommentType.QUESTION
-        assert classify_comment("Add more detail") == CommentType.FEEDBACK
-        assert classify_comment("LGTM") == CommentType.FEEDBACK
+        assert classify_comment("!Add more detail") == CommentType.FEEDBACK
+        assert classify_comment("LGTM") == CommentType.INFORMATIONAL
 
     def test_state_has_qa_fields(self):
         """Verify initial state includes Q&A fields."""
@@ -49,9 +49,11 @@ class TestQAModeIntegration:
         mock_agent.answer_question = AsyncMock(return_value="Because of X")
         mock_agent.close = AsyncMock()
 
-        with patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira):
-            with patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent):
-                result = await answer_question(state)
+        with (
+            patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent),
+        ):
+            result = await answer_question(state)
 
         # Verify Jira comment was posted
         mock_jira.add_comment.assert_called_once()
@@ -187,9 +189,11 @@ class TestQAHandlerEdgeCases:
         mock_agent.answer_question = AsyncMock(side_effect=Exception("API Error"))
         mock_agent.close = AsyncMock()
 
-        with patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira):
-            with patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent):
-                result = await answer_question(state)
+        with (
+            patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent),
+        ):
+            result = await answer_question(state)
 
         # Should still clear question state and stay paused
         assert result["is_paused"] is True

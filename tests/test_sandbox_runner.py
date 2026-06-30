@@ -1,6 +1,7 @@
 """Quick tests for container sandbox runner."""
 
 import asyncio
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -13,17 +14,19 @@ from forge.sandbox.runner import ContainerConfig
 class TestContainerRunner:
     """Tests for ContainerRunner."""
 
+    @pytest.mark.skipif(not shutil.which("podman"), reason="podman not found")
     def test_runner_init(self):
         """Test runner initializes correctly."""
         runner = ContainerRunner()
         assert runner is not None
 
+    @pytest.mark.skipif(not shutil.which("podman"), reason="podman not found")
     def test_podman_exists(self):
         """Test podman is available."""
-        import shutil
         assert shutil.which("podman") is not None
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not shutil.which("podman"), reason="podman not found")
     async def test_image_exists_returns_false_for_missing(self):
         """Test image_exists returns False for non-existent image."""
         runner = ContainerRunner()
@@ -31,6 +34,7 @@ class TestContainerRunner:
         assert exists is False
 
     @pytest.mark.asyncio
+    @pytest.mark.skipif(not shutil.which("podman"), reason="podman not found")
     async def test_simple_container_run(self):
         """Test running a simple container with alpine."""
         # Create a minimal test workspace
@@ -46,10 +50,14 @@ class TestContainerRunner:
 
             result = subprocess.run(
                 [
-                    "podman", "run", "--rm",
-                    "-v", f"{workspace}:/workspace:Z",
+                    "podman",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{workspace}:/workspace:Z",
                     "alpine:latest",
-                    "cat", "/workspace/test.txt",
+                    "cat",
+                    "/workspace/test.txt",
                 ],
                 capture_output=True,
                 text=True,

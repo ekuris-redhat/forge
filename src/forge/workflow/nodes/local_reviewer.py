@@ -411,13 +411,15 @@ async def _run_feature_review(state: WorkflowState) -> WorkflowState:
                 f"Could not fix all breaking issues after {MAX_REVIEW_ATTEMPTS} attempts "
                 f"for {ticket_key}, proceeding to PR"
             )
+            next_attempts = review_attempts + 1
         else:
             logger.info(f"Local review passed for {ticket_key}")
+            next_attempts = 0
 
         return update_state_timestamp(
             {
                 **state,
-                "local_review_attempts": 0,
+                "local_review_attempts": next_attempts,
                 "current_node": "create_pr",
                 "last_error": None,
             }
