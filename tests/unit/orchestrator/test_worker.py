@@ -95,6 +95,7 @@ class TestQuestionDetection:
         assert result["revision_requested"] is False
         assert result["is_paused"] is False
         ack_comment_mocks.assert_awaited_once()
+        assert ack_comment_mocks.await_args.args[1] == "TEST-123"
         ack_text = ack_comment_mocks.await_args.args[2]
         assert "received your question" in ack_text
         assert "the PRD" in ack_text
@@ -135,6 +136,7 @@ class TestQuestionDetection:
         assert result["feedback_comment"] == "Please add more detail to the security section"
         assert result["is_paused"] is False
         ack_comment_mocks.assert_awaited_once()
+        assert ack_comment_mocks.await_args.args[1] == "TEST-123"
         ack_text = ack_comment_mocks.await_args.args[2]
         assert "received your revision request" in ack_text
         assert "regenerating" in ack_text
@@ -176,7 +178,48 @@ class TestQuestionDetection:
         assert result["current_epic_key"] == "TEST-124"
         assert result["current_task_key"] is None
         ack_comment_mocks.assert_awaited_once()
+        assert ack_comment_mocks.await_args.args[1] == "TEST-124"
         ack_text = ack_comment_mocks.await_args.args[2]
+        assert "from TEST-124" in ack_text
+
+    @pytest.mark.asyncio
+    async def test_plan_phase_feedback_from_epic_acknowledges_epic(
+        self,
+        worker: OrchestratorWorker,
+        base_message: QueueMessage,
+        base_state: dict,
+        ack_comment_mocks,
+    ):
+        """Comments on an Epic during plan review are acknowledged on that Epic."""
+        state = {
+            **base_state,
+            "current_node": "plan_approval_gate",
+            "epic_keys": ["TEST-124"],
+        }
+        payload = {
+            **base_message.payload,
+            "source_ticket_key": "TEST-124",
+            "comment": {"body": "!Please revise this epic plan"},
+            "changelog": {"items": []},
+        }
+        message = QueueMessage(
+            message_id=base_message.message_id,
+            event_id=base_message.event_id,
+            source=base_message.source,
+            event_type="comment_created",
+            ticket_key=base_message.ticket_key,
+            payload=payload,
+        )
+
+        result = await worker._handle_resume_event(message, state)
+
+        assert result["revision_requested"] is True
+        assert result["feedback_comment"] == "Please revise this epic plan"
+        assert result["current_epic_key"] == "TEST-124"
+        ack_comment_mocks.assert_awaited_once()
+        assert ack_comment_mocks.await_args.args[1] == "TEST-124"
+        ack_text = ack_comment_mocks.await_args.args[2]
+        assert "received your revision request" in ack_text
         assert "from TEST-124" in ack_text
 
     @pytest.mark.asyncio
@@ -254,6 +297,34 @@ class TestQuestionDetection:
         assert result.get("is_question") is not True
         assert result["revision_requested"] is False
         assert result["is_paused"] is False
+
+    @pytest.mark.asyncio
+    async def test_auto_retry_cap_marks_workflow_blocked_once(
+        self,
+        worker: OrchestratorWorker,
+        base_message: QueueMessage,
+        base_state: dict,
+    ):
+        """Errored workflows stop auto-resuming once retry_count reaches the cap."""
+        state = {
+            **base_state,
+            "current_node": "implement_review",
+            "is_paused": False,
+            "last_error": "cannot rebase dirty workspace",
+            "retry_count": 3,
+            "is_blocked": False,
+        }
+
+        with patch.object(worker, "_post_terminal_error_comment", new_callable=AsyncMock) as post:
+            result = await worker._handle_resume_event(base_message, state)
+
+        assert result["current_node"] == "implement_review"
+        assert result["retry_count"] == 3
+        assert result["last_error"] == "cannot rebase dirty workspace"
+        assert result["is_paused"] is True
+        assert result["is_blocked"] is True
+        assert result["auto_retry_cap_notified"] is True
+        post.assert_awaited_once_with("TEST-123", "cannot rebase dirty workspace")
 
     @pytest.mark.asyncio
     async def test_question_with_leading_whitespace(

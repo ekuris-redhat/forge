@@ -1161,6 +1161,7 @@ class OrchestratorWorker:
                 updated_state["is_paused"] = False
                 updated_state["is_blocked"] = False
                 updated_state["last_error"] = None
+                updated_state["auto_retry_cap_notified"] = False
                 updated_state["revision_requested"] = True
                 updated_state["feedback_comment"] = "Regeneration requested via retry."
                 updated_state["retry_count"] = 0
@@ -1176,6 +1177,7 @@ class OrchestratorWorker:
                 updated_state["is_paused"] = False
                 updated_state["is_blocked"] = False
                 updated_state["last_error"] = None
+                updated_state["auto_retry_cap_notified"] = False
                 updated_state["revision_requested"] = False
                 updated_state["feedback_comment"] = None
                 updated_state["retry_count"] = 0
@@ -1245,11 +1247,23 @@ class OrchestratorWorker:
                 reason = (
                     "terminal state" if is_terminal else f"retry cap ({MAX_AUTO_RETRIES}) reached"
                 )
+                if cap_reached and current_state.get("auto_retry_cap_notified"):
+                    logger.info(
+                        f"Workflow for {message.ticket_key} is already blocked after "
+                        f"auto-retry cap at '{current_node}'"
+                    )
+                    return current_state
+
                 logger.warning(
                     f"Workflow for {message.ticket_key} at '{current_node}' requires "
                     f"forge:retry ({reason})"
                 )
                 await self._post_terminal_error_comment(message.ticket_key, last_error)
+                if cap_reached:
+                    updated_state["is_paused"] = True
+                    updated_state["is_blocked"] = True
+                    updated_state["auto_retry_cap_notified"] = True
+                    return updated_state
                 return current_state
             else:
                 # Transient failure — auto-resume and let the node retry
@@ -1421,6 +1435,11 @@ class OrchestratorWorker:
             if source_ticket_key and source_ticket_key != ticket_key
             else ""
         )
+        comment_target_key = (
+            source_ticket_key
+            if source_ticket_key and source_ticket_key != ticket_key
+            else ticket_key
+        )
 
         if signal_type == "question":
             message = (
@@ -1436,11 +1455,11 @@ class OrchestratorWorker:
         try:
             jira = JiraClient()
             try:
-                await post_status_comment(jira, ticket_key, message)
+                await post_status_comment(jira, comment_target_key, message)
             finally:
                 await jira.close()
         except Exception as e:
-            logger.warning(f"Failed to post resume acknowledgement to {ticket_key}: {e}")
+            logger.warning(f"Failed to post resume acknowledgement to {comment_target_key}: {e}")
 
     @staticmethod
     def _stage_label_for_node(current_node: str) -> str:
