@@ -2,11 +2,21 @@
 
 Forge includes an automated, weekly aggregation and reporting system that compiles and publishes metrics across all managed tickets for a specific Jira project. This documentation explains how the reporting system operates behind the scenes.
 
+## Quick Start
+
+Generate a weekly report for your project (e.g., `PROJ`) with the following command:
+
+```bash
+forge weekly-report --project PROJ
+```
+
+> **Note:** The `forge weekly-report` command requires active Redis access and must be run from the Forge project directory containing `.env` to load configurations.
+
 ## Aggregation Logic
 
 When you run `forge weekly-report` (or trigger it via automated schedules), the reporting system performs the following steps:
 
-1. **Query Active/Historical Checkpoints:** Forge scans the Redis event and state checkpoints for the specified project (`PROJECT_KEY`). It uses a key scanning pattern `langgraph:checkpoint:{PROJECT_KEY}-*` to find all state checkpoints.
+1. **Query Active/Historical Checkpoints:** Forge scans the Redis event and state checkpoints for the specified project (`PROJECT_KEY`). It uses a key scanning pattern `checkpoint:{PROJECT_KEY}-*` to find all state checkpoints.
 2. **Filter by Sliding Window:** Metrics are collected and filtered based on a sliding window of `N` days (by default, `7` days). A checkpoint falls within the reporting window if its `updated_at` timestamp or any stage `started_at`/`ended_at` timestamp is greater than or equal to the cutoff (`now - N days`).
 3. **Aggregate Stats per Stage:** Data is aggregated across all feature and bug workflows, tracking:
    - **Ticket Rollups:** Total numbers of active, completed, or blocked workflows.

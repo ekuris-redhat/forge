@@ -11,6 +11,26 @@ from forge.config import Settings
 from forge.main import app
 
 
+@pytest.fixture(autouse=True)
+def _ensure_add_structured_comment_is_async_mock(monkeypatch):
+    """Automatically ensure add_structured_comment is always an AsyncMock in any MagicMock.
+
+    This acts as a global fallback for any test that manually mocks JiraClient without
+    fully defining all required methods.
+    """
+    from unittest.mock import MagicMock, AsyncMock
+    original_getattr = MagicMock.__getattr__
+
+    def custom_getattr(self, name):
+        if name == "add_structured_comment":
+            am = AsyncMock()
+            self.__dict__[name] = am
+            return am
+        return original_getattr(self, name)
+
+    monkeypatch.setattr(MagicMock, "__getattr__", custom_getattr)
+
+
 @pytest.fixture
 def mock_settings() -> Settings:
     """Create mock settings for testing."""

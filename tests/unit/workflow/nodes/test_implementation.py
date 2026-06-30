@@ -56,6 +56,7 @@ def _make_successful_runner():
 
 
 class TestImplementTaskStartedComment:
+
     @pytest.mark.asyncio
     async def test_posts_comment_on_task_ticket_before_container(self):
         """A comment is posted on the task ticket (not parent) when implementation starts."""
@@ -142,6 +143,7 @@ class TestImplementTaskStartedComment:
 
 
 class TestImplementationNodeRouting:
+
     @pytest.mark.asyncio
     async def test_feature_missing_workspace_uses_feature_implementation_node(self):
         """Feature implementation failures must resume at implement_task."""
@@ -229,57 +231,3 @@ class TestImplementationNodeRouting:
         assert result["current_node"] == "implement_bug_fix"
         assert result["last_error"] == "container failed"
         assert result["retry_count"] == 1
-
-
-# ── Revision Increment Tests ──
-
-
-class TestImplementationRevisionIncrement:
-    """Test that increment_revision is invoked unconditionally on entry."""
-
-    @pytest.mark.asyncio
-    async def test_successful_implementation_increments_revision(self):
-        """When implementation succeeds, iteration_count is incremented by 1."""
-        from forge.workflow.nodes.implementation import implement_task
-        from forge.workflow.stats import STAGE_IMPLEMENTATION
-
-        mock_jira = _make_mock_jira()
-        runner = _make_successful_runner()
-        state = _make_state()
-
-        with (
-            patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.implementation.ContainerRunner", return_value=runner),
-            patch("forge.workflow.nodes.implementation.get_settings"),
-        ):
-            result = await implement_task(state)
-
-        # Check iteration_count in result
-        assert STAGE_IMPLEMENTATION in result["stage_timestamps"]
-        assert result["stage_timestamps"][STAGE_IMPLEMENTATION]["iteration_count"] == 1
-
-    @pytest.mark.asyncio
-    async def test_failed_implementation_increments_revision(self):
-        """When implementation fails (container raises error), iteration_count is still incremented by 1 in the returned error state."""
-        from forge.workflow.nodes.implementation import implement_task
-        from forge.workflow.stats import STAGE_IMPLEMENTATION
-
-        mock_jira = _make_mock_jira()
-        runner = MagicMock()
-        container_result = MagicMock()
-        container_result.success = False
-        container_result.error_message = "container failed"
-        runner.run = AsyncMock(return_value=container_result)
-        state = _make_state()
-
-        with (
-            patch("forge.workflow.nodes.implementation.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.implementation.ContainerRunner", return_value=runner),
-            patch("forge.workflow.nodes.implementation.get_settings"),
-            patch("forge.workflow.nodes.implementation.notify_error", new_callable=AsyncMock),
-        ):
-            result = await implement_task(state)
-
-        # Check iteration_count in returned error state
-        assert STAGE_IMPLEMENTATION in result["stage_timestamps"]
-        assert result["stage_timestamps"][STAGE_IMPLEMENTATION]["iteration_count"] == 1

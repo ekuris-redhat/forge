@@ -201,7 +201,7 @@ To retry, add the `forge:retry` label. Forge resumes from the exact node that fa
 
 ## Workflow Statistics
 
-At the end of a workflow execution (when the ticket reaches a terminal state), Forge aggregates execution data and posts a comprehensive summary on the Jira ticket. This helps teams track efficiency, analyze execution bottlenecks, and monitor LLM token costs.
+At the end of a workflow execution (when the ticket reaches a terminal state, including **Completed**, **Blocked**, or **Failed**), Forge aggregates execution data and automatically posts a comprehensive summary on the Jira ticket. This ensures that even when a workflow is blocked or fails, stakeholders can inspect the resource usage and performance metrics up to that point. This helps teams track efficiency, analyze execution bottlenecks, and monitor LLM token costs.
 
 ### Summary Format
 

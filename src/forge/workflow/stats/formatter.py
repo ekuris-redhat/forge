@@ -131,13 +131,15 @@ def _build_totals_row(
             displays a total dollar cost.  When ``None`` or any stage has an
             unknown model, shows ``cost unavailable``.
     """
+    total_iterations = sum(s.get("iteration_count", 0) for s in stages.values())
+    total_machine_seconds = sum(s.get("machine_time_seconds", 0.0) for s in stages.values())
     total_input = sum(s.get("input_tokens", 0) for s in stages.values())
     total_output = sum(s.get("output_tokens", 0) for s in stages.values())
 
     cost_str = _build_total_cost_str(stages, pricing)
 
     return (
-        f"| **Total** | — | — |"
+        f"| **Total** | **{total_iterations}** | **{_fmt_seconds(total_machine_seconds)}** |"
         f" **{_fmt_tokens(total_input)}** | **{_fmt_tokens(total_output)}** | {cost_str} |"
     )
 

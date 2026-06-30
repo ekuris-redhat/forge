@@ -31,17 +31,17 @@ Workflow Statistics Summary for AISOS-123
 ================================================================================
 Outcome: Completed
 
-| Stage | Iterations | Machine Time | Input Tokens | Output Tokens | Cost |
-|-------|------------|--------------|--------------|---------------|------|
-| PRD | 1 | 45s | 12,500 | 4,200 | $0.21 |
-| Spec | 1 | 1m 15s | 18,300 | 6,100 | $0.32 |
-| Epics | 1 | 30s | 9,800 | 3,100 | $0.16 |
-| Tasks | 1 | 25s | 8,500 | 2,800 | $0.14 |
-| Implementation | 2 | 4m 10s | 45,000 | 12,500 | $0.78 |
-| CI | 2 | 8m 15s | 25,000 | 4,500 | $0.41 |
-| Review | 1 | 1m 5s | 15,200 | 4,800 | $0.26 |
-|-------|------------|--------------|--------------|---------------|------|
-| Total | 9 | 17m 0s | 134,300 | 38,000 | $2.28 |
+| Stage | Iterations | Machine Time | Tokens In | Tokens Out |
+|-------|------------|--------------|-----------|------------|
+| PRD | 1 | 45s | 12,500 | 4,200 |
+| Spec | 1 | 1m 15s | 18,300 | 6,100 |
+| Epics | 1 | 30s | 9,800 | 3,100 |
+| Tasks | 1 | 25s | 8,500 | 2,800 |
+| Implementation | 2 | 4m 10s | 45,000 | 12,500 |
+| CI | 2 | 8m 15s | 25,000 | 4,500 |
+| Review | 1 | 1m 5s | 15,200 | 4,800 |
+|-------|------------|--------------|-----------|------------|
+| TOTAL | | 17m 0s | 134,300 | 38,000 |
 ================================================================================
 ```
 
@@ -123,6 +123,8 @@ forge stats AISOS-123 --json
 ### `forge weekly-report`
 
 Generate a weekly aggregated report of workflow activity and resources consumed across all managed tickets under a specified Jira project.
+
+> **Note:** The `forge weekly-report` command requires active Redis access and must be run from the Forge project directory containing `.env` to load configurations.
 
 The report aggregates data across a sliding window of `N` days, detailing completed, in-progress, and blocked workflows, as well as total machine execution time, token usage, and costs.
 
