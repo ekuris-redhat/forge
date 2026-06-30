@@ -375,30 +375,30 @@ class Settings(BaseSettings):
     )
 
     # Stats Cost Alert Configuration
-    stats_cost_alert_enabled: bool = Field(
+    stats_alert_enabled: bool = Field(
         default=True,
         description=(
             "Enable cost alerting in workflow stats summaries. "
-            "When enabled and aggregate token usage exceeds stats_cost_alert_threshold_tokens, "
+            "When enabled and aggregate token usage exceeds stats_alert_threshold_tokens, "
             "the stats summary will include a cost alert."
         ),
     )
-    stats_cost_alert_threshold_tokens: int = Field(
+    stats_alert_threshold_tokens: int = Field(
         default=1_000_000,
         description=(
             "Total token count threshold (input + output across all stages) that triggers "
             "a cost alert in the workflow stats summary. Only active when "
-            "stats_cost_alert_enabled is True. Default: 1,000,000 tokens."
+            "stats_alert_enabled is True. Default: 1,000,000 tokens."
         ),
     )
-    stats_cost_alert_threshold_dollars: float | None = Field(
+    stats_alert_threshold_cost: float | None = Field(
         default=None,
         description=(
             "Dollar cost threshold that triggers a cost alert in the workflow stats summary. "
             "When set, the alert compares total dollar cost (sum of all stage costs) against "
             "this value instead of comparing raw token count against "
-            "stats_cost_alert_threshold_tokens. Only active when stats_cost_alert_enabled is "
-            "True. Set via STATS_COST_ALERT_THRESHOLD_DOLLARS environment variable."
+            "stats_alert_threshold_tokens. Only active when stats_alert_enabled is "
+            "True. Set via STATS_ALERT_THRESHOLD_COST environment variable."
         ),
     )
     llm_pricing: dict[str, dict[str, float]] = Field(

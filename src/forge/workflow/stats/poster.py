@@ -168,8 +168,9 @@ async def ensure_stats_is_final_comment(
     """Ensure the stats summary is the last Forge comment on a Jira ticket.
 
     Fetches all comments on *ticket_key*, filters to those posted by the
-    Forge service account (configured via ``JIRA_SERVICE_ACCOUNT_ID``), and
-    checks whether the most recent Forge comment is a stats comment.
+    Forge service account (configured via ``JIRA_SERVICE_ACCOUNT_ID`` or fetched
+    dynamically from Jira), and checks whether the most recent Forge comment
+    is a stats comment.
 
     - If no Forge comments exist → posts a new stats comment.
     - If the most recent Forge comment **is** a stats comment → does nothing
@@ -178,8 +179,9 @@ async def ensure_stats_is_final_comment(
       error notification was added after the stats) → re-posts the stats
       summary so it becomes the final Forge comment.
 
-    When ``JIRA_SERVICE_ACCOUNT_ID`` is not configured, all comments are
-    considered (no author filtering is applied).
+    When ``JIRA_SERVICE_ACCOUNT_ID`` is not configured, we attempt to resolve
+    the authenticated user's account ID dynamically. If that fails, all comments
+    are considered (no author filtering is applied).
 
     This function is safe to call multiple times; repeated calls when the
     stats comment is already the last comment are a no-op.
@@ -195,8 +197,19 @@ async def ensure_stats_is_final_comment(
         ``False`` if the check or post operation fails.
     """
     jira = JiraClient()
+    settings = get_settings()
+    service_account_id = settings.jira_service_account_id
     try:
         comments = await jira.get_comments(ticket_key)
+        if not service_account_id:
+            try:
+                service_account_id = await jira.get_service_account_id()
+            except Exception:
+                logger.warning(
+                    "ensure_stats_is_final_comment: failed to dynamically resolve "
+                    "service account ID; falling back to treating all comments as Forge comments"
+                )
+                service_account_id = ""
     except Exception:
         logger.exception(
             "ensure_stats_is_final_comment: failed to fetch comments for ticket %s",
@@ -205,9 +218,6 @@ async def ensure_stats_is_final_comment(
         return False
     finally:
         await jira.close()
-
-    settings = get_settings()
-    service_account_id = settings.jira_service_account_id
 
     # Filter to Forge comments (comments by the service account).
     # When service_account_id is empty, treat *all* comments as Forge comments.
@@ -276,12 +286,12 @@ async def _post_with_retry(
     token_threshold: int | None = None
     dollar_threshold: float | None = None
     pricing: dict[str, dict[str, float]] | None = None
-    if settings.stats_cost_alert_enabled:
+    if settings.stats_alert_enabled:
         pricing = settings.llm_pricing
-        if settings.stats_cost_alert_threshold_dollars is not None:
-            dollar_threshold = settings.stats_cost_alert_threshold_dollars
+        if settings.stats_alert_threshold_cost is not None:
+            dollar_threshold = settings.stats_alert_threshold_cost
         else:
-            token_threshold = settings.stats_cost_alert_threshold_tokens
+            token_threshold = settings.stats_alert_threshold_tokens
     comment_body = format_stats_summary(
         stats,
         outcome,

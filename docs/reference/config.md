@@ -133,12 +133,12 @@ These settings configure resource tracking, cost metrics, cost alerting, and aut
 
 | Environment Variable | Settings Property | Type | Default Value | Description |
 |----------------------|-------------------|------|---------------|-------------|
-| `STATS_COST_ALERT_ENABLED` | `stats_cost_alert_enabled` | `bool` | `True` | Toggle to enable/disable cost alerts if token or dollar thresholds are exceeded. |
-| `STATS_COST_ALERT_THRESHOLD_TOKENS` | `stats_cost_alert_threshold_tokens` | `int` | `1,000,000` | Cumulative token limit threshold (input + output across all stages) for triggering warnings. |
-| `STATS_COST_ALERT_THRESHOLD_DOLLARS` | `stats_cost_alert_threshold_dollars` | `float \| None` | `None` | Optional monetary threshold in USD for triggering cost warnings. If set, cost warnings are triggered based on calculated costs instead of token counts. |
+| `STATS_ALERT_ENABLED` | `stats_alert_enabled` | `bool` | `True` | Toggle to enable/disable cost alerts if token or dollar thresholds are exceeded. |
+| `STATS_ALERT_THRESHOLD_TOKENS` | `stats_alert_threshold_tokens` | `int` | `1,000,000` | Cumulative token limit threshold (input + output across all stages) for triggering warnings. |
+| `STATS_ALERT_THRESHOLD_COST` | `stats_alert_threshold_cost` | `float \| None` | `None` | Optional monetary threshold in USD for triggering cost warnings. If set, cost warnings are triggered based on calculated costs instead of token counts. |
 | `LLM_PRICING` | `llm_pricing` | `dict[str, dict[str, float]]` | (JSON) | Pricing structure mapping LLM models or model substrings (longest match wins) to input and output token rates per million tokens. Configured as a JSON-encoded string when set via environment variables. |
 | `FORGE_WEEKLY_REPORT_NOTIFY` | `weekly_report_notify` | `str` | `""` | Global fallback notification recipients. Set to a comma-separated list of Jira account IDs (e.g. `abc123,def456`) or the special value `project-leads` to defer to the per-project property `forge.weekly-report.notify`. |
-| `JIRA_SERVICE_ACCOUNT_ID` | `jira_service_account_id` | `str` | `""` | Jira account ID of the Forge service account used to post comments. When set, only comments authored by this account are treated as Forge comments when checking whether the stats comment is the final comment on a ticket (see ensure_stats_is_final_comment). |
+| `JIRA_SERVICE_ACCOUNT_ID` | `jira_service_account_id` | `str` | `""` | Jira account ID of the Forge service account used to post comments. This is optional and auto-detected by default via the `/myself` API endpoint. When set, only comments authored by this account are treated as Forge comments when checking whether the stats comment is the final comment on a ticket (see ensure_stats_is_final_comment). |
 
 The default JSON structure for `LLM_PRICING` rates (USD per million tokens) is as follows:
 

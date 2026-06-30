@@ -16,51 +16,51 @@ REQUIRED_SETTINGS = {
 class TestStatsCostAlertConfig:
     def test_default_cost_alert_enabled_is_true(self):
         settings = Settings(**REQUIRED_SETTINGS)
-        assert settings.stats_cost_alert_enabled is True
+        assert settings.stats_alert_enabled is True
 
     def test_default_cost_alert_threshold_tokens(self):
         settings = Settings(**REQUIRED_SETTINGS)
-        assert settings.stats_cost_alert_threshold_tokens == 1_000_000
+        assert settings.stats_alert_threshold_tokens == 1_000_000
 
     def test_cost_alert_enabled_can_be_disabled(self):
-        settings = Settings(**REQUIRED_SETTINGS, stats_cost_alert_enabled=False)
-        assert settings.stats_cost_alert_enabled is False
+        settings = Settings(**REQUIRED_SETTINGS, stats_alert_enabled=False)
+        assert settings.stats_alert_enabled is False
 
     def test_cost_alert_threshold_can_be_customized(self):
-        settings = Settings(**REQUIRED_SETTINGS, stats_cost_alert_threshold_tokens=500_000)
-        assert settings.stats_cost_alert_threshold_tokens == 500_000
+        settings = Settings(**REQUIRED_SETTINGS, stats_alert_threshold_tokens=500_000)
+        assert settings.stats_alert_threshold_tokens == 500_000
 
     def test_cost_alert_threshold_accepts_large_values(self):
-        settings = Settings(**REQUIRED_SETTINGS, stats_cost_alert_threshold_tokens=10_000_000)
-        assert settings.stats_cost_alert_threshold_tokens == 10_000_000
+        settings = Settings(**REQUIRED_SETTINGS, stats_alert_threshold_tokens=10_000_000)
+        assert settings.stats_alert_threshold_tokens == 10_000_000
 
     def test_cost_alert_threshold_is_int(self):
         settings = Settings(**REQUIRED_SETTINGS)
-        assert isinstance(settings.stats_cost_alert_threshold_tokens, int)
+        assert isinstance(settings.stats_alert_threshold_tokens, int)
 
     def test_cost_alert_enabled_is_bool(self):
         settings = Settings(**REQUIRED_SETTINGS)
-        assert isinstance(settings.stats_cost_alert_enabled, bool)
+        assert isinstance(settings.stats_alert_enabled, bool)
 
 
 class TestStatsCostAlertDollarThreshold:
-    """Tests for the new stats_cost_alert_threshold_dollars setting."""
+    """Tests for the new stats_alert_threshold_cost setting."""
 
     def test_default_dollar_threshold_is_none(self):
         settings = Settings(**REQUIRED_SETTINGS)
-        assert settings.stats_cost_alert_threshold_dollars is None
+        assert settings.stats_alert_threshold_cost is None
 
     def test_dollar_threshold_can_be_set(self):
-        settings = Settings(**REQUIRED_SETTINGS, stats_cost_alert_threshold_dollars=10.0)
-        assert settings.stats_cost_alert_threshold_dollars == 10.0
+        settings = Settings(**REQUIRED_SETTINGS, stats_alert_threshold_cost=10.0)
+        assert settings.stats_alert_threshold_cost == 10.0
 
     def test_dollar_threshold_accepts_small_values(self):
-        settings = Settings(**REQUIRED_SETTINGS, stats_cost_alert_threshold_dollars=0.01)
-        assert settings.stats_cost_alert_threshold_dollars == 0.01
+        settings = Settings(**REQUIRED_SETTINGS, stats_alert_threshold_cost=0.01)
+        assert settings.stats_alert_threshold_cost == 0.01
 
     def test_dollar_threshold_is_float_when_set(self):
-        settings = Settings(**REQUIRED_SETTINGS, stats_cost_alert_threshold_dollars=5.0)
-        assert isinstance(settings.stats_cost_alert_threshold_dollars, float)
+        settings = Settings(**REQUIRED_SETTINGS, stats_alert_threshold_cost=5.0)
+        assert isinstance(settings.stats_alert_threshold_cost, float)
 
 
 class TestLLMPricingConfig:

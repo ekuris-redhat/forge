@@ -506,3 +506,56 @@ class TestErrorHandling:
             result = await ensure_stats_is_final_comment(TICKET_KEY, _minimal_stats(), OUTCOME)
 
         assert result is False
+
+
+class TestServiceAccountDynamicResolution:
+    """When service_account_id is empty, ensure_stats_is_final_comment resolves it dynamically."""
+
+    @pytest.mark.asyncio
+    async def test_resolves_id_dynamically_and_filters(self):
+        """Resolves the account ID via get_service_account_id and filters by it."""
+        stats_comment = _make_comment("c1", STATS_BODY, author_id="dynamic-id-123")
+        human_comment = _make_comment("c2", OTHER_BODY, author_id="human-456")
+        mock_jira = _make_jira_mock([stats_comment, human_comment])
+        mock_jira.get_service_account_id = AsyncMock(return_value="dynamic-id-123")
+
+        with (
+            patch("forge.workflow.stats.poster.JiraClient", return_value=mock_jira),
+            _patch_service_account(""),  # empty configuration
+            patch(
+                "forge.workflow.stats.poster.post_stats_comment",
+                new_callable=AsyncMock,
+            ) as mock_post,
+        ):
+            result = await ensure_stats_is_final_comment(TICKET_KEY, _minimal_stats(), OUTCOME)
+
+        # Filters using resolved dynamic-id-123.
+        # Latest comment for dynamic-id-123 is stats_comment -> no re-post
+        assert result is True
+        mock_post.assert_not_called()
+        mock_jira.get_service_account_id.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_dynamic_resolution_failure_falls_back_to_all_comments(self):
+        """Falls back to treating all comments as Forge comments if resolution fails."""
+        stats_comment = _make_comment("c1", STATS_BODY, author_id="some-id")
+        human_comment = _make_comment("c2", OTHER_BODY, author_id="human-456")
+        mock_jira = _make_jira_mock([stats_comment, human_comment])
+        mock_jira.get_service_account_id = AsyncMock(side_effect=Exception("API error"))
+
+        with (
+            patch("forge.workflow.stats.poster.JiraClient", return_value=mock_jira),
+            _patch_service_account(""),  # empty configuration
+            patch(
+                "forge.workflow.stats.poster.post_stats_comment",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_post,
+        ):
+            result = await ensure_stats_is_final_comment(TICKET_KEY, _minimal_stats(), OUTCOME)
+
+        # Resolution fails -> treats all comments as Forge.
+        # Latest comment of all comments is human_comment (non-stats) -> re-post
+        assert result is True
+        mock_post.assert_called_once()
+        mock_jira.get_service_account_id.assert_called_once()

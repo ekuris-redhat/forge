@@ -403,7 +403,7 @@ class TestCommentContent:
 
     @pytest.mark.asyncio
     async def test_dollar_threshold_passed_to_formatter_when_configured(self):
-        """When stats_cost_alert_threshold_dollars is set, it is passed to the formatter."""
+        """When stats_alert_threshold_cost is set, it is passed to the formatter."""
         from unittest.mock import patch as _patch
 
         mock_jira = _make_jira_mock()
@@ -414,9 +414,9 @@ class TestCommentContent:
             _patch(
                 "forge.workflow.stats.poster.get_settings",
                 return_value=MagicMock(
-                    stats_cost_alert_enabled=True,
-                    stats_cost_alert_threshold_dollars=5.0,
-                    stats_cost_alert_threshold_tokens=1_000_000,
+                    stats_alert_enabled=True,
+                    stats_alert_threshold_cost=5.0,
+                    stats_alert_threshold_tokens=1_000_000,
                     llm_pricing={"claude-sonnet-4": {"input": 3.0, "output": 15.0}},
                 ),
             ),

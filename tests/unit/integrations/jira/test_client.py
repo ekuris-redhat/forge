@@ -220,9 +220,7 @@ class TestJiraClientArchiveIssue:
         assert mock_http.put.await_args_list[1].kwargs["json"] == {"fields": {"parent": None}}
 
         assert mock_http.put.await_args_list[2].args[0] == "/issue/archive"
-        assert mock_http.put.await_args_list[2].kwargs["json"] == {
-            "issueIdsOrKeys": ["TEST-123"]
-        }
+        assert mock_http.put.await_args_list[2].kwargs["json"] == {"issueIdsOrKeys": ["TEST-123"]}
 
     @pytest.mark.asyncio
     async def test_archive_issue_logs_native_archive_body_errors(self, mock_client, caplog):
@@ -779,3 +777,48 @@ class TestGetSkillsConfig:
         assert len(result) == 1
         assert isinstance(result[0], SkillEntry)
         assert result[0].source == "https://github.com/acme/skills"
+
+
+class TestJiraClientGetServiceAccountId:
+    """Tests for get_service_account_id method."""
+
+    @pytest.mark.asyncio
+    async def test_get_service_account_id_success(self, jira_client):
+        """Returns the accountId and caches it."""
+        import forge.integrations.jira.client as client_module
+
+        client_module._service_account_id_cache = None
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "accountId": "resolved-id-123",
+            "displayName": "Service Account",
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            result = await jira_client.get_service_account_id()
+
+        assert result == "resolved-id-123"
+        assert client_module._service_account_id_cache == "resolved-id-123"
+
+    @pytest.mark.asyncio
+    async def test_get_service_account_id_cached(self, jira_client):
+        """Returns cached accountId without making an HTTP request."""
+        import forge.integrations.jira.client as client_module
+
+        client_module._service_account_id_cache = "cached-id-456"
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_get_client.return_value = mock_http
+
+            result = await jira_client.get_service_account_id()
+
+        mock_http.request.assert_not_called()
+        assert result == "cached-id-456"

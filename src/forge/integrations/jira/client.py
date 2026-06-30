@@ -23,6 +23,7 @@ MAX_BACKOFF_SECONDS = 60.0
 
 # Module-level cache for project properties (persists per worker lifetime)
 _project_property_cache: dict[tuple[str, str], Any] = {}
+_service_account_id_cache: str | None = None
 
 
 class MissingProjectConfig(Exception):
@@ -68,6 +69,23 @@ class JiraClient:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+
+    async def get_service_account_id(self) -> str:
+        """Fetch the authenticated user's Jira account ID using the /myself endpoint.
+
+        Returns:
+            The accountId string of the authenticated user.
+        """
+        global _service_account_id_cache
+        if _service_account_id_cache is not None:
+            return _service_account_id_cache
+
+        response = await self._request_with_retry("GET", "/myself")
+        response.raise_for_status()
+        data = response.json()
+        account_id = data["accountId"]
+        _service_account_id_cache = account_id
+        return account_id
 
     async def _request_with_retry(
         self,
