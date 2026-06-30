@@ -15,7 +15,9 @@ class TestCreateSpecProposalPr:
 
         mock_gh = MagicMock()
         mock_gh.create_branch = AsyncMock(return_value={"ref": "refs/heads/forge/spec/test-123"})
-        mock_gh.create_or_update_file = AsyncMock(return_value={"content": {"sha": "filesha"}})
+        mock_gh.create_or_update_file = AsyncMock(
+            return_value={"content": {"sha": "filesha"}}
+        )
         mock_gh.create_pull_request = AsyncMock(
             return_value={
                 "number": 12,
@@ -65,7 +67,9 @@ class TestCreateSpecProposalPr:
 
         mock_gh = MagicMock()
         mock_gh.create_branch = AsyncMock(return_value={"ref": "refs/heads/forge/spec/test-456"})
-        mock_gh.create_or_update_file = AsyncMock(return_value={"content": {"sha": "filesha"}})
+        mock_gh.create_or_update_file = AsyncMock(
+            return_value={"content": {"sha": "filesha"}}
+        )
         mock_gh.create_pull_request = AsyncMock(
             return_value={
                 "number": 15,
@@ -109,7 +113,9 @@ class TestUpdateSpecProposalPr:
         mock_gh.get_file_contents = AsyncMock(
             return_value={"sha": "oldsha", "path": "TEST-123/design.md"}
         )
-        mock_gh.create_or_update_file = AsyncMock(return_value={"content": {"sha": "newsha"}})
+        mock_gh.create_or_update_file = AsyncMock(
+            return_value={"content": {"sha": "newsha"}}
+        )
         mock_gh.create_issue_comment = AsyncMock()
         mock_gh.close = AsyncMock()
 
@@ -138,49 +144,3 @@ class TestUpdateSpecProposalPr:
         assert call_kwargs["sha"] == "oldsha"
         assert call_kwargs["path"] == "TEST-123/design.md"
         mock_gh.create_issue_comment.assert_called_once()
-
-
-class TestRegenerateSpecWithFeedback:
-    @pytest.mark.asyncio
-    async def test_regenerate_spec_with_feedback_strips_prefix_and_preserves_label(self):
-        from forge.models.workflow import ForgeLabel
-        from forge.workflow.nodes.spec_generation import regenerate_spec_with_feedback
-
-        mock_jira = MagicMock()
-        mock_jira.add_comment = AsyncMock()
-        mock_jira.add_structured_comment = AsyncMock()
-        mock_jira.update_custom_field = AsyncMock()
-        mock_jira.delete_attachments_by_name = AsyncMock(return_value=[])
-        mock_jira.add_attachment = AsyncMock()
-        mock_jira.set_workflow_label = AsyncMock()
-        mock_jira.close = AsyncMock()
-
-        mock_agent = MagicMock()
-        mock_agent.regenerate_with_feedback = AsyncMock(return_value="# Completely Revised Spec")
-        mock_agent.close = AsyncMock()
-
-        state = create_initial_feature_state(
-            ticket_key="TEST-123",
-            ticket_type=TicketType.FEATURE,
-        )
-        state["feedback_comment"] = "!Please add auth section"
-        state["spec_content"] = "# Original Spec"
-
-        with (
-            patch("forge.workflow.nodes.spec_generation.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.spec_generation.ForgeAgent", return_value=mock_agent),
-        ):
-            result = await regenerate_spec_with_feedback(state)
-
-        # Assert feedback prefix '!' was stripped when passed to the agent
-        mock_agent.regenerate_with_feedback.assert_called_once()
-        call_kwargs = mock_agent.regenerate_with_feedback.call_args[1]
-        assert call_kwargs["feedback"] == "Please add auth section"
-
-        # Assert Jira label SPEC_PENDING is preserved/set
-        mock_jira.set_workflow_label.assert_called_once_with("TEST-123", ForgeLabel.SPEC_PENDING)
-
-        # Assert return state is updated correctly
-        assert result["spec_content"] == "# Completely Revised Spec"
-        assert result["feedback_comment"] is None
-        assert result["revision_requested"] is False

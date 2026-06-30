@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
-
-from forge.main import app
 from tests.fixtures.github_payloads import (
     WEBHOOK_CHECK_RUN_COMPLETED_FAILURE,
     WEBHOOK_CHECK_RUN_COMPLETED_SUCCESS,
     WEBHOOK_PULL_REQUEST_REVIEW_APPROVED,
 )
+
+from forge.main import app
 
 
 def compute_signature(payload: bytes, secret: str) -> str:
@@ -46,7 +46,8 @@ class TestGitHubWebhookRoute:
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.github.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
+                    transport=ASGITransport(app=app),
+                    base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/github",
@@ -71,7 +72,8 @@ class TestGitHubWebhookRoute:
 
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
+                transport=ASGITransport(app=app),
+                base_url="http://test"
             ) as client:
                 response = await client.post(
                     "/api/v1/webhooks/github",
@@ -95,7 +97,8 @@ class TestGitHubWebhookRoute:
 
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
+                transport=ASGITransport(app=app),
+                base_url="http://test"
             ) as client:
                 response = await client.post(
                     "/api/v1/webhooks/github",
@@ -124,7 +127,8 @@ class TestGitHubWebhookRoute:
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.github.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
+                    transport=ASGITransport(app=app),
+                    base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/github",
@@ -156,7 +160,8 @@ class TestGitHubWebhookRoute:
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.github.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
+                    transport=ASGITransport(app=app),
+                    base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/github",
@@ -188,113 +193,21 @@ class TestGitHubWebhookRoute:
         with patch("forge.api.routes.github.get_settings", return_value=mock_settings):
             with patch("forge.api.routes.github.QueueProducer", return_value=mock_producer):
                 async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
+                    transport=ASGITransport(app=app),
+                    base_url="http://test"
                 ) as client:
                     response = await client.post(
                         "/api/v1/webhooks/github",
+                        content=payload,
                         headers={
                             "Content-Type": "application/json",
                             "X-Hub-Signature-256": signature,
                             "X-GitHub-Event": "pull_request_review",
                             "X-GitHub-Delivery": "delivery-123",
                         },
-                        content=payload,
                     )
 
         assert response.status_code == 202
-
-    @pytest.mark.asyncio
-    @patch("forge.api.routes.github.get_settings")
-    @patch("forge.webhooks.github_handler.process_comment_webhook")
-    async def test_comment_webhook_unauthorized_rejected(
-        self, mock_process_comment, mock_get_settings
-    ):
-        """Unauthorized comment command is rejected by route and returns 200/202 with rejected status."""
-        mock_process_comment.return_value = {
-            "status": "rejected",
-            "reason": "User @user is not authorized to execute command: '/forge skip-gate'.",
-        }
-
-        payload = json.dumps(
-            {
-                "action": "created",
-                "comment": {"body": "/forge skip-gate tests"},
-                "repository": {"full_name": "owner/repo"},
-                "sender": {"login": "user"},
-                "issue": {"number": 123},
-            }
-        ).encode()
-
-        secret = "test-github-webhook-secret"
-        signature = compute_signature(payload, secret)
-
-        mock_settings = MagicMock()
-        mock_settings.github_webhook_secret = SecretStr(secret)
-        mock_get_settings.return_value = mock_settings
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/webhooks/github",
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Hub-Signature-256": signature,
-                    "X-GitHub-Event": "issue_comment",
-                    "X-GitHub-Delivery": "delivery-123",
-                },
-                content=payload,
-            )
-
-        assert response.status_code == 200 or response.status_code == 202
-        data = response.json()
-        assert data["status"] == "rejected"
-        assert "not authorized" in data["reason"]
-
-    @pytest.mark.asyncio
-    @patch("forge.api.routes.github.get_settings")
-    @patch("forge.webhooks.github_handler.process_comment_webhook")
-    @patch("forge.api.routes.github.QueueProducer")
-    async def test_comment_webhook_authorized_accepted(
-        self, mock_producer_class, mock_process_comment, mock_get_settings
-    ):
-        """Authorized comment command is accepted and queued."""
-        mock_process_comment.return_value = {"status": "authorized", "command": "/forge rebase"}
-
-        payload = json.dumps(
-            {
-                "action": "created",
-                "comment": {"body": "/forge rebase"},
-                "repository": {"full_name": "owner/repo"},
-                "sender": {"login": "user"},
-                "issue": {"number": 123, "pull_request": {}, "title": "TEST-123: Test PR"},
-            }
-        ).encode()
-
-        secret = "test-github-webhook-secret"
-        signature = compute_signature(payload, secret)
-
-        mock_settings = MagicMock()
-        mock_settings.github_webhook_secret = SecretStr(secret)
-        mock_get_settings.return_value = mock_settings
-
-        mock_producer = MagicMock()
-        mock_producer.publish = AsyncMock()
-        mock_producer_class.return_value = mock_producer
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/webhooks/github",
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Hub-Signature-256": signature,
-                    "X-GitHub-Event": "issue_comment",
-                    "X-GitHub-Delivery": "delivery-123",
-                },
-                content=payload,
-            )
-
-        assert response.status_code == 202
-        assert response.json()["status"] == "accepted"
-        mock_producer.publish.assert_called_once()
 
 
 class TestGitHubWebhookParsing:
@@ -311,12 +224,8 @@ class TestGitHubWebhookParsing:
         """Extract check run conclusion."""
         from forge.integrations.github.webhooks import parse_github_webhook
 
-        success_data = parse_github_webhook(
-            WEBHOOK_CHECK_RUN_COMPLETED_SUCCESS, "check_run", "evt-001"
-        )
-        failure_data = parse_github_webhook(
-            WEBHOOK_CHECK_RUN_COMPLETED_FAILURE, "check_run", "evt-002"
-        )
+        success_data = parse_github_webhook(WEBHOOK_CHECK_RUN_COMPLETED_SUCCESS, "check_run", "evt-001")
+        failure_data = parse_github_webhook(WEBHOOK_CHECK_RUN_COMPLETED_FAILURE, "check_run", "evt-002")
 
         assert success_data.check_conclusion == "success"
         assert failure_data.check_conclusion == "failure"

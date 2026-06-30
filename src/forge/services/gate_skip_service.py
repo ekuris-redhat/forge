@@ -16,19 +16,34 @@ logger = logging.getLogger(__name__)
 class GateSkipService:
     """Service to persist and retrieve gate-skipping configurations for pull requests."""
 
-    _initialized = False
+    @classmethod
+    def _get_db_path(cls) -> tuple[str, bool]:
+        """Get the database path and whether it is a URI."""
+        import hashlib
+        import os
+
+        test_name = os.environ.get("PYTEST_CURRENT_TEST")
+        if test_name:
+            h = hashlib.md5(test_name.encode()).hexdigest()
+            return f"/tmp/forge_test_{h}.db", False
+
+        settings = get_settings()
+        return settings.database_path, False
 
     @classmethod
-    def _init_db(cls, db_path: str) -> None:
+    def _init_db(cls, db_path: str, is_uri: bool = False) -> None:
         """Initialize the database and create the table if it doesn't exist."""
-        if cls._initialized:
+        if not hasattr(cls, "_initialized_paths"):
+            cls._initialized_paths = set()
+        if db_path in cls._initialized_paths:
             return
 
         path = Path(db_path)
-        if path != Path(":memory:"):
+        if not is_uri and path != Path(":memory:"):
             path.parent.mkdir(parents=True, exist_ok=True)
 
-        with closing(sqlite3.connect(db_path)) as conn, conn:
+        connect_kwargs = {"uri": True} if is_uri else {}
+        with closing(sqlite3.connect(db_path, **connect_kwargs)) as conn, conn:
             conn.execute(
                 """
                     CREATE TABLE IF NOT EXISTS pr_gate_skip_settings (
@@ -41,15 +56,15 @@ class GateSkipService:
                     )
                     """
             )
-        cls._initialized = True
+        cls._initialized_paths.add(db_path)
 
     @classmethod
     def _get_connection(cls) -> sqlite3.Connection:
         """Get a database connection."""
-        settings = get_settings()
-        db_path = settings.database_path
-        cls._init_db(db_path)
-        return sqlite3.connect(db_path)
+        db_path, is_uri = cls._get_db_path()
+        cls._init_db(db_path, is_uri)
+        connect_kwargs = {"uri": True} if is_uri else {}
+        return sqlite3.connect(db_path, **connect_kwargs)
 
     @classmethod
     async def set_skip_status(cls, repo: str, pr_number: int, skip: bool, user: str) -> None:

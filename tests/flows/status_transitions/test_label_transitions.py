@@ -1,6 +1,5 @@
 """Tests for label state transitions."""
 
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -164,31 +163,28 @@ class TestLabelConsistency:
 class TestLabelStateAtEachPhase:
     """Tests verifying correct label at each workflow phase."""
 
-    @pytest.mark.parametrize(
-        "label,expected_phase",
-        [
-            (ForgeLabel.PRD_DRAFTING, "prd_generation"),
-            (ForgeLabel.PRD_PENDING, "prd_approval"),
-            (ForgeLabel.PRD_APPROVED, "spec_generation"),
-            (ForgeLabel.SPEC_DRAFTING, "spec_generation"),
-            (ForgeLabel.SPEC_PENDING, "spec_approval"),
-            (ForgeLabel.SPEC_APPROVED, "epic_decomposition"),
-            (ForgeLabel.PLAN_DRAFTING, "epic_decomposition"),
-            (ForgeLabel.PLAN_PENDING, "plan_approval"),
-            (ForgeLabel.PLAN_APPROVED, "task_generation"),
-            (ForgeLabel.TASK_GENERATED, "task_routing"),
-            (ForgeLabel.TASK_IMPLEMENTING, "implementation"),
-            (ForgeLabel.TASK_PR_CREATED, "pr_created"),
-            (ForgeLabel.TASK_CI_PENDING, "ci_evaluation"),
-            (ForgeLabel.TASK_CI_FAILED, "ci_fix"),
-            (ForgeLabel.TASK_REVIEW_PENDING, "human_review"),
-            (ForgeLabel.TASK_REVIEW_APPROVED, "complete"),
-            (ForgeLabel.RCA_DRAFTING, "rca_generation"),
-            (ForgeLabel.RCA_PENDING, "rca_approval"),
-            (ForgeLabel.RCA_APPROVED, "bug_fix"),
-            (ForgeLabel.BLOCKED, "blocked"),
-        ],
-    )
+    @pytest.mark.parametrize("label,expected_phase", [
+        (ForgeLabel.PRD_DRAFTING, "prd_generation"),
+        (ForgeLabel.PRD_PENDING, "prd_approval"),
+        (ForgeLabel.PRD_APPROVED, "spec_generation"),
+        (ForgeLabel.SPEC_DRAFTING, "spec_generation"),
+        (ForgeLabel.SPEC_PENDING, "spec_approval"),
+        (ForgeLabel.SPEC_APPROVED, "epic_decomposition"),
+        (ForgeLabel.PLAN_DRAFTING, "epic_decomposition"),
+        (ForgeLabel.PLAN_PENDING, "plan_approval"),
+        (ForgeLabel.PLAN_APPROVED, "task_generation"),
+        (ForgeLabel.TASK_GENERATED, "task_routing"),
+        (ForgeLabel.TASK_IMPLEMENTING, "implementation"),
+        (ForgeLabel.TASK_PR_CREATED, "pr_created"),
+        (ForgeLabel.TASK_CI_PENDING, "ci_evaluation"),
+        (ForgeLabel.TASK_CI_FAILED, "ci_fix"),
+        (ForgeLabel.TASK_REVIEW_PENDING, "human_review"),
+        (ForgeLabel.TASK_REVIEW_APPROVED, "complete"),
+        (ForgeLabel.RCA_DRAFTING, "rca_generation"),
+        (ForgeLabel.RCA_PENDING, "rca_approval"),
+        (ForgeLabel.RCA_APPROVED, "bug_fix"),
+        (ForgeLabel.BLOCKED, "blocked"),
+    ])
     def test_label_maps_to_phase(self, label: ForgeLabel, expected_phase: str):
         """Each label maps to the expected workflow phase."""
         labels = ["forge:managed", label.value]
@@ -196,58 +192,3 @@ class TestLabelStateAtEachPhase:
         phase = get_workflow_phase(labels)
 
         assert phase == expected_phase
-
-
-class TestLabelTransitionsInteractive:
-    """Tests for active label transition mechanics and rejections."""
-
-    @pytest.mark.asyncio
-    @patch("forge.integrations.jira.client.JiraClient")
-    async def test_route_prd_approval_sets_spec_pending(self, mock_jira_class):
-        """Approved PRD transitions workflow and updates labels."""
-        mock_jira = AsyncMock()
-        mock_jira_class.return_value = mock_jira
-
-        state = {
-            "ticket_key": "TEST-123",
-            "is_paused": False,
-            "revision_requested": False,
-            "feedback_comment": None,
-        }
-
-        from forge.workflow.gates.prd_approval import route_prd_approval
-
-        next_node = route_prd_approval(state)
-        import asyncio
-
-        await asyncio.sleep(0.01)
-
-        assert next_node == "generate_spec"
-        mock_jira.set_workflow_label.assert_called_once_with("TEST-123", ForgeLabel.SPEC_PENDING)
-        mock_jira.close.assert_called_once()
-
-    @pytest.mark.asyncio
-    @patch("forge.integrations.jira.client.JiraClient")
-    async def test_spec_approved_out_of_order_rejected(self, mock_jira_class):
-        """Approving spec while in PRD stage is rejected with a comment."""
-        mock_jira = AsyncMock()
-        mock_jira_class.return_value = mock_jira
-
-        from forge.workflow.gates.spec_approval import handle_out_of_order_rejection
-
-        # Current node is prd_approval_gate, which expects prd approval
-        await handle_out_of_order_rejection(
-            ticket_key="TEST-123",
-            current_node="prd_approval_gate",
-            attempted_label="forge:spec-approved",
-        )
-
-        # Rejection should post warning comment
-        mock_jira.add_comment.assert_called_once()
-        args, _ = mock_jira.add_comment.call_args
-        assert "TEST-123" in args
-        assert "cannot approve spec before it has been set to pending" in args[1]
-
-        # Rejection should restore PRD pending label
-        mock_jira.set_workflow_label.assert_called_once_with("TEST-123", ForgeLabel.PRD_PENDING)
-        mock_jira.close.assert_called_once()

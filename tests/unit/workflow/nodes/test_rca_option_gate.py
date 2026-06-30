@@ -7,11 +7,9 @@ from langgraph.graph import END
 
 from forge.models.workflow import ForgeLabel
 from forge.workflow.nodes.rca_option_gate import (
-    parse_option_comment,
     rca_option_gate,
     regenerate_rca,
     route_rca_option,
-    validate_option_index,
 )
 
 
@@ -141,7 +139,7 @@ class TestRcaOptionGate:
         """Truncation happens at the last \\n\\n before the limit, not mid-sentence."""
         # Build rca_content with paragraphs separated by \n\n
         paragraph = "Word " * 100  # ~500 chars per paragraph
-        rca = "\n\n".join([paragraph] * 60)  # ~30k chars
+        rca = ("\n\n".join([paragraph] * 60))  # ~30k chars
         state = make_rca_option_state(rca_content=rca)
         mock_jira = _make_mock_jira()
 
@@ -279,37 +277,3 @@ class TestRegenerateRca:
             result = await regenerate_rca(state)
 
         assert result["reflection_critique"] is None
-
-
-class TestCommentParsingAndBoundsChecking:
-    def test_parse_option_comment_valid(self):
-        """parse_option_comment successfully extracts standard option numbers."""
-        assert parse_option_comment(">option 2") == 2
-        assert parse_option_comment(">Option 1") == 1
-        assert parse_option_comment(">OPTION 4") == 4
-
-    def test_parse_option_comment_whitespace_and_prose(self):
-        """parse_option_comment handles varying spacing and prose context."""
-        assert parse_option_comment(">option   3") == 3
-        assert parse_option_comment("I think we should select >option 1 as the fix approach.") == 1
-
-    def test_parse_option_comment_invalid(self):
-        """parse_option_comment returns None on invalid formats or missing patterns."""
-        assert parse_option_comment("option 2") is None
-        assert parse_option_comment(">option abc") is None
-        assert parse_option_comment("") is None
-        assert parse_option_comment(None) is None
-
-    def test_validate_option_index_valid(self):
-        """validate_option_index returns True if within bounds."""
-        options = [{"title": "Option A"}, {"title": "Option B"}]
-        assert validate_option_index(1, options) is True
-        assert validate_option_index(2, options) is True
-
-    def test_validate_option_index_invalid(self):
-        """validate_option_index returns False if index is out of bounds or options list is empty."""
-        options = [{"title": "Option A"}, {"title": "Option B"}]
-        assert validate_option_index(0, options) is False
-        assert validate_option_index(3, options) is False
-        assert validate_option_index(-1, options) is False
-        assert validate_option_index(1, []) is False

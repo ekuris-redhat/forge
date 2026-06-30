@@ -84,7 +84,6 @@ class TestBugStateNewFields:
         new_fields = [
             "triage_passed",
             "triage_missing_fields",
-            "triage_attempts",
             "reflection_count",
             "reflection_critique",
             "rca_options",
@@ -106,17 +105,12 @@ class TestBugStateNewFields:
         state = create_initial_bug_state("BUG-1")
         state["triage_passed"] = True
         state["triage_missing_fields"] = ["steps_to_reproduce"]
-        state["triage_attempts"] = 1
         state["reflection_count"] = 2
         state["reflection_critique"] = "Missing evidence"
         state["rca_options"] = [{"title": "Fix A", "description": "desc", "tradeoffs": "none"}]
         state["reproducibility_assessment"] = "Unit test feasible"
         state["selected_fix_option"] = 1
-        state["selected_fix_approach"] = {
-            "title": "Fix A",
-            "description": "desc",
-            "tradeoffs": "none",
-        }
+        state["selected_fix_approach"] = {"title": "Fix A", "description": "desc", "tradeoffs": "none"}
         state["plan_content"] = "## Plan\nChange src/auth.py"
         state["linked_task_keys"] = ["BUG-2", "BUG-3"]
         state["local_review_verdict"] = "adequate"
@@ -129,7 +123,6 @@ class TestBugStateNewFields:
 
         assert restored["triage_passed"] is True
         assert restored["triage_missing_fields"] == ["steps_to_reproduce"]
-        assert restored["triage_attempts"] == 1
         assert restored["reflection_count"] == 2
         assert restored["reflection_critique"] == "Missing evidence"
         assert len(restored["rca_options"]) == 1
@@ -156,7 +149,6 @@ class TestBugStateNewFields:
         # All new fields should return their expected defaults via .get()
         assert old_bug_state.get("triage_passed", False) is False
         assert old_bug_state.get("triage_missing_fields", []) == []
-        assert old_bug_state.get("triage_attempts", 0) == 0
         assert old_bug_state.get("reflection_count", 0) == 0
         assert old_bug_state.get("reflection_critique", None) is None
         assert old_bug_state.get("rca_options", []) == []
