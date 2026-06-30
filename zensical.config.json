@@ -32,8 +32,6 @@
       {
         "media": "(prefers-color-scheme: light)",
         "scheme": "default",
-        "primary": "indigo",
-        "accent": "indigo",
         "toggle": {
           "icon": "lucide/sun",
           "name": "Switch to dark mode"
@@ -42,8 +40,6 @@
       {
         "media": "(prefers-color-scheme: dark)",
         "scheme": "slate",
-        "primary": "indigo",
-        "accent": "indigo",
         "toggle": {
           "icon": "lucide/moon",
           "name": "Switch to light mode"

@@ -35,8 +35,6 @@
       {% set href = config.theme.favicon | d("assets/images/favicon.png") %}
       <link rel="icon" href="{{ href | url }}">
       <meta name="generator" content="{{ generator }}">
-      <!-- Custom Meta Tags -->
-      <meta name="theme-color" content="#4f46e5">
     {% endblock %}
     {% block htmltitle %}
       {% if page.meta and page.meta.title %}
@@ -97,9 +95,9 @@
       {% set palette = palette | first %}
     {% endif %}
     {% set scheme  = palette.scheme  | d("default", true) %}
-    {% set primary = palette.primary | d("indigo", true) %}
-    {% set accent  = palette.accent  | d("indigo", true) %}
-    <body class="forge-custom-theme" dir="{{ direction }}" data-md-color-scheme="{{ scheme | replace(' ', '-') }}" data-md-color-primary="{{ primary | replace(' ', '-') }}" data-md-color-accent="{{ accent | replace(' ', '-') }}">
+    {% set primary = palette.primary %}
+    {% set accent  = palette.accent %}
+    <body class="forge-custom-theme" dir="{{ direction }}" data-md-color-scheme="{{ scheme | replace(' ', '-') }}"{% if primary %} data-md-color-primary="{{ primary | replace(' ', '-') }}"{% endif %}{% if accent %} data-md-color-accent="{{ accent | replace(' ', '-') }}"{% endif %}>
   {% else %}
     <body class="forge-custom-theme" dir="{{ direction }}">
   {% endif %}

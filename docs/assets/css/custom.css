@@ -1,15 +1,10 @@
 /* Custom Styles for Forge SDLC Documentation Portal */
 
-:root {
-  --md-primary-color: #4f46e5; /* Indigo-600 */
-  --md-primary-color--dark: #3730a3; /* Indigo-800 */
-}
-
 /* Ensure the layout is fully responsive and behaves nicely on mobile */
 @media screen and (max-width: 76.25em) {
   .md-nav--primary .md-nav__title {
     font-weight: 700;
-    color: var(--md-primary-color);
+    color: var(--md-primary-fg-color);
   }
 }
 
@@ -142,13 +137,13 @@
 }
 
 .custom-nav__link:hover {
-  background-color: rgba(79, 70, 229, 0.08); /* Transparent primary color */
-  color: var(--md-primary-color);
+  background-color: color-mix(in srgb, var(--md-primary-fg-color) 8%, transparent);
+  color: var(--md-primary-fg-color);
 }
 
 .custom-nav__link--active {
-  background-color: rgba(79, 70, 229, 0.12) !important;
-  color: var(--md-primary-color) !important;
+  background-color: color-mix(in srgb, var(--md-primary-fg-color) 12%, transparent) !important;
+  color: var(--md-primary-fg-color) !important;
   font-weight: 700;
 }
 
@@ -192,7 +187,7 @@
 .custom-nav__sublist {
   padding-left: 1rem;
   margin-top: 0.25rem;
-  border-left: 1px solid rgba(79, 70, 229, 0.2);
+  border-left: 1px solid color-mix(in srgb, var(--md-primary-fg-color) 20%, transparent);
 }
 
 /* Color adaptations for dark scheme */
