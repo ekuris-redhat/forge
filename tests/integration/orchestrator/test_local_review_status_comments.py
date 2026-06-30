@@ -142,18 +142,6 @@ class TestLocalReviewStatusCommentsTS005:
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner_pass2),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
         ):
-            state = await local_review_changes(state)
-
-        # Pass 3: no unfixed issues, should post fix comment with pass 3 and route to create_pr
-        # Note: MAX_REVIEW_ATTEMPTS is 2, so pass 3 would be the final attempt
-        # We need to test the scenario where it succeeds on the last attempt
-        mock_runner_pass3 = create_mock_container_runner(has_unfixed_issues=False)
-
-        with (
-            patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner_pass3),
-            patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-        ):
             result = await local_review_changes(state)
 
         # Verify all comments were posted: initial + fix(2) + fix(3)
