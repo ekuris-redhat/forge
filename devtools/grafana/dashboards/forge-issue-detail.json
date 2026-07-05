@@ -250,7 +250,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT t.id as id, o_agg.model, round(o_agg.latency_s, 1) as latency_s, round(o_agg.cost, 4) as cost, o_agg.total_tokens as tokens FROM default.traces t FINAL JOIN (SELECT trace_id, any(provided_model_name) as model, dateDiff('second', min(start_time), max(coalesce(end_time, start_time))) as latency_s, sum(total_cost) as cost, sum(usage_details['total']) as total_tokens FROM default.observations FINAL GROUP BY trace_id) o_agg ON t.id = o_agg.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' ORDER BY t.timestamp"
+                        "rawSql": "SELECT t.id as id, t.metadata['workflow_step'] as step, row_number() OVER (PARTITION BY t.metadata['workflow_step'] ORDER BY t.timestamp) as iteration, o_agg.model, round(o_agg.latency_s, 1) as latency_s, round(o_agg.cost, 4) as cost, o_agg.total_tokens as tokens FROM default.traces t FINAL JOIN (SELECT trace_id, any(provided_model_name) as model, dateDiff('second', min(start_time), max(coalesce(end_time, start_time))) as latency_s, sum(total_cost) as cost, sum(usage_details['total']) as total_tokens FROM default.observations FINAL GROUP BY trace_id) o_agg ON t.id = o_agg.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' ORDER BY t.timestamp"
                       }
                     },
                     "refId": "A",
@@ -594,6 +594,208 @@
           }
         }
       },
+      "panel-28": {
+        "kind": "Panel",
+        "spec": {
+          "id": 28,
+          "title": "Iteration Count per Stage",
+          "description": "Number of trace invocations per workflow step — approximates iteration/revision count",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "grafana-clickhouse-datasource",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "langfuse-clickhouse"
+                      },
+                      "spec": {
+                        "format": "table",
+                        "rawSql": "SELECT t.metadata['workflow_step'] as step, count(*) as iterations FROM default.traces t FINAL WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' GROUP BY step ORDER BY iterations DESC"
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "barchart",
+            "version": "",
+            "spec": {
+              "options": {
+                "orientation": "horizontal",
+                "xField": "step"
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-30": {
+        "kind": "Panel",
+        "spec": {
+          "id": 30,
+          "title": "Machine Time vs Idle Time per Stage",
+          "description": "Active LLM processing time vs waiting/idle time per workflow step",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "grafana-clickhouse-datasource",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "langfuse-clickhouse"
+                      },
+                      "spec": {
+                        "format": "table",
+                        "rawSql": "SELECT step, machine_s, greatest(wall_s - machine_s, 0) as idle_s FROM (SELECT t.metadata['workflow_step'] as step, sum(dateDiff('second', o.start_time, coalesce(o.end_time, o.start_time))) as machine_s, dateDiff('second', min(o.start_time), max(coalesce(o.end_time, o.start_time))) as wall_s FROM default.traces t FINAL JOIN default.observations o FINAL ON t.id = o.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' GROUP BY step) ORDER BY machine_s + idle_s DESC"
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "barchart",
+            "version": "",
+            "spec": {
+              "options": {
+                "orientation": "horizontal",
+                "xField": "step",
+                "stacking": "normal"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "s"
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "machine_s"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "Machine Time"
+                      },
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "green",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "idle_s"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "Idle / Wait Time"
+                      },
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "orange",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-32": {
+        "kind": "Panel",
+        "spec": {
+          "id": 32,
+          "title": "CI Fix Attempts",
+          "description": "Number of CI evaluations vs fix attempts for this ticket",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "grafana-clickhouse-datasource",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "langfuse-clickhouse"
+                      },
+                      "spec": {
+                        "format": "table",
+                        "rawSql": "SELECT countIf(t.metadata['workflow_step'] = 'ci_evaluator') as ci_evaluations, countIf(t.metadata['workflow_step'] = 'attempt_ci_fix') as fix_attempts FROM default.traces t FINAL WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] IN ('ci_evaluator', 'attempt_ci_fix')"
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ]
+                },
+                "textMode": "value_and_name"
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
       "panel-8": {
         "kind": "Panel",
         "spec": {
@@ -750,6 +952,59 @@
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-8"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "kind": "RowsLayoutRow",
+            "spec": {
+              "title": "Iterations & Timing",
+              "collapse": false,
+              "layout": {
+                "kind": "GridLayout",
+                "spec": {
+                  "items": [
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 0,
+                        "width": 8,
+                        "height": 10,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-28"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 8,
+                        "y": 0,
+                        "width": 10,
+                        "height": 10,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-30"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 18,
+                        "y": 0,
+                        "width": 6,
+                        "height": 10,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-32"
                         }
                       }
                     }
