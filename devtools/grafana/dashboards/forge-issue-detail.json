@@ -700,6 +700,61 @@
             }
           }
         }
+      },
+      "panel-32": {
+        "kind": "Panel",
+        "spec": {
+          "id": 32,
+          "title": "CI Evaluations & Fix Attempts",
+          "description": "",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "grafana-clickhouse-datasource",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "langfuse-clickhouse"
+                      },
+                      "spec": {
+                        "format": "table",
+                        "rawSql": "SELECT coalesce(toInt64(nullIf(JSONExtractString(metadata, 'ci_evaluations'), '')), 0) AS ci_evaluations, coalesce(toInt64(nullIf(JSONExtractString(metadata, 'ci_fix_attempts'), '')), 0) AS ci_fix_attempts FROM traces FINAL WHERE session_id = '${jira_issue}' LIMIT 1"
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "",
+            "spec": {
+              "options": {
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ]
+                }
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
       }
     },
     "layout": {
@@ -826,11 +881,24 @@
                       "spec": {
                         "x": 0,
                         "y": 0,
-                        "width": 24,
+                        "width": 12,
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-28"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 12,
+                        "y": 0,
+                        "width": 12,
+                        "height": 8,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-32"
                         }
                       }
                     }
