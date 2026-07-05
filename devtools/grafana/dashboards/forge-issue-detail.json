@@ -250,7 +250,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT t.metadata['workflow_step'] AS step, row_number() OVER (PARTITION BY t.metadata['workflow_step'] ORDER BY t.timestamp ASC) AS iteration, t.id as id, o_agg.model, round(o_agg.latency_s, 1) as latency_s, round(o_agg.cost, 4) as cost, o_agg.total_tokens as tokens FROM default.traces t FINAL JOIN (SELECT trace_id, any(provided_model_name) as model, dateDiff('second', min(start_time), max(coalesce(end_time, start_time))) as latency_s, sum(total_cost) as cost, sum(usage_details['total']) as total_tokens FROM default.observations FINAL GROUP BY trace_id) o_agg ON t.id = o_agg.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' ORDER BY t.timestamp"
+                        "rawSql": "SELECT t.metadata['workflow_step'] AS step, row_number() OVER (PARTITION BY t.metadata['workflow_step'] ORDER BY t.timestamp ASC) AS iteration, t.id as id, o_agg.model, round(o_agg.latency_s, 1) as latency_s, round(o_agg.cost, 4) as cost, o_agg.total_tokens as tokens FROM traces FINAL t JOIN (SELECT trace_id, any(provided_model_name) as model, dateDiff('second', min(start_time), max(coalesce(end_time, start_time))) as latency_s, sum(total_cost) as cost, sum(usage_details['total']) as total_tokens FROM observations FINAL GROUP BY trace_id) o_agg ON t.id = o_agg.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' ORDER BY t.timestamp"
                       }
                     },
                     "refId": "A",
@@ -716,7 +716,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT JSONExtractString(metadata, 'langfuse_trace_name') AS workflow_step, count() AS iteration_count FROM traces FINAL WHERE session_id = '${jira_issue}' AND JSONExtractString(metadata, 'langfuse_trace_name') != '' GROUP BY workflow_step ORDER BY iteration_count DESC"
+                        "rawSql": "SELECT JSONExtractString(metadata, 'workflow_step') AS workflow_step, count() AS iteration_count FROM traces FINAL WHERE session_id = '${jira_issue}' AND JSONExtractString(metadata, 'workflow_step') != '' GROUP BY workflow_step ORDER BY iteration_count DESC"
                       }
                     },
                     "refId": "A",
@@ -770,7 +770,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT t.metadata['langfuse_trace_name'] AS step, sum(o.duration) AS machine_time, greatest(0, dateDiff('second', min(o.start_time), max(coalesce(o.end_time, o.start_time))) - sum(o.duration)) AS idle_time FROM default.traces t FINAL JOIN default.observations o FINAL ON t.id = o.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['langfuse_trace_name'] != '' GROUP BY step ORDER BY min(o.start_time)"
+                        "rawSql": "SELECT t.metadata['workflow_step'] AS step, sum(o.duration) AS machine_time, greatest(0, dateDiff('second', min(o.start_time), max(coalesce(o.end_time, o.start_time))) - sum(o.duration)) AS idle_time FROM traces FINAL t JOIN observations FINAL o ON t.id = o.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' GROUP BY step ORDER BY min(o.start_time)"
                       }
                     },
                     "refId": "A",
