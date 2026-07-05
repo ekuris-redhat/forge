@@ -761,6 +761,19 @@
           {
             "kind": "RowsLayoutRow",
             "spec": {
+              "title": "Iterations & Timing",
+              "collapse": true,
+              "layout": {
+                "kind": "GridLayout",
+                "spec": {
+                  "items": []
+                }
+              }
+            }
+          },
+          {
+            "kind": "RowsLayoutRow",
+            "spec": {
               "title": "Cost & Token Breakdown",
               "collapse": false,
               "layout": {
