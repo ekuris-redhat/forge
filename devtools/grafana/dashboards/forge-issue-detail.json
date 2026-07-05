@@ -278,6 +278,52 @@
                   {
                     "matcher": {
                       "id": "byName",
+                      "options": "step"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "Step"
+                      },
+                      {
+                        "id": "custom",
+                        "value": {
+                          "align": "auto",
+                          "displayMode": "auto"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "iteration"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "Iteration"
+                      },
+                      {
+                        "id": "unit",
+                        "value": "none"
+                      },
+                      {
+                        "id": "decimals",
+                        "value": 0
+                      },
+                      {
+                        "id": "custom",
+                        "value": {
+                          "align": "auto",
+                          "displayMode": "auto"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
                       "options": "cost"
                     },
                     "properties": [
