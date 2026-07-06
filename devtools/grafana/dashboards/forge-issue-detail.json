@@ -362,6 +362,18 @@
                         ]
                       }
                     ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "tokens"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "locale"
+                      }
+                    ]
                   }
                 ]
               }
