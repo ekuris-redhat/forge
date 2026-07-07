@@ -203,16 +203,42 @@ def git_commit(workspace: Path, message: str) -> bool:
             text=True,
         )
 
-        # Stage all changes
+        # Stage tracked file changes (modifications + deletions)
         result = subprocess.run(
-            ["git", "add", "-A", "--", ".", ":!.forge", ":!.forge/**"],
+            ["git", "add", "-u"],
             cwd=workspace,
             capture_output=True,
             text=True,
         )
         if result.returncode != 0:
-            logger.error(f"Git add failed: {result.stderr}")
+            logger.error(f"Git add -u failed: {result.stderr}")
             return False
+
+        # Stage new untracked files (respects .gitignore, explicitly skips .forge/)
+        # Use -z for null-byte separators — safe for non-ASCII and special characters
+        ls_result = subprocess.run(
+            ["git", "ls-files", "-z", "--others", "--exclude-standard"],
+            cwd=workspace,
+            capture_output=True,
+        )
+        if ls_result.returncode != 0:
+            logger.error(f"git ls-files failed: {ls_result.stderr}")
+            return False
+
+        new_files = [
+            f for f in ls_result.stdout.split(b"\0")
+            if f and not f.startswith(b".forge/") and f != b".forge"
+        ]
+        if new_files:
+            result = subprocess.run(
+                ["git", "add", "--"] + [f.decode("utf-8", errors="surrogateescape") for f in new_files],
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                logger.error(f"Git add new files failed: {result.stderr}")
+                return False
 
         # Check if there are changes to commit
         result = subprocess.run(
