@@ -328,6 +328,10 @@
                     },
                     "properties": [
                       {
+                        "id": "displayName",
+                        "value": "Cost"
+                      },
+                      {
                         "id": "unit",
                         "value": "currencyUSD"
                       }
@@ -340,6 +344,10 @@
                     },
                     "properties": [
                       {
+                        "id": "displayName",
+                        "value": "Latency (s)"
+                      },
+                      {
                         "id": "unit",
                         "value": "s"
                       }
@@ -351,6 +359,10 @@
                       "options": "id"
                     },
                     "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "ID"
+                      },
                       {
                         "id": "links",
                         "value": [
@@ -370,8 +382,24 @@
                     },
                     "properties": [
                       {
+                        "id": "displayName",
+                        "value": "Tokens"
+                      },
+                      {
                         "id": "unit",
                         "value": "locale"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "model"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "Model"
                       }
                     ]
                   }
