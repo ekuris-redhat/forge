@@ -361,7 +361,7 @@
                     "properties": [
                       {
                         "id": "displayName",
-                        "value": "ID"
+                        "value": "Id"
                       },
                       {
                         "id": "links",
@@ -799,6 +799,7 @@
               },
               "fieldConfig": {
                 "defaults": {
+                  "unit": "locale",
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
