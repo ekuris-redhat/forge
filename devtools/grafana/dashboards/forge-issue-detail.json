@@ -250,7 +250,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT JSONExtractString(metadata, 'workflow_step') AS step, row_number() OVER (PARTITION BY step ORDER BY t.timestamp ASC) AS iteration, t.id as id, o_agg.model, round(o_agg.latency_s, 1) as latency_s, round(o_agg.cost, 4) as cost, o_agg.total_tokens as tokens FROM default.traces t FINAL JOIN (SELECT trace_id, any(provided_model_name) as model, dateDiff('second', min(start_time), max(coalesce(end_time, start_time))) as latency_s, sum(total_cost) as cost, sum(usage_details['total']) as total_tokens FROM default.observations o FINAL GROUP BY trace_id) o_agg ON t.id = o_agg.trace_id WHERE t.session_id = '${jira_issue}' AND JSONExtractString(metadata, 'workflow_step') != '' ORDER BY t.timestamp"
+                        "rawSql": "SELECT CASE t.metadata['workflow_step'] WHEN 'entry' THEN 'Entry' WHEN 'prd_approval_gate' THEN 'PRD' WHEN 'spec_approval_gate' THEN 'Spec' WHEN 'plan_approval_gate' THEN 'Epic Plan' WHEN 'task_approval_gate' THEN 'Tasks' WHEN 'create_pr' THEN 'PR Creation' WHEN 'human_review_gate' THEN 'Human Review' WHEN 'ci_evaluator' THEN 'CI' WHEN 'attempt_ci_fix' THEN 'CI Fix' ELSE t.metadata['workflow_step'] END AS step, row_number() OVER (PARTITION BY t.metadata['workflow_step'] ORDER BY t.timestamp ASC) AS iteration, t.id as id, o_agg.model, round(o_agg.latency_s, 1) as latency_s, round(o_agg.cost, 4) as cost, o_agg.total_tokens as tokens FROM default.traces t FINAL JOIN (SELECT trace_id, any(provided_model_name) as model, dateDiff('second', min(start_time), max(coalesce(end_time, start_time))) as latency_s, sum(total_cost) as cost, sum(usage_details['total']) as total_tokens FROM default.observations o FINAL GROUP BY trace_id) o_agg ON t.id = o_agg.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' ORDER BY t.timestamp"
                       }
                     },
                     "refId": "A",
@@ -1086,7 +1086,7 @@
                       "spec": {
                         "x": 0,
                         "y": 0,
-                        "width": 3,
+                        "width": 4,
                         "height": 4,
                         "element": {
                           "kind": "ElementReference",
@@ -1097,7 +1097,7 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 3,
+                        "x": 4,
                         "y": 0,
                         "width": 3,
                         "height": 4,
@@ -1110,7 +1110,7 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 6,
+                        "x": 7,
                         "y": 0,
                         "width": 3,
                         "height": 4,
@@ -1123,9 +1123,9 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 12,
+                        "x": 10,
                         "y": 0,
-                        "width": 3,
+                        "width": 4,
                         "height": 4,
                         "element": {
                           "kind": "ElementReference",
@@ -1136,7 +1136,7 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 15,
+                        "x": 14,
                         "y": 0,
                         "width": 3,
                         "height": 4,
@@ -1149,9 +1149,9 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 18,
+                        "x": 17,
                         "y": 0,
-                        "width": 3,
+                        "width": 4,
                         "height": 4,
                         "element": {
                           "kind": "ElementReference",
