@@ -1,0 +1,12 @@
+[allowlist]
+  description = "Global Allowlist"
+
+  regexes = [
+    # Dummy/fake PAT used in unit tests for secret redaction validation
+    '''ghp_sensitivegithubtoken1234567890abcdef''',
+  ]
+
+  paths = [
+    # Test files containing intentionally fake/dummy tokens for secret redaction testing
+    '''tests/unit/git/test_rebase_engine\.py$''',
+  ]
