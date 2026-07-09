@@ -163,6 +163,13 @@ async def receive_jira_webhook(
                     f"Routing {issue_type} {source_ticket_key} webhook "
                     f"to parent Feature {routing_ticket_key}"
                 )
+            elif issue_type in ("Epic", "Task"):
+                # Bypass parent validation for standalone managed Epic/Task issues.
+                # routing_ticket_key remains webhook_data.ticket_key, source_ticket_key remains None.
+                logger.info(
+                    f"Bypassing parent checks for standalone {issue_type} "
+                    f"{webhook_data.ticket_key}."
+                )
             else:
                 # Epics/Tasks without forge:parent are invalid - reject
                 span.set_attribute("forge.skipped", True)

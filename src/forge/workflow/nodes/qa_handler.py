@@ -99,6 +99,17 @@ async def answer_question(state: WorkflowState) -> WorkflowState:
         artifact_content = _get_artifact_content(state, artifact_type)
         generation_context = state.get("generation_context", {}).get(artifact_type, {})
 
+        # Fetch issue details for Q&A if not already present in state
+        summary = state.get("summary") or ""
+        description = state.get("description") or ""
+        if not summary or not description:
+            try:
+                issue = await jira.get_issue(ticket_key)
+                summary = summary or issue.summary or ""
+                description = description or issue.description or ""
+            except Exception as ex:
+                logger.warning(f"Could not fetch issue for Q&A: {ex}")
+
         # Generate answer using agent
         answer = await agent.answer_question(
             question=question,
@@ -112,6 +123,8 @@ async def answer_question(state: WorkflowState) -> WorkflowState:
                 "retry_count": state.get("retry_count", 0),
                 "artifact_type": artifact_type,
                 "generation_context": generation_context,
+                "summary": summary,
+                "description": description,
             },
         )
 

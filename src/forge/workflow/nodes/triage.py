@@ -97,6 +97,10 @@ async def triage_check(state: BugState) -> BugState:
                     "triage_passed": True,
                     "triage_missing_fields": [],
                     "current_node": "analyze_bug",
+                    "is_paused": False,
+                    "is_question": False,
+                    "revision_requested": False,
+                    "feedback_comment": None,
                     "last_error": None,
                     "retry_count": 0,
                 }
@@ -122,7 +126,8 @@ async def triage_check(state: BugState) -> BugState:
         await post_status_comment(
             jira,
             ticket_key,
-            f"To proceed with analysis, please provide the following information:\n\n{fields_listed}",
+            "To proceed with analysis, please reply with a comment starting with `!` "
+            f"and provide the following information:\n\n{fields_listed}",
         )
         await jira.set_workflow_label(ticket_key, ForgeLabel.TRIAGE_PENDING)
 

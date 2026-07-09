@@ -61,6 +61,7 @@ _YOLO_GATES = {
     "prd_approval_gate",
     "spec_approval_gate",
     "plan_approval_gate",
+    "task_plan_approval_gate",
     "task_approval_gate",
     "rca_option_gate",
 }
@@ -258,9 +259,10 @@ class OrchestratorWorker:
                 )
             else:
                 # Use router to resolve which workflow to use
+                labels = message.payload.get("issue", {}).get("fields", {}).get("labels", []) or []
                 workflow_instance = self.router.resolve(
                     ticket_type=ticket_type,
-                    labels=[],  # TODO: Extract labels from message payload
+                    labels=labels,
                     event=message.payload,
                 )
 
@@ -597,11 +599,11 @@ class OrchestratorWorker:
                     "decompose_epics": "plan",
                     "regenerate_all_epics": "plan",
                     "update_single_epic": "plan",
+                    "task_plan_approval_gate": "plan",
                     "task_approval_gate": "task",
                     "generate_tasks": "task",
                 }
                 expected_stage = node_to_stage.get(current_node)
-
                 if approval_stage and expected_stage and approval_stage == expected_stage:
                     is_approved = True
                     logger.info(
@@ -623,6 +625,7 @@ class OrchestratorWorker:
                 "prd_approval_gate": "forge:prd-approved",
                 "spec_approval_gate": "forge:spec-approved",
                 "plan_approval_gate": "forge:plan-approved",
+                "task_plan_approval_gate": "forge:plan-approved",
                 "task_approval_gate": "forge:task-approved",
             }
             expected_label = gate_to_approved_label.get(current_node)
@@ -1122,6 +1125,7 @@ class OrchestratorWorker:
                 "plan_approval_gate",
                 "task_approval_gate",
                 "plan_approval_gate_bug",
+                "task_plan_approval_gate",
             }
             prev_error = current_state.get("last_error")
             is_paused_at_gate = current_state.get("is_paused") and current_node in approval_gates
@@ -1334,6 +1338,7 @@ class OrchestratorWorker:
             "update_single_epic": "the plan",
             "rca_option_gate": "the RCA",
             "plan_approval_gate_bug": "the plan",
+            "task_plan_approval_gate": "the task plan",
             "task_approval_gate": "the tasks",
             "generate_tasks": "the tasks",
             "regenerate_all_tasks": "the tasks",
@@ -1551,12 +1556,11 @@ class OrchestratorWorker:
             issue_type = fields.get("issuetype", {})
             ticket_type_str = issue_type.get("name", "Unknown")
 
-            # Child ticket events (Epic, Task) are re-routed to the parent Feature
-            # by the Jira webhook handler. The payload still carries the child's
-            # issue type, which won't match any workflow. Fall through to UNKNOWN
-            # so _find_workflow_by_state resolves it from checkpoint.
+            # Child ticket events are re-routed to the parent Feature by the Jira
+            # webhook handler. The payload still carries the child's issue type,
+            # so fall through to UNKNOWN only when this message is from a child.
             child_types = {"Epic", "Task", "Sub-task"}
-            if ticket_type_str in child_types:
+            if ticket_type_str in child_types and message.payload.get("source_ticket_key"):
                 return TicketType.UNKNOWN
 
             # Map string to TicketType enum

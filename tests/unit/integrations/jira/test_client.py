@@ -409,7 +409,7 @@ class TestJiraClientADF:
         plan = """# Task Takeover Routing
 
 - Keep workflow identity in TaskTakeoverWorkflow.matches().
-- Preserve forge:managed and add a separate trigger label.
+- Preserve forge:managed as the user-facing workflow opt-in.
 
 ```python
 def matches(issue):
@@ -481,10 +481,6 @@ class TestGetProjectProperty:
     @pytest.mark.asyncio
     async def test_returns_value_on_success(self, jira_client):
         """Returns the property value when the API responds with 200."""
-        import forge.integrations.jira.client as client_module
-
-        client_module._project_property_cache.clear()
-
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"key": "forge.repos", "value": ["acme/backend"]}
@@ -500,29 +496,8 @@ class TestGetProjectProperty:
         assert result == ["acme/backend"]
 
     @pytest.mark.asyncio
-    async def test_returns_cached_value_on_second_call(self, jira_client):
-        """Returns cached value without hitting the API on second call."""
-        import forge.integrations.jira.client as client_module
-
-        client_module._project_property_cache.clear()
-        client_module._project_property_cache[("MYPROJ", "forge.repos")] = ["cached/repo"]
-
-        with patch.object(jira_client, "_get_client") as mock_get_client:
-            mock_http = AsyncMock()
-            mock_get_client.return_value = mock_http
-
-            result = await jira_client.get_project_property("MYPROJ", "forge.repos")
-
-        mock_http.get.assert_not_called()
-        assert result == ["cached/repo"]
-
-    @pytest.mark.asyncio
     async def test_returns_none_on_404(self, jira_client):
         """Returns None when the property is not set (404)."""
-        import forge.integrations.jira.client as client_module
-
-        client_module._project_property_cache.clear()
-
         mock_response = MagicMock()
         mock_response.status_code = 404
 
@@ -745,42 +720,6 @@ class TestGetSkillsConfig:
             result = await jira_client.get_skills_config("MYPROJ")
 
         assert result == []
-
-    @pytest.mark.asyncio
-    async def test_does_not_use_project_property_cache(self, jira_client):
-        """get_skills_config bypasses _project_property_cache for fresh reads."""
-        import forge.integrations.jira.client as client_module
-
-        # Pre-populate the cache with a stale value for this key
-        client_module._project_property_cache[("MYPROJ", "forge.skills")] = [
-            {"source": "https://github.com/stale/skills", "path": "old"}
-        ]
-
-        mock_response = self._make_response(
-            200,
-            {
-                "value": [
-                    {"source": "https://github.com/fresh/skills", "ref": "main", "path": "skill_0"},
-                ]
-            },
-        )
-
-        with patch.object(jira_client, "_get_client") as mock_get_client:
-            mock_http = AsyncMock()
-            mock_http.get = AsyncMock(return_value=mock_response)
-            mock_get_client.return_value = mock_http
-
-            result = await jira_client.get_skills_config("MYPROJ")
-
-        # Should return fresh API data, not the stale cache
-        assert result is not None
-        assert len(result) == 1
-        assert result[0].source == "https://github.com/fresh/skills"
-        # HTTP call must have been made (not served from cache)
-        mock_http.get.assert_called_once_with("/project/MYPROJ/properties/forge.skills")
-
-        # Restore cache state
-        client_module._project_property_cache.clear()
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_for_empty_list(self, jira_client):

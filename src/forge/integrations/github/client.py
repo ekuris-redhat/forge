@@ -104,10 +104,39 @@ class GitHubClient:
                 "base": base,
             },
         )
+
+        if response.status_code == 422:
+            existing = await self._find_existing_pr(client, owner, repo, head, base)
+            if existing:
+                logger.info(
+                    f"PR already exists for {head} -> {base}: #{existing['number']} in {owner}/{repo}"
+                )
+                return existing
+            response.raise_for_status()
+
         response.raise_for_status()
         data = response.json()
         logger.info(f"Created PR #{data['number']} in {owner}/{repo}")
         return data
+
+    async def _find_existing_pr(
+        self,
+        client: Any,
+        owner: str,
+        repo: str,
+        head: str,
+        base: str,
+    ) -> dict[str, Any] | None:
+        """Find an existing open PR for the given head and base branches."""
+        response = await client.get(
+            f"/repos/{owner}/{repo}/pulls",
+            params={"head": head, "base": base, "state": "open"},
+        )
+        if response.status_code == 200:
+            pulls = response.json()
+            if pulls:
+                return pulls[0]
+        return None
 
     async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> dict[str, Any]:
         """Get pull request details.

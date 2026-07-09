@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from forge.config import get_settings
+from forge.integrations.github.client import GitHubClient
 from forge.integrations.jira.client import JiraClient
-from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import (
     post_status_comment,
@@ -17,6 +17,8 @@ from forge.workflow.utils.jira_status import (
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.guardrails import GuardrailsLoader
 from forge.workspace.manager import Workspace, WorkspaceManager
+
+WorkflowState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +232,20 @@ async def setup_workspace(state: WorkflowState) -> WorkflowState:
         git.clone()
         logger.info(f"Clone completed successfully for {current_repo}")
 
+        # Detect the upstream default branch (main, master, etc.)
+        default_branch = "main"
+        if current_repo and "/" in current_repo:
+            owner, repo_name = current_repo.split("/", 1)
+            github = GitHubClient()
+            try:
+                repo_data = await github.get_repository(owner, repo_name)
+                default_branch = repo_data.get("default_branch", "main")
+                logger.info(f"Detected default branch for {current_repo}: {default_branch}")
+            except Exception as exc:
+                logger.warning(f"Could not detect default branch for {current_repo}: {exc}")
+            finally:
+                await github.close()
+
         # Set up feature branch.
         # If the workflow already created a PR (fork_owner/fork_repo in state),
         # the branch lives on the fork. Add the fork remote, check whether the
@@ -247,9 +263,9 @@ async def setup_workspace(state: WorkflowState) -> WorkflowState:
                 )
                 git.checkout_branch(workspace.branch_name, remote="fork")
             else:
-                git.create_branch()
+                git.create_branch(default_branch)
         else:
-            git.create_branch()
+            git.create_branch(default_branch)
 
         # Create .forge directory for task handoff
         forge_dir = workspace.path / ".forge"
@@ -278,6 +294,7 @@ async def setup_workspace(state: WorkflowState) -> WorkflowState:
         context["guardrails"] = guardrails.get_system_context()
         context["current_repo"] = current_repo
         context["branch_name"] = workspace.branch_name
+        context["default_branch"] = default_branch
 
         logger.info(f"Workspace ready: {workspace}")
 

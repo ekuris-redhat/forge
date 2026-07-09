@@ -286,6 +286,7 @@ class TestTriageCheckMissingFields:
         # At least 2 comments: acknowledgement + missing fields
         assert mock_jira.add_comment.call_count >= 2
         last_comment = mock_jira.add_comment.call_args_list[-1].args[1]
+        assert "starting with `!`" in last_comment
         assert (
             "steps_to_reproduce" in last_comment
             or "steps to reproduce" in last_comment.lower()
@@ -359,6 +360,40 @@ class TestTriageCheckResume:
         ):
             result = await triage_check(state)
         assert result["triage_passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_resume_with_complete_ticket_consumes_revision_signal(
+        self, mock_jira, mock_agent_sufficient
+    ):
+        """The ! comment used to resume triage must not leak into later bug workflow stages."""
+        from forge.workflow.nodes.triage import triage_check
+
+        state = make_bug_state(
+            current_node="triage_gate",
+            is_paused=False,
+            triage_passed=False,
+            triage_missing_fields=["steps_to_reproduce"],
+            revision_requested=True,
+            feedback_comment="!Steps to reproduce: click Save.",
+            is_question=True,
+        )
+        with (
+            patch(
+                "forge.workflow.nodes.triage.JiraClient", return_value=mock_jira
+            ),
+            patch(
+                "forge.workflow.nodes.triage.ForgeAgent",
+                return_value=mock_agent_sufficient,
+            ),
+        ):
+            result = await triage_check(state)
+
+        assert result["triage_passed"] is True
+        assert result["current_node"] == "analyze_bug"
+        assert result["is_paused"] is False
+        assert result["is_question"] is False
+        assert result["revision_requested"] is False
+        assert result["feedback_comment"] is None
 
     @pytest.mark.asyncio
     async def test_resume_still_missing_reposts_comment(

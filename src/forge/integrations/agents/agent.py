@@ -1159,17 +1159,40 @@ NOTE: No repositories configured. Use REPO: unknown for now."""
         generation_context = context.get("generation_context", {})
         raw_requirements = generation_context.get("raw_requirements", "Not available")
 
-        prompt = load_prompt(
-            "answer-question",
-            artifact_type=artifact_type,
-            artifact_content=artifact_content,
-            raw_requirements=raw_requirements,
-            question=question,
-        )
+        ticket_type = context.get("ticket_type")
+        ticket_type_str = ""
+        if ticket_type is not None:
+            ticket_type_str = (
+                ticket_type.value if hasattr(ticket_type, "value") else str(ticket_type)
+            )
 
-        logger.info(f"Answering question about {artifact_type}")
+        if (
+            artifact_type == "plan"
+            and context.get("current_node") == "task_plan_approval_gate"
+            and ticket_type_str == "task"
+        ):
+            prompt = load_prompt(
+                "task-takeover-qa",
+                ticket_key=context.get("ticket_key", ""),
+                summary=context.get("summary", ""),
+                description=context.get("description", ""),
+                plan_content=artifact_content,
+                question=question,
+            )
+            task_name = "task-takeover-qa"
+        else:
+            prompt = load_prompt(
+                "answer-question",
+                artifact_type=artifact_type,
+                artifact_content=artifact_content,
+                raw_requirements=raw_requirements,
+                question=question,
+            )
+            task_name = "answer-question"
+
+        logger.info(f"Answering question about {artifact_type} using task={task_name}")
         result = await self.run_task(
-            task="answer-question",
+            task=task_name,
             prompt=prompt,
             context={
                 "artifact_type": artifact_type,

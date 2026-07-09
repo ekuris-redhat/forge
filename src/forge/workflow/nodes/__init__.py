@@ -21,6 +21,11 @@ from forge.workflow.nodes.human_review import (
     human_review_gate,
     route_human_review,
 )
+from forge.workflow.nodes.implement_review import (
+    implement_review,
+    review_response_gate,
+    route_review_response,
+)
 from forge.workflow.nodes.implementation import implement_task
 from forge.workflow.nodes.local_reviewer import local_review_changes
 from forge.workflow.nodes.plan_bug_fix import (
@@ -63,6 +68,10 @@ from forge.workflow.nodes.task_router import (
     route_tasks_parallel,
     should_use_parallel_execution,
 )
+from forge.workflow.nodes.task_takeover_execution import execute_task_changes
+from forge.workflow.nodes.task_takeover_planning import generate_plan
+from forge.workflow.nodes.task_takeover_review import run_qualitative_review
+from forge.workflow.nodes.task_takeover_triage import triage_task
 from forge.workflow.nodes.triage import route_triage_gate, triage_check, triage_gate
 from forge.workflow.nodes.workspace_setup import (
     get_workspace_manager,
@@ -115,11 +124,22 @@ __all__ = [
     "aggregate_feature_status",
     "complete_tasks",
     "human_review_gate",
+    "implement_review",
+    "review_response_gate",
     "route_human_review",
+    "route_review_response",
     # Bug workflow — triage
     "triage_check",
     "triage_gate",
     "route_triage_gate",
+    # Task takeover workflow — triage
+    "triage_task",
+    # Task takeover workflow — planning
+    "generate_plan",
+    # Task takeover workflow — execution
+    "execute_task_changes",
+    # Task takeover workflow — review
+    "run_qualitative_review",
     # Bug workflow — RCA analysis
     "analyze_bug",
     "reflect_rca",

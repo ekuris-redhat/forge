@@ -24,17 +24,28 @@ These labels advance the pipeline. Forge watches for label changes via Jira webh
 | Plan Approval Gate | `forge:plan-pending` | Forge | Plan posted; waiting for approval |
 | Plan Approval Gate | `forge:plan-approved` | Human | Approve plan and trigger task decomposition + implementation |
 
+### Task Takeover Workflow
+
+Standalone Tasks and Epics can be processed with the standard `forge:managed` label. These tickets bypass the standard parent Feature validation.
+
+| Stage | Pending Label | Approved Label | Purpose |
+|-------|--------------|----------------|---------|
+| Triage | `forge:task-triage-pending` | _N/A_ | Standalone ticket is missing required fields; waiting for update |
+| Plan Approval | `forge:plan-pending` | `forge:plan-approved` | Plan is posted; waiting for approval |
+
 ## Control Labels
 
 | Label | Purpose |
 |-------|---------|
 | `forge:managed` | Marks the ticket for Forge automation. Add this when creating a ticket to start the workflow. |
+| `forge:managed:task` | Identity preservation label used during Task Takeover transitions. |
+| `forge:managed:task-takeover` | Identity preservation label used during Task Takeover transitions. |
 | `forge:blocked` | Set by Forge when a stage fails. Forge posts a comment with the error. |
 | `forge:retry` | Add this to resume from the exact node that failed. Forge removes it after resuming. |
 
 ## How to Use Labels
 
-**Starting a workflow:** Create a Jira issue and add `forge:managed`. Forge detects the issue type (Feature or Bug) and begins the appropriate pipeline.
+**Starting a workflow:** Create a Jira issue and add `forge:managed`. Forge detects the issue type and begins the appropriate pipeline: Feature/Story, Bug, or standalone Task/Epic takeover.
 
 **Approving a stage:** When Forge posts a PRD, spec, or other artifact, it sets the `forge:*-pending` label. Change it to `forge:*-approved` to advance the workflow. Do not add the approved label manually before Forge posts — it won't be recognized until the pending state is set.
 

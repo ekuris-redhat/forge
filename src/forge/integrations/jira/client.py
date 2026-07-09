@@ -21,8 +21,6 @@ MAX_RETRIES = 5
 INITIAL_BACKOFF_SECONDS = 1.0
 MAX_BACKOFF_SECONDS = 60.0
 
-# Module-level cache for project properties (persists per worker lifetime)
-_project_property_cache: dict[tuple[str, str], Any] = {}
 
 _ARTIFACT_APPROVAL_LABELS = {
     "prd": ForgeLabel.PRD_APPROVED.value,
@@ -768,13 +766,15 @@ class JiraClient:
         # Get current labels
         current_labels = await self.get_labels(issue_key)
 
-        # Find forge: labels to remove (except the new one and forge:managed)
+        # Find forge: labels to remove (except the new one, forge:managed, and identity preservation labels)
         labels_to_remove = [
             label
             for label in current_labels
             if label.startswith(remove_prefix)
             and label != new_label.value
             and label != ForgeLabel.FORGE_MANAGED.value
+            and label != "forge:managed:task"
+            and label != "forge:managed:task-takeover"
         ]
 
         # Build update operations
@@ -913,10 +913,6 @@ class JiraClient:
         Returns:
             The property value, or None if the property is not set (404).
         """
-        cache_key = (project_key, property_key)
-        if cache_key in _project_property_cache:
-            return _project_property_cache[cache_key]
-
         client = await self._get_client()
         response = await client.get(f"/project/{project_key}/properties/{property_key}")
 
@@ -924,9 +920,7 @@ class JiraClient:
             return None
 
         response.raise_for_status()
-        value = response.json()["value"]
-        _project_property_cache[cache_key] = value
-        return value
+        return response.json()["value"]
 
     async def set_project_property(self, project_key: str, property_key: str, value: Any) -> None:
         """Set a Jira project property value.
@@ -942,7 +936,6 @@ class JiraClient:
             json=value,
         )
         response.raise_for_status()
-        _project_property_cache.pop((project_key, property_key), None)
 
     async def delete_project_property(self, project_key: str, property_key: str) -> None:
         """Delete a Jira project property.
@@ -957,7 +950,6 @@ class JiraClient:
         )
         if response.status_code != 404:
             response.raise_for_status()
-        _project_property_cache.pop((project_key, property_key), None)
 
     async def get_project_repos(self, project_key: str) -> list[str]:
         """Fetch the forge.repos project property.

@@ -887,3 +887,242 @@ class TestExtractTextFromAdf:
     def test_non_dict_returns_string(self):
         assert OrchestratorWorker._extract_text_from_adf("plain") == "plain"
         assert OrchestratorWorker._extract_text_from_adf(None) == ""
+
+
+class TestTaskPlanApprovalAndLabelPreservation:
+    """Tests for task plan approval resumption, YOLO gate, and label preservation."""
+
+    @pytest.fixture(autouse=True)
+    def ack_comment_mocks(self):
+        """Mock Jira acknowledgement posting for direct resume-event tests."""
+        mock_jira = AsyncMock()
+        mock_jira.close = AsyncMock()
+        with (
+            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
+            patch("forge.orchestrator.worker.post_status_comment", new_callable=AsyncMock) as post,
+        ):
+            yield post
+
+    @pytest.fixture
+    def worker(self) -> OrchestratorWorker:
+        """Create a worker instance for testing."""
+        return OrchestratorWorker(consumer_name="test-worker")
+
+    @pytest.fixture
+    def base_message(self) -> QueueMessage:
+        """Create a base queue message for testing."""
+        return QueueMessage(
+            message_id="1234567890-0",
+            event_id="test-event-001",
+            source=EventSource.JIRA,
+            event_type="jira:issue_updated",
+            ticket_key="TEST-123",
+            payload={
+                "issue": {
+                    "key": "TEST-123",
+                    "fields": {
+                        "issuetype": {"name": "Task"},
+                        "labels": ["forge:managed"],
+                    },
+                },
+            },
+        )
+
+    @pytest.fixture
+    def base_state(self) -> dict:
+        """Create a base workflow state for testing."""
+        return {
+            "ticket_key": "TEST-123",
+            "ticket_type": "Task",
+            "current_node": "task_plan_approval_gate",
+            "is_paused": True,
+            "context": {},
+        }
+
+    @pytest.mark.asyncio
+    async def test_task_plan_label_change_to_approved_sets_approved_flag(
+        self, worker: OrchestratorWorker, base_message: QueueMessage, base_state: dict
+    ):
+        """Approval for task plan is detected via label change from pending to approved."""
+        payload = {
+            **base_message.payload,
+            "changelog": {
+                "items": [
+                    {
+                        "field": "labels",
+                        "fromString": "forge:managed forge:plan-pending",
+                        "toString": "forge:managed forge:plan-approved",
+                    }
+                ]
+            },
+        }
+        message = QueueMessage(
+            message_id=base_message.message_id,
+            event_id=base_message.event_id,
+            source=base_message.source,
+            event_type="jira:issue_updated",
+            ticket_key=base_message.ticket_key,
+            payload=payload,
+        )
+
+        result = await worker._handle_resume_event(message, base_state)
+
+        assert result["is_paused"] is False
+        assert result.get("revision_requested") is not True
+
+    @pytest.mark.asyncio
+    async def test_task_plan_label_fallback_approved(
+        self, worker: OrchestratorWorker, base_message: QueueMessage, base_state: dict
+    ):
+        """Fallback detection: check current labels on the ticket when changelog check missed it."""
+        payload = {
+            **base_message.payload,
+            "issue": {
+                "key": "TEST-123",
+                "fields": {
+                    "issuetype": {"name": "Task"},
+                    "labels": ["forge:managed", "forge:plan-approved"],
+                },
+            },
+            "changelog": {"items": []},
+        }
+        message = QueueMessage(
+            message_id=base_message.message_id,
+            event_id=base_message.event_id,
+            source=base_message.source,
+            event_type="jira:issue_updated",
+            ticket_key=base_message.ticket_key,
+            payload=payload,
+        )
+
+        result = await worker._handle_resume_event(message, base_state)
+
+        assert result["is_paused"] is False
+        assert result.get("revision_requested") is not True
+
+    @pytest.mark.asyncio
+    async def test_task_plan_yolo_gate_activation(
+        self, worker: OrchestratorWorker, base_message: QueueMessage, base_state: dict
+    ):
+        """Adding forge:yolo label at task_plan_approval_gate activates YOLO mode."""
+        payload = {
+            **base_message.payload,
+            "changelog": {
+                "items": [
+                    {
+                        "field": "labels",
+                        "fromString": "forge:managed",
+                        "toString": "forge:managed forge:yolo",
+                    }
+                ]
+            },
+        }
+        message = QueueMessage(
+            message_id=base_message.message_id,
+            event_id=base_message.event_id,
+            source=base_message.source,
+            event_type="jira:issue_updated",
+            ticket_key=base_message.ticket_key,
+            payload=payload,
+        )
+
+        result = await worker._handle_resume_event(message, base_state)
+
+        assert result["yolo_mode"] is True
+        assert result["is_paused"] is False
+
+    @pytest.mark.asyncio
+    async def test_label_preservation_during_transitions(self):
+        """Transitions do not clear identity preservation labels forge:managed:task and forge:managed:task-takeover."""
+        from forge.integrations.jira.client import JiraClient
+        from forge.models.workflow import ForgeLabel
+
+        # Mock settings for JiraClient instantiation
+        with patch("forge.integrations.jira.client.get_settings") as mock_settings:
+            mock_settings.return_value.jira_base_url = "https://test.atlassian.net"
+            mock_settings.return_value.jira_api_token = MagicMock()
+            mock_settings.return_value.jira_api_token.get_secret_value.return_value = "token"
+            mock_settings.return_value.jira_user_email = "test@example.com"
+
+            client = JiraClient()
+
+        # Mock get_labels to return current labels including identity preservation ones
+        client.get_labels = AsyncMock(
+            return_value=[
+                "forge:managed",
+                "forge:plan-pending",
+                "forge:managed:task",
+                "forge:managed:task-takeover",
+                "other-label",
+            ]
+        )
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.put = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            await client.set_workflow_label("TEST-123", ForgeLabel.PLAN_APPROVED)
+
+        # Check that PUT was called with correct operations
+        mock_http.put.assert_called_once()
+        call_args = mock_http.put.call_args
+        update_ops = call_args.kwargs["json"]["update"]["labels"]
+
+        # Assert no remove operations are queued for the identity labels
+        remove_ops = [op for op in update_ops if "remove" in op]
+        assert not any(op["remove"] == "forge:managed:task" for op in remove_ops)
+        assert not any(op["remove"] == "forge:managed:task-takeover" for op in remove_ops)
+
+        # Verify that "forge:plan-pending" is removed
+        assert any(op["remove"] == "forge:plan-pending" for op in remove_ops)
+        # Verify that "forge:plan-approved" is added
+        add_ops = [op for op in update_ops if "add" in op]
+        assert any(op["add"] == ForgeLabel.PLAN_APPROVED.value for op in add_ops)
+
+
+class TestWorkerRouting:
+    """Tests for message routing and label extraction in the worker."""
+
+    @pytest.mark.asyncio
+    async def test_process_workflow_extracts_labels_and_calls_resolve(self):
+        """Worker extracts labels from the payload and passes them to the router."""
+        from forge.models.workflow import TicketType
+
+        worker = OrchestratorWorker(consumer_name="test-worker")
+
+        message = QueueMessage(
+            message_id="1234567890-0",
+            event_id="test-event-001",
+            source=EventSource.JIRA,
+            event_type="jira:issue_updated",
+            ticket_key="TEST-123",
+            payload={
+                "issue": {
+                        "key": "TEST-123",
+                        "fields": {
+                            "issuetype": {"name": "Task"},
+                            "labels": ["forge:managed"],
+                        },
+                    },
+                },
+        )
+
+        mock_router = MagicMock()
+        mock_router.resolve = MagicMock(return_value=None)
+        worker.router = mock_router
+
+        with (
+            patch("forge.orchestrator.worker.ensure_skills", AsyncMock()),
+            patch("forge.orchestrator.worker.JiraClient"),
+        ):
+            await worker._process_workflow(message)
+
+        mock_router.resolve.assert_called_once_with(
+            ticket_type=TicketType.TASK,
+            labels=["forge:managed"],
+            event=message.payload,
+        )

@@ -109,11 +109,14 @@ podman rm $(podman ps -a --filter name=forge- -q)
 | `forge:spec-pending` | Awaiting spec approval |
 | `forge:plan-pending` | Awaiting plan approval |
 | `forge:task-pending` | Awaiting task approval |
+| `forge:task-triage-pending` | Task takeover awaiting triage completion |
+| `forge:managed:task` | Task identity preservation label |
+| `forge:managed:task-takeover` | Task takeover identity preservation label |
 | `forge:blocked` | Workflow blocked, needs intervention |
 | `forge:retry` | Trigger retry of failed step |
 | `forge:yolo` | Autonomous mode — skip all artifact approval gates (see warning below) |
 
-> **⚠️ Warning — `forge:yolo`:** This label removes all human checkpoints for PRD, spec, plan, and task approval. Forge will proceed autonomously from ticket creation to implementation without pausing for review. Only use this on tickets where you are confident in the requirements and comfortable with Forge making all planning decisions. It does not bypass code review (the human review gate on the implementation PR is always required).
+> **⚠️ Warning — `forge:yolo`:** This label removes all human checkpoints for PRD, spec, plan, task, and task plan approval. Forge will proceed autonomously from ticket creation to implementation without pausing for review. Only use this on tickets where you are confident in the requirements and comfortable with Forge making all planning decisions. It does not bypass code review (the human review gate on the implementation PR is always required).
 
 ## Jira Comment Syntax
 

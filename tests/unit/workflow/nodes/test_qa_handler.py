@@ -654,3 +654,37 @@ class TestAnswerQuestionBugGates:
         assert result["current_node"] == "plan_approval_gate"
         assert result["is_question"] is False
         assert result["feedback_comment"] is None
+
+    @pytest.mark.asyncio
+    async def test_answer_question_at_task_plan_approval_gate(self):
+        """answer_question at task_plan_approval_gate passes context and returns is_paused=True."""
+        state = {
+            "ticket_key": "TASK-123",
+            "ticket_type": TicketType.TASK,
+            "current_node": "task_plan_approval_gate",
+            "is_paused": True,
+            "is_question": True,
+            "feedback_comment": "?What is the approach?",
+            "plan_content": "## Task Plan",
+            "qa_history": [],
+            "generation_context": {},
+            "revision_requested": False,
+        }
+
+        mock_jira = create_mock_jira_client()
+        mock_agent = create_mock_forge_agent()
+
+        with (
+            patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent),
+        ):
+            result = await answer_question(state)
+
+        assert result["is_paused"] is True
+        assert result["current_node"] == "task_plan_approval_gate"
+        assert result["is_question"] is False
+        assert result["feedback_comment"] is None
+        mock_agent.answer_question.assert_called_once()
+        call_kwargs = mock_agent.answer_question.call_args.kwargs
+        assert call_kwargs["context"]["ticket_type"] == TicketType.TASK
+        assert call_kwargs["context"]["current_node"] == "task_plan_approval_gate"

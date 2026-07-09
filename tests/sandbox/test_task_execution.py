@@ -1,0 +1,271 @@
+"""Integrated and sandbox tests for task execution in container environments."""
+
+import tempfile
+from collections.abc import Generator
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from forge.models.workflow import TicketType
+from forge.sandbox.runner import ContainerConfig, ContainerRunner
+from forge.workflow.nodes.task_takeover_execution import execute_task_changes
+from forge.workflow.nodes.workspace_setup import teardown_workspace
+
+
+def _make_state(
+    ticket_key: str = "TASK-123",
+    ticket_type: TicketType = TicketType.TASK,
+    workspace_path: str | None = "/tmp/ws",
+    current_repo: str = "acme/backend",
+    plan_content: str = "This is the approved plan.",
+    implemented_tasks: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "ticket_key": ticket_key,
+        "ticket_type": ticket_type,
+        "current_node": "execute_task_changes",
+        "is_paused": False,
+        "retry_count": 0,
+        "last_error": None,
+        "workspace_path": workspace_path,
+        "current_repo": current_repo,
+        "plan_content": plan_content,
+        "implemented_tasks": implemented_tasks or [],
+        "context": {"branch_name": "forge/TASK-123", "guardrails": ""},
+    }
+
+
+def _make_mock_jira() -> AsyncMock:
+    jira = AsyncMock()
+    issue = MagicMock()
+    issue.summary = "Fix validation bug"
+    issue.description = "Validation logic in auth is failing"
+    jira.get_issue = AsyncMock(return_value=issue)
+    jira.add_comment = AsyncMock()
+    jira.close = AsyncMock()
+    return jira
+
+
+def _make_mock_git(has_changes: bool = True, sha: str = "abcdef1234567890") -> MagicMock:
+    git = MagicMock()
+    git.has_uncommitted_changes = MagicMock(return_value=has_changes)
+    git.stage_all = MagicMock()
+    git.commit = MagicMock(return_value=True)
+    git.get_current_sha = MagicMock(return_value=sha)
+    return git
+
+
+class TestTaskExecutionSandbox:
+    """Integrated tests verifying ContainerRunner and workflow task execution."""
+
+    @pytest.fixture(autouse=True)
+    def mock_podman_exists(self) -> Generator[None, None, None]:
+        with patch("shutil.which", return_value="/usr/bin/podman"):
+            yield
+
+    @pytest.mark.asyncio
+    @patch("asyncio.create_subprocess_exec")
+    async def test_container_runner_successful_execution(self, mock_create_proc: AsyncMock) -> None:
+        """Test ContainerRunner correctly runs a task with successful output."""
+        # Arrange
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"Agent finished successfully", b""))
+        mock_proc.returncode = 0
+        mock_create_proc.return_value = mock_proc
+
+        runner = ContainerRunner()
+        config = ContainerConfig()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace_path = Path(tmpdir)
+
+            # Act
+            result = await runner.run(
+                workspace_path=workspace_path,
+                task_summary="Add simple feature",
+                task_description="Implement some changes",
+                config=config,
+                ticket_key="TASK-123",
+                task_key="TASK-123",
+                repo_name="acme/backend",
+            )
+
+            # Assert
+            assert result.success is True
+            assert result.exit_code == 0
+            assert "Agent finished successfully" in result.stdout
+            assert not (workspace_path / ".forge" / "task.json").exists()
+
+            # Verify podman run command construction
+            mock_create_proc.assert_called_once()
+            cmd_args = mock_create_proc.call_args[0]
+            assert cmd_args[0] == "podman"
+            assert cmd_args[1] == "run"
+            assert f"{workspace_path}:/workspace:Z" in cmd_args
+            assert any("TASK-123" in arg for arg in cmd_args)
+            assert "--memory" in cmd_args
+            assert "--cpus" in cmd_args
+
+    @pytest.mark.asyncio
+    @patch("asyncio.create_subprocess_exec")
+    async def test_execute_task_changes_successful_workflow(
+        self, mock_create_proc: AsyncMock
+    ) -> None:
+        """Test the execute_task_changes workflow node with successful container execution."""
+        # Arrange
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(
+            return_value=(b"Implementing changes...\nTests passed!", b"")
+        )
+        mock_proc.returncode = 0
+        mock_create_proc.return_value = mock_proc
+
+        mock_jira = _make_mock_jira()
+        mock_git = _make_mock_git(has_changes=True, sha="9876543210abcdef")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace_path = Path(tmpdir)
+            state = _make_state(workspace_path=str(workspace_path))
+
+            with (
+                patch(
+                    "forge.workflow.nodes.task_takeover_execution.JiraClient",
+                    return_value=mock_jira,
+                ),
+                patch(
+                    "forge.workflow.nodes.task_takeover_execution.GitOperations",
+                    return_value=mock_git,
+                ),
+                patch("forge.workflow.nodes.task_takeover_execution.get_settings"),
+            ):
+                # Act
+                updated_state = await execute_task_changes(state)
+
+            # Assert
+            assert updated_state["task_execution_results"]["success"] is True
+            assert updated_state["task_execution_results"]["exit_code"] == 0
+            assert "Tests passed!" in updated_state["task_execution_logs"]["stdout"]
+            assert updated_state["commit_info"]["committed"] is True
+            assert updated_state["commit_info"]["sha"] == "9876543210abcdef"
+            assert updated_state["last_error"] is None
+            assert updated_state["retry_count"] == 0
+
+            # Verify JIRA interactions
+            mock_jira.get_issue.assert_called_once_with("TASK-123")
+            mock_jira.close.assert_called_once()
+
+            # Verify Git interactions on the host
+            mock_git.has_uncommitted_changes.assert_called_once()
+            mock_git.stage_all.assert_called_once()
+            mock_git.commit.assert_called_once_with(
+                "[TASK-123] feat: implement task takeover execution changes and tests"
+            )
+
+    @pytest.mark.asyncio
+    @patch("asyncio.create_subprocess_exec")
+    async def test_build_and_test_recovery_workflow_iterative_self_correction(
+        self, mock_create_proc: AsyncMock
+    ) -> None:
+        """Test build-and-test recovery workflow where compilation errors/test failures are fed back.
+
+        We simulate a container execution that first fails (representing compilation/test failures),
+        captures the failure logs back to the state, and on the subsequent retry/run,
+        successfully implements self-correction and passes.
+        """
+        # --- FIRST RUN: Simulated compilation/test failure ---
+        mock_proc_fail = AsyncMock()
+        mock_proc_fail.communicate = AsyncMock(
+            return_value=(
+                b"Compiling and running tests...\nFailed!",
+                b"SyntaxError: invalid syntax at auth.py line 25",
+            )
+        )
+        mock_proc_fail.returncode = 2  # EXIT_TESTS_FAILED or EXIT_TASK_FAILED
+        mock_create_proc.return_value = mock_proc_fail
+
+        mock_jira = _make_mock_jira()
+        mock_git_fail = _make_mock_git(has_changes=False)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace_path = Path(tmpdir)
+            state_initial = _make_state(workspace_path=str(workspace_path))
+
+            with (
+                patch(
+                    "forge.workflow.nodes.task_takeover_execution.JiraClient",
+                    return_value=mock_jira,
+                ),
+                patch(
+                    "forge.workflow.nodes.task_takeover_execution.GitOperations",
+                    return_value=mock_git_fail,
+                ),
+                patch("forge.workflow.nodes.task_takeover_execution.get_settings"),
+            ):
+                # Act
+                state_after_fail = await execute_task_changes(state_initial)
+
+            # Assert first run failed as expected, recording logs and error feedback
+            assert state_after_fail["task_execution_results"]["success"] is False
+            assert state_after_fail["task_execution_results"]["exit_code"] == 2
+            assert "SyntaxError" in state_after_fail["task_execution_logs"]["stderr"]
+            assert state_after_fail["retry_count"] == 1
+            assert state_after_fail["commit_info"]["committed"] is False
+
+            # --- SECOND RUN: Simulated self-correction and success ---
+            mock_proc_success = AsyncMock()
+            mock_proc_success.communicate = AsyncMock(
+                return_value=(
+                    b"Self-corrected auth.py.\nAll compilation checks and tests passed successfully!",
+                    b"",
+                )
+            )
+            mock_proc_success.returncode = 0
+            mock_create_proc.return_value = mock_proc_success
+
+            mock_git_success = _make_mock_git(has_changes=True, sha="abcdef1234567890")
+
+            # We pass the state containing the failure logs and incremented retry count back to simulate the self-correction step
+            with (
+                patch(
+                    "forge.workflow.nodes.task_takeover_execution.JiraClient",
+                    return_value=mock_jira,
+                ),
+                patch(
+                    "forge.workflow.nodes.task_takeover_execution.GitOperations",
+                    return_value=mock_git_success,
+                ),
+                patch("forge.workflow.nodes.task_takeover_execution.get_settings"),
+            ):
+                # Act
+                state_after_success = await execute_task_changes(state_after_fail)
+
+            # Assert second run succeeded after self-correction, resetting retry and committing changes
+            assert state_after_success["task_execution_results"]["success"] is True
+            assert state_after_success["task_execution_results"]["exit_code"] == 0
+            assert "All compilation checks" in state_after_success["task_execution_logs"]["stdout"]
+            assert state_after_success["retry_count"] == 0  # Reset after success
+            assert state_after_success["commit_info"]["committed"] is True
+            assert state_after_success["commit_info"]["sha"] == "abcdef1234567890"
+
+
+    @pytest.mark.asyncio
+    @patch("forge.workflow.nodes.workspace_setup.get_workspace_manager")
+    async def test_teardown_workspace_secure_destruction(self, mock_get_manager: MagicMock) -> None:
+        """Test teardown_workspace securely destroys the workspace and clears path in state."""
+        # Arrange
+        state = _make_state(workspace_path="/tmp/ws-to-teardown")
+        mock_manager = MagicMock()
+        mock_workspace = MagicMock()
+        mock_manager.get_workspace.return_value = mock_workspace
+        mock_get_manager.return_value = mock_manager
+
+        # Act
+        teardown_state = await teardown_workspace(state)
+
+        # Assert
+        assert teardown_state["workspace_path"] is None
+        assert teardown_state["current_node"] == "workspace_complete"
+        mock_manager.get_workspace.assert_called_once_with("TASK-123", "acme/backend")
+        mock_manager.destroy_workspace.assert_called_once_with(mock_workspace)
