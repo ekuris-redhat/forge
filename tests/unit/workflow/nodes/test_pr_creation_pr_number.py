@@ -20,14 +20,14 @@ def create_mock_github_client(pr_number=123, pr_url="https://github.com/owner/re
         }
     )
     mock.sync_fork_with_upstream = AsyncMock()
-    
+
     # PR creation response - can be configured for different scenarios
     pr_data = {
         "html_url": pr_url,
     }
     if pr_number is not None:
         pr_data["number"] = pr_number
-    
+
     mock.create_pull_request = AsyncMock(return_value=pr_data)
     return mock
 
@@ -40,12 +40,13 @@ def create_mock_jira_client():
     mock.create_remote_link = AsyncMock()
     mock.get_issue = AsyncMock()
     mock.set_workflow_label = AsyncMock()
-    
+    mock.is_repo_draft = AsyncMock(return_value=False)
+
     # Mock issue with summary
     mock_issue = MagicMock()
     mock_issue.summary = "Test feature"
     mock.get_issue.return_value = mock_issue
-    
+
     return mock
 
 
@@ -54,12 +55,12 @@ def create_mock_git_operations():
     mock = MagicMock()
     mock.add_fork_remote = MagicMock()
     mock.push_to_fork = MagicMock()
-    
+
     # Mock git log for PR body generation
     mock_result = MagicMock()
     mock_result.stdout = "abc123 Test commit\n\nTest commit body"
     mock._run_git = MagicMock(return_value=mock_result)
-    
+
     return mock
 
 
@@ -70,11 +71,25 @@ def create_mock_workspace():
     return mock
 
 
+@pytest.fixture(autouse=True)
+def mock_external_pr_creation_side_effects():
+    """Keep PR creation tests from reaching agent or Redis-backed helpers."""
+    with (
+        patch(
+            "forge.workflow.nodes.pr_creation._generate_pr_body_with_agent",
+            new_callable=AsyncMock,
+            return_value="Generated PR body",
+        ),
+        patch("forge.workflow.nodes.pr_creation.set_pr_ticket_index", new_callable=AsyncMock),
+    ):
+        yield
+
+
 class TestPRNumberExtractionSuccess:
     """Test cases for successful PR number extraction from GitHub API response."""
 
     @pytest.mark.asyncio
-    async def test_pr_number_extracted_from_github_response(self, caplog):
+    async def test_pr_number_extracted_from_github_response(self):
         """Should extract PR number from GitHub API response and store in state."""
         mock_github = create_mock_github_client(pr_number=456, pr_url="https://github.com/owner/repo/pull/456")
         mock_jira = create_mock_jira_client()
@@ -124,7 +139,7 @@ class TestPRNumberExtractionSuccess:
             patch("forge.workflow.nodes.pr_creation.check_merge_conflicts", return_value=(False, [])),
             patch("forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock),
         ):
-            result = await create_pull_request(state)
+            await create_pull_request(state)
 
         # Verify Jira remote link uses PR number
         mock_jira.create_remote_link.assert_called_once()
@@ -154,7 +169,7 @@ class TestPRNumberExtractionSuccess:
             patch("forge.workflow.nodes.pr_creation.check_merge_conflicts", return_value=(False, [])),
             patch("forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock),
         ):
-            result = await create_pull_request(state)
+            await create_pull_request(state)
 
         # Verify info log includes PR number
         assert any(
@@ -224,7 +239,7 @@ class TestPRNumberExtractionMissing:
         # Verify workflow completed successfully
         assert result["current_node"] == "teardown_workspace"
         assert result["last_error"] is None
-        
+
         # Verify PR URL was still stored
         assert result["current_pr_url"] is not None
         assert len(result["pr_urls"]) > 0
@@ -253,7 +268,7 @@ class TestPRNumberExtractionMissing:
             patch("forge.workflow.nodes.pr_creation.check_merge_conflicts", return_value=(False, [])),
             patch("forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock),
         ):
-            result = await create_pull_request(state)
+            await create_pull_request(state)
 
         # Verify warning log includes diagnostic information
         warning_logs = [r for r in caplog.records if r.levelname == "WARNING"]
@@ -287,7 +302,7 @@ class TestPRNumberExtractionMissing:
             patch("forge.workflow.nodes.pr_creation.check_merge_conflicts", return_value=(False, [])),
             patch("forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock),
         ):
-            result = await create_pull_request(state)
+            await create_pull_request(state)
 
         # Verify Jira remote link uses generic label
         mock_jira.create_remote_link.assert_called_once()
@@ -318,7 +333,7 @@ class TestPRNumberExtractionMissing:
             patch("forge.workflow.nodes.pr_creation.check_merge_conflicts", return_value=(False, [])),
             patch("forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock),
         ):
-            result = await create_pull_request(state)
+            await create_pull_request(state)
 
         # Verify info log indicates number unavailable
         info_logs = [r for r in caplog.records if r.levelname == "INFO"]
@@ -360,7 +375,7 @@ class TestPRNumberExtractionEdgeCases:
 
         # Verify PR number 0 is stored (not treated as None/missing)
         assert result["current_pr_number"] == 0
-        
+
         # Verify Jira remote link includes "PR #0"
         mock_jira.create_remote_link.assert_called_once()
         call_args = mock_jira.create_remote_link.call_args
@@ -423,10 +438,10 @@ class TestPRNumberExtractionEdgeCases:
 
         # Verify first PR has correct number
         assert result_1["current_pr_number"] == 100
-        
+
         # Simulate second PR creation with different number
         mock_github_2 = create_mock_github_client(pr_number=200)
-        
+
         with (
             patch("forge.workflow.nodes.pr_creation.GitHubClient", return_value=mock_github_2),
             patch("forge.workflow.nodes.pr_creation.JiraClient", return_value=mock_jira),

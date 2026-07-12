@@ -80,6 +80,7 @@ class GitHubClient:
         body: str,
         head: str,
         base: str = "main",
+        draft: bool = False,
     ) -> dict[str, Any]:
         """Create a new pull request.
 
@@ -90,19 +91,24 @@ class GitHubClient:
             body: PR description.
             head: Source branch name.
             base: Target branch name.
+            draft: Whether the PR should be created as a draft.
 
         Returns:
             API response with PR details.
         """
         client = await self._get_client()
+        payload = {
+            "title": title,
+            "body": body,
+            "head": head,
+            "base": base,
+        }
+        if draft:
+            payload["draft"] = True
+
         response = await client.post(
             f"/repos/{owner}/{repo}/pulls",
-            json={
-                "title": title,
-                "body": body,
-                "head": head,
-                "base": base,
-            },
+            json=payload,
         )
 
         if response.status_code == 422:

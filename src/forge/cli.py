@@ -502,15 +502,42 @@ async def cmd_project_setup(args: argparse.Namespace) -> int:
     try:
         # forge.repos
         if args.repo:
-            invalid = [r for r in args.repo if "/" not in r]
-            if invalid:
-                print(
-                    f"Error: invalid repo format (expected owner/repo): {invalid}",
-                    file=sys.stderr,
-                )
-                return 1
-            await jira.set_project_property(project_key, "forge.repos", args.repo)
-            print(f"[OK] forge.repos = {args.repo}")
+            parsed_repos = []
+            for r in args.repo:
+                if r.startswith("{"):
+                    try:
+                        repo_dict = json.loads(r)
+                    except Exception as e:
+                        print(
+                            f"Error: failed to parse JSON repo config {r!r}: {e}",
+                            file=sys.stderr,
+                        )
+                        return 1
+                    if not isinstance(repo_dict, dict) or "name" not in repo_dict:
+                        print(
+                            f"Error: JSON repo config must be a dictionary with a 'name' key, got: {r!r}",
+                            file=sys.stderr,
+                        )
+                        return 1
+                    name = repo_dict["name"]
+                    if not isinstance(name, str) or "/" not in name:
+                        print(
+                            f"Error: repo name in JSON config must contain '/', got: {name!r}",
+                            file=sys.stderr,
+                        )
+                        return 1
+                    parsed_repos.append(repo_dict)
+                else:
+                    if "/" not in r:
+                        print(
+                            f"Error: invalid repo format (expected owner/repo): {r!r}",
+                            file=sys.stderr,
+                        )
+                        return 1
+                    parsed_repos.append(r)
+
+            await jira.set_project_property(project_key, "forge.repos", parsed_repos)
+            print(f"[OK] forge.repos = {parsed_repos}")
 
         # forge.default_repo
         if args.default_repo:

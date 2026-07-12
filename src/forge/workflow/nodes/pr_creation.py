@@ -72,6 +72,7 @@ async def open_pull_request_from_fork(
     title: str,
     body: str,
     base: str = "main",
+    draft: bool = False,
 ) -> dict:
     """Open a pull request from the prepared fork branch to upstream."""
     return await github.create_pull_request(
@@ -81,6 +82,7 @@ async def open_pull_request_from_fork(
         body=body,
         head=f"{target.fork_owner}:{branch_name}",
         base=base,
+        draft=draft,
     )
 
 
@@ -230,6 +232,9 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
         if not pr_body:
             pr_body = _build_pr_body(state, implemented_tasks)
 
+        project_key = ticket_key.split("-")[0] if "-" in ticket_key else ticket_key
+        is_draft = await jira.is_repo_draft(project_key, current_repo)
+
         pr_data = await open_pull_request_from_fork(
             github,
             pr_target,
@@ -237,6 +242,7 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
             title=pr_title,
             body=pr_body,
             base=default_branch,
+            draft=is_draft,
         )
 
         pr_url = pr_data.get("html_url", "")

@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from tests.fixtures.workflow_states import make_workflow_state
 
 FIX_COMMITS = (
@@ -281,6 +282,7 @@ class TestSyncCalledFromCreatePR:
         mock_jira.get_issue = AsyncMock(return_value=MagicMock(summary="Test feature"))
         mock_jira.add_comment = AsyncMock()
         mock_jira.create_remote_link = AsyncMock()
+        mock_jira.is_repo_draft = AsyncMock(return_value=False)
         mock_jira.close = AsyncMock()
 
         mock_git = MagicMock()
@@ -295,6 +297,8 @@ class TestSyncCalledFromCreatePR:
                    AsyncMock(return_value=(False, []))), \
              patch("forge.workflow.nodes.pr_creation._generate_pr_body_with_agent",
                    AsyncMock(return_value="## Summary\n\nTest PR.")), \
+             patch("forge.workflow.nodes.pr_creation.set_pr_ticket_index",
+                   new_callable=AsyncMock), \
              patch("forge.workflow.nodes.pr_creation.sync_pr_description",
                    new_callable=AsyncMock) as mock_sync:
             await create_pull_request(state)

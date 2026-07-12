@@ -60,6 +60,19 @@ curl -X PUT \
   -u "you@example.com:YOUR_API_TOKEN" \
   -d '["org/repo1", "org/repo2"]'
 
+# Alternatively, configure a repository with additional metadata (like enabling draft PRs) using an object:
+curl -X PUT \
+  "https://your-org.atlassian.net/rest/api/3/project/MYPROJ/properties/forge.repos" \
+  -H "Content-Type: application/json" \
+  -u "you@example.com:YOUR_API_TOKEN" \
+  -d '[
+    "org/repo1",
+    {
+      "name": "org/repo2",
+      "draft": true
+    }
+  ]'
+
 # Default repo when no explicit assignment is made
 curl -X PUT \
   "https://your-org.atlassian.net/rest/api/3/project/MYPROJ/properties/forge.default_repo" \

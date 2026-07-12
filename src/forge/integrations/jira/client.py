@@ -966,14 +966,63 @@ class JiraClient:
         value = await self.get_project_property(project_key, "forge.repos")
         if value is None:
             raise MissingProjectConfig(f"forge.repos not set for project {project_key}")
-        if not isinstance(value, list) or any(
-            not isinstance(r, str) or "/" not in r for r in value
-        ):
+        if not isinstance(value, list):
             raise MissingProjectConfig(
                 f"forge.repos for project {project_key} is malformed: {value!r}"
             )
-        logger.info(f"Project {project_key}: repos from Jira property: {value}")
-        return value
+
+        repos = []
+        for r in value:
+            if isinstance(r, str):
+                if "/" not in r:
+                    raise MissingProjectConfig(
+                        f"forge.repos for project {project_key} is malformed: {value!r}"
+                    )
+                repos.append(r)
+            elif isinstance(r, dict):
+                name = r.get("name")
+                if not isinstance(name, str) or "/" not in name:
+                    raise MissingProjectConfig(
+                        f"forge.repos for project {project_key} is malformed: {value!r}"
+                    )
+                repos.append(name)
+            else:
+                raise MissingProjectConfig(
+                    f"forge.repos for project {project_key} is malformed: {value!r}"
+                )
+
+        logger.info(f"Project {project_key}: repos from Jira property: {repos}")
+        return repos
+
+    async def is_repo_draft(self, project_key: str, repo_name: str) -> bool:
+        """Check if draft PRs are enabled for a given repository.
+
+        Args:
+            project_key: The Jira project key.
+            repo_name: Name of the repository (e.g. "owner/repo").
+
+        Returns:
+            True if draft is enabled, False otherwise.
+        """
+        try:
+            value = await self.get_project_property(project_key, "forge.repos")
+        except Exception:
+            return False
+
+        if not isinstance(value, list):
+            return False
+
+        for r in value:
+            if isinstance(r, dict):
+                name = r.get("name")
+                if isinstance(name, str) and name.lower() == repo_name.lower():
+                    # Check "draft" or "draft_pr"
+                    draft = r.get("draft")
+                    if draft is None:
+                        draft = r.get("draft_pr")
+                    return draft is True
+
+        return False
 
     async def get_project_default_repo(self, project_key: str) -> str:
         """Fetch the forge.default_repo project property.
