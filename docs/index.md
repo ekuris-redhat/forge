@@ -21,6 +21,7 @@ graph TD
 ## Quick Links
 
 - [Getting Started](getting-started.md) — Set up Forge in 10 minutes
+- [System Architecture](architecture.md) — AISOS system architecture and data pipelines
 - [Feature Workflow](guide/feature-workflow.md) — How features flow through Forge
 - [Bug Workflow](guide/bug-workflow.md) — How bug diagnosis and implementation flow through Forge
 - [Task Workflow](guide/task-workflow.md) — How standalone Tasks and Epics become PRs
