@@ -770,6 +770,16 @@ class ForgeAgent:
         logger.info(f"Running task '{task}' using Deep Agents")
         record_agent_invocation(task_type=task)
         _start = time.monotonic()
+        # Resolve executing node name from LangGraph config if available
+        langgraph_node = None
+        try:
+            from langchain_core.runnables.config import ensure_config
+
+            config = ensure_config()
+            langgraph_node = config.get("metadata", {}).get("langgraph_node")
+        except Exception:
+            pass
+
         # Merge prompt context + trace-only fields for Langfuse resolution.
         # trace_context fields are intentionally excluded from system_prompt above.
         trace_state: dict[str, Any] = {
@@ -778,6 +788,10 @@ class ForgeAgent:
             "system_prompt_length": len(system_prompt),
             "llm_model": self.settings.claude_model,
         }
+
+        if langgraph_node:
+            trace_state["current_node"] = langgraph_node
+
         trace_tags, trace_metadata = resolve_trace_fields(trace_state)
 
         result = await self._run_agent(

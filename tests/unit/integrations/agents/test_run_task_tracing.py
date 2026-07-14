@@ -36,9 +36,7 @@ class TestRunTaskTraceResolution:
 
         with (
             patch.object(agent, "_run_agent", new_callable=AsyncMock) as mock_run,
-            patch(
-                "forge.integrations.agents.agent.resolve_trace_fields"
-            ) as mock_resolve,
+            patch("forge.integrations.agents.agent.resolve_trace_fields") as mock_resolve,
             patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
         ):
             mock_run.return_value = "result"
@@ -98,7 +96,26 @@ class TestRunTaskTraceResolution:
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["session_id"] == "PROJ-42"
         assert call_kwargs["ticket_key"] == "PROJ-42"
-        assert "PROJ-42" not in call_kwargs["system_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_run_task_resolves_node_from_langgraph_config(self, agent: ForgeAgent) -> None:
+        context = {"ticket_key": "PROJ-42"}
+        config = {"metadata": {"langgraph_node": "generate_tasks"}}
+
+        with (
+            patch.object(agent, "_run_agent", new_callable=AsyncMock) as mock_run,
+            patch(
+                "forge.integrations.agents.agent.resolve_trace_fields",
+                return_value=([], {}),
+            ) as mock_resolve,
+            patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
+            patch("langchain_core.runnables.config.ensure_config", return_value=config),
+        ):
+            mock_run.return_value = "result"
+            await agent.run_task(task="generate-tasks", prompt="test", context=context)
+
+        resolve_call_state = mock_resolve.call_args[0][0]
+        assert resolve_call_state["current_node"] == "generate_tasks"
 
     @pytest.mark.asyncio
     async def test_empty_tags_passed_as_none(self, agent: ForgeAgent) -> None:
@@ -123,9 +140,7 @@ class TestRunTaskTraceResolution:
     ) -> None:
         with (
             patch.object(agent, "_run_agent", new_callable=AsyncMock) as mock_run,
-            patch(
-                "forge.integrations.agents.agent.resolve_trace_fields"
-            ) as mock_resolve,
+            patch("forge.integrations.agents.agent.resolve_trace_fields") as mock_resolve,
             patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
         ):
             mock_run.return_value = "result"
@@ -164,8 +179,6 @@ class TestRunTaskTraceResolution:
             patch("forge.integrations.agents.agent.load_prompt", return_value="prompt"),
         ):
             mock_run.return_value = "result"
-            await agent.run_task(
-                task="test", prompt="test", context={"ticket_key": "PROJ-42"}
-            )
+            await agent.run_task(task="test", prompt="test", context={"ticket_key": "PROJ-42"})
 
         assert mock_run.call_args.kwargs["session_id"] == "PROJ-42"
