@@ -77,12 +77,9 @@ def _resolve_workflow_step(state: dict[str, Any]) -> str | None:
     node_str = str(current_node)
 
     # Determine workflow_stage_or_node
-    # If the active operation is an epic breakdown/decomposition, categorize under epic/breakdown flow rather than spec gate
-    # Specifically, "decompose_epics" or "generate_tasks" might occur, or maybe active node is decompose_epics
-    if node_str == "decompose_epics":
-        stage_or_node = "decompose_epics"
-    elif node_str == "generate_tasks":
-        stage_or_node = "generate_tasks"
+    # If the active operation is decompose_epics or generate_tasks, categorize under breakdown flow
+    if node_str in ("decompose_epics", "generate_tasks"):
+        stage_or_node = "decompose_epics" if node_str == "decompose_epics" else "generate_tasks"
     else:
         stage_or_node = node_str
 
@@ -93,7 +90,12 @@ def _resolve_workflow_step(state: dict[str, Any]) -> str | None:
 
     if is_question or "qa" in node_str or "question" in node_str:
         operation_type = "question_asking"
-    elif is_revision or revision_requested or node_str.startswith("regenerate_") or "revise" in node_str:
+    elif (
+        is_revision
+        or revision_requested
+        or node_str.startswith("regenerate_")
+        or "revise" in node_str
+    ):
         operation_type = "revision"
     elif node_str in ("decompose_epics", "generate_tasks"):
         operation_type = "breakdown"
@@ -108,7 +110,7 @@ def _resolve_workflow_step(state: dict[str, Any]) -> str | None:
     artifact_type = "unknown"
     task = state.get("task", "") or ""
     task_str = str(task).lower()
-    
+
     # Analyze state/node to map artifact type
     if "spec" in node_str or "spec" in task_str:
         artifact_type = "spec"
@@ -118,11 +120,7 @@ def _resolve_workflow_step(state: dict[str, Any]) -> str | None:
         artifact_type = "plan"
     elif "task" in node_str or "task" in task_str:
         artifact_type = "tasks"
-    elif "epic" in node_str or "epic" in task_str:
-        artifact_type = "epic_breakdown"
-    elif "breakdown" in node_str or "breakdown" in task_str:
-        artifact_type = "epic_breakdown"
-    elif node_str == "decompose_epics":
+    elif "epic" in node_str or "epic" in task_str or "breakdown" in node_str or "breakdown" in task_str or node_str == "decompose_epics":
         artifact_type = "epic_breakdown"
     elif node_str == "generate_tasks":
         artifact_type = "tasks"
