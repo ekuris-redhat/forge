@@ -71,6 +71,10 @@ _TRACE_FIELD_KEYS = frozenset(
         "retry_count",
         "repo",
         "pr_number",
+        "is_question",
+        "is_revision",
+        "revision_requested",
+        "task",
     }
 )
 
