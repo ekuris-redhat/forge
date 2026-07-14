@@ -6,10 +6,9 @@
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          External Systems                               │
 │                                                                         │
-│   ┌──────────┐   ┌──────────┐   ┌─────────────┐   ┌──────────────────┐  │
-│   │   Jira   │   │  GitHub  │   │ Deep Agents │   │    Langfuse      │  │
-│   │          │   │          │   │             │   │  (Observability) │  │
-│   └────┬─────┘   └────┬─────┘   └─────────────┘   └──────────────────┘  │
+│   ┌──────────┐   ┌──────────┐   ┌──────────────────────────────────┐    │
+│   │   Jira   │   │  GitHub  │   │      Langfuse (Observability)    │    │
+│   └────┬─────┘   └────┬─────┘   └──────────────────────────────────┘    │
 │        │              │                                                 │
 └────────┼──────────────┼─────────────────────────────────────────────────┘
          │ webhooks     │ webhooks
@@ -71,19 +70,21 @@
 │                                                                         │
 │   >> = human checkpoint (auto-approved with forge:yolo label)           │
 │                                                                         │
-└───────────────┬─────────────────────────────┬───────────────────────────┘
-                │                             │
-                v                             v
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │ LLM calls    │              │ LLM calls
+              v              v              v
 ┌────────────────────────────┐   ┌────────────────────────────────────────┐
 │  LLM Backends              │   │  Podman Container (ephemeral)          │
 │                            │   │                                        │
 │  Anthropic API (Claude)    │   │  ┌──────────────────────────────────┐  │
-│  Vertex AI (Claude)        │   │  │ Deep Agents + MCP tools          │  │
+│  Vertex AI (Claude)        │   │  │ Deep Agents (library) + MCP      │  │
 │  Vertex AI (Gemini)        │   │  │ /task.json (task description)    │  │
 │                            │   │  │ /workspace (repo mounted)        │  │
-│  Used by: PRD, spec,       │   │  │ commits changes locally          │  │
-│  plan, RCA, triage,        │   │  └──────────────────────────────────┘  │
-│  code review, CI eval      │   │                                        │
+│  Called by orchestrator    │   │  │ commits changes locally          │  │
+│  nodes and container       │   │  └──────────────────────────────────┘  │
+│  agents (bidirectional)    │   │                                        │
 └────────────────────────────┘   └────────────────────────────────────────┘
 ```
 
@@ -199,7 +200,8 @@ post_merge_summary --> END
 Inbound events:     Jira/GitHub webhooks --> FastAPI --> Redis Streams
 State persistence:  Redis (LangGraph AsyncRedisSaver, keyed by ticket)
 LLM calls:         Orchestrator nodes --> Claude/Gemini (Anthropic / Vertex AI)
-Code execution:    implement_task --> Podman container --> Deep Agents
+                    Container agents  --> Claude/Gemini (same backends)
+Code execution:    implement_task --> Podman container --> Deep Agents (library)
 Outbound actions:  Jira (comments, labels, transitions)
                    GitHub (PRs, branches, reviews)
 Observability:     Langfuse (LLM traces, workflow spans, costs)
