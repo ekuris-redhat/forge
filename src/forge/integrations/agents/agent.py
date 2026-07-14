@@ -81,9 +81,20 @@ _TRACE_FIELD_KEYS = frozenset(
 
 def _forward_trace_fields(context: dict[str, Any] | None) -> dict[str, Any]:
     """Extract trace-relevant fields from an incoming context dict."""
-    if not context:
-        return {}
-    return {k: v for k, v in context.items() if k in _TRACE_FIELD_KEYS}
+    extracted = {k: v for k, v in context.items() if k in _TRACE_FIELD_KEYS} if context else {}
+
+    # Resolve executing node name from LangGraph config if available
+    try:
+        from langchain_core.runnables.config import ensure_config
+
+        config = ensure_config()
+        langgraph_node = config.get("metadata", {}).get("langgraph_node")
+        if langgraph_node:
+            extracted["current_node"] = langgraph_node
+    except Exception:
+        pass
+
+    return extracted
 
 
 def _prompt_context_fields(

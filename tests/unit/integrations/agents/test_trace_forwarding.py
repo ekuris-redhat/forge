@@ -71,6 +71,14 @@ class TestForwardTraceFields:
         _forward_trace_fields(context)
         assert context == original
 
+    def test_extracts_node_from_langgraph_config(self) -> None:
+        context = {"ticket_key": "PROJ-42"}
+        config = {"metadata": {"langgraph_node": "actual_executing_node"}}
+        with patch("langchain_core.runnables.config.ensure_config", return_value=config):
+            result = _forward_trace_fields(context)
+            assert result["current_node"] == "actual_executing_node"
+            assert result["ticket_key"] == "PROJ-42"
+
 
 class TestGeneratePrdTraceForwarding:
     """generate_prd() uses _forward_trace_fields() and adds project_key."""
