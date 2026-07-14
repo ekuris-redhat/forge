@@ -466,3 +466,189 @@ Every node execution transition represents a state checkpoint.
 - **Graceful Retries:** If an LLM call fails, or an API request rate-limits, the orchestrator retries using exponential backoff.
 - **Interactive Recovery:** If a step is blocked (marked with the label `forge:blocked`), human comments or the label `forge:retry` will trigger a resume from the last known-good checkpoint.
 - **YOLO Mode:** Applying the `forge:yolo` label programmatically bypasses all planning-stage approval gates, running the pipeline fully autonomously from ticket to implementation PR.
+
+---
+
+## Feature Workflow Detailed Phase Summaries & Mechanics
+
+The Feature implementation workflow is composed of three distinct execution stages: the **Planning Phase**, the **Execution Phase**, and the **CI/CD Validation & Review Phase**.
+
+### 1. The Planning Phase & Human Approval Gates
+
+The Planning Phase focuses on converting raw, high-level user tickets into concrete, structured, and approved execution plans. It establishes strict alignment between product design and technical execution through multi-stage **Human-in-the-Loop (HITL)** approval gates and revision-feedback loops.
+
+```
+       Jira / User Input
+               │
+               ▼
+┌──────────────────────────────┐
+│         generate_prd         │
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐     ! Revision Request     ┌──────────────────────────────┐
+│      prd_approval_gate       ├───────────────────────────>│        regenerate_prd        │
+└──────────────┬───────────────┘                            └──────────────┬───────────────┘
+               │                                                           ▲
+               │ Approved                                                  │
+               ▼                                                           │
+┌──────────────────────────────┐                                           │
+│        generate_spec         │                                           │
+└──────────────┬───────────────┘                                           │
+               ▼                                                           │
+┌──────────────────────────────┐     ! Revision Request     ┌──────────────┴───────────────┐
+│      spec_approval_gate      ├───────────────────────────>│       regenerate_spec        │
+└──────────────┬───────────────┘                            └──────────────────────────────┘
+               │
+               │ Approved
+               ▼
+┌──────────────────────────────┐
+│       decompose_epics        │
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐     ! Revision Request     ┌──────────────────────────────┐
+│      plan_approval_gate      ├───────────────────────────>│     regenerate_all_epics     │
+└──────────────┬───────────────┘                            │              or              │
+               │                                            │      update_single_epic      │
+               │ Approved                                   └──────────────────────────────┘
+               ▼
+┌──────────────────────────────┐
+│        generate_tasks        │
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐     ! Revision Request     ┌──────────────────────────────┐
+│      task_approval_gate      ├───────────────────────────>│     regenerate_all_tasks     │
+└──────────────┬───────────────┘                            │    regenerate_epic_tasks     │
+               │                                            │              or              │
+               │ Approved                                   │      update_single_task      │
+               ▼                                            └──────────────────────────────┘
+     To task_router Node
+```
+
+#### Detailed Execution Stages
+*   **PRD Generation (`generate_prd`):** Triggered by an initial Jira ticket or webhook event, Forge consumes the raw issue description. An LLM node parses this input and drafts a comprehensive, structured **Product Requirements Document (PRD)** outlining requirements, user stories, scope, and non-functional requirements.
+*   **PRD Approval Gate (`prd_approval_gate`):** The workflow pauses. If PRD Proposals are enabled for the project, Forge opens a pull request in the designated proposals repository containing `prd.md`. Otherwise, it posts the PRD as a comment on the Jira ticket and marks it with the `forge:prd-pending` label. 
+*   **Spec Generation (`generate_spec`):** Once the PRD is approved, Forge consumes it to generate a detailed **Technical Specification (`design.md`)** detailing systemic changes, file targets, architecture decisions, and behavioral acceptance criteria.
+*   **Spec Approval Gate (`spec_approval_gate`):** Forge halts for technical review. The spec is published via proposal PR or a Jira comment labeled `forge:spec-pending`.
+*   **Epic Decomposition (`decompose_epics`):** The approved spec is analyzed to decompose the monolithic feature into implementable **Epics** with concrete technical plans.
+*   **Plan Approval Gate (`plan_approval_gate`):** Halts and applies `forge:plan-pending`. Allows engineers to review the feature decomposition.
+*   **Task Generation (`generate_tasks`):** Translates approved Epics into highly specific, actionable, and discrete development **Tasks**.
+*   **Task Approval Gate (`task_approval_gate`):** The final gate of the Planning Phase (`forge:task-pending`). Once tasks are approved, the workflow enters the Execution Phase.
+
+#### The Revision Gate and Feedback Loop Mechanism
+Every approval gate in the Planning Phase contains a reactive, bi-directional feedback mechanism:
+1.  **Approval Signals:** Merging the proposals PR or posting a Jira comment without a revision prefix transitions the state machine to the next generation node.
+2.  **Revision Signals:** Reviewers can request revisions at any gate. On Jira, a comment starting with the exclamation prefix `!` (e.g., `! Please support PostgreSQL besides SQLite`) triggers a transition to a regeneration node. In PR proposals, pushing a change or providing review comments acts as the trigger.
+3.  **Context-Aware Regeneration:** The state machine routes back to the appropriate regeneration node (e.g., `regenerate_prd`, `regenerate_spec`, `update_single_epic`, `update_single_task`). The regeneration node takes the previous artifact draft, appends the user's specific feedback, and invokes the LLM with a targeted refinement prompt to produce an updated draft.
+4.  **Re-entry & Re-evaluation:** Once regenerated, the updated artifact is re-published, and the state machine loops back to the corresponding approval gate, restarting the review cycle.
+
+---
+
+### 2. The Execution Phase & Repository Fan-Out parallelization
+
+The Execution Phase implements the approved task list across one or more target repositories. It leverages dynamic parallelization to optimize implementation speed and ensure clean, isolated code execution environments.
+
+#### Repository Fan-Out and Parallel Routing Mechanics
+When the state machine transitions to `task_router`, it analyzes the list of approved tasks and groups them by their target repository (`tasks_by_repo`).
+
+```
+                              ┌──────────────────┐
+                              │   task_router    │
+                              └────────┬─────────┘
+                                       │
+                    Route tasks parallel (Send API fan-out)
+                                       │
+         ┌─────────────────────────────┼─────────────────────────────┐
+         ▼                             ▼                             ▼
+┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
+│ setup_workspace  │          │ setup_workspace  │          │ setup_workspace  │
+│     (Repo A)     │          │     (Repo B)     │          │     (Repo C)     │
+└────────┬─────────┘          └────────┬─────────┘          └────────┬─────────┘
+         ▼                             ▼                             ▼
+┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
+│  implement_task  │          │  implement_task  │          │  implement_task  │
+│  (Sandbox Pod)   │          │  (Sandbox Pod)   │          │  (Sandbox Pod)   │
+└────────┬─────────┘          └────────┬─────────┘          └────────┬─────────┘
+         ▼                             ▼                             ▼
+┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
+│   local_review   │          │   local_review   │          │   local_review   │
+└────────┬─────────┘          └────────┬─────────┘          └────────┬─────────┘
+         ▼                             ▼                             ▼
+┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
+│update_doc / PR   │          │update_doc / PR   │          │update_doc / PR   │
+└────────┬─────────┘          └────────┬─────────┘          └────────┬─────────┘
+         ▼                             ▼                             ▼
+┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
+│teardown_workspace│          │teardown_workspace│          │teardown_workspace│
+└────────┬─────────┘          └────────┬─────────┘          └────────┬─────────┘
+         │                             │                             │
+         └─────────────────────────────┼─────────────────────────────┘
+                                       │
+                                       ▼
+                       Aggregate parallel results (fan-in)
+                                       │
+                                       ▼
+                              wait_for_ci_gate
+```
+
+*   **Dynamic Parallel Routing (`route_tasks_parallel`):** If parallel execution is enabled (`parallel_execution_enabled: True`) and multiple repositories require changes, `task_router` bypasses sequential loops and invokes `route_tasks_parallel`.
+*   **LangGraph Send API Fan-out:** Forge leverages LangGraph’s `Send` API to dynamically spawn concurrent execution branches. For each target repository (bounded by `MAX_CONCURRENT_REPOS = 5` to prevent resource starvation), a unique sub-state dictionary is prepared. This contains an isolated `current_repo` identifier and branch markers, dispatching parallel execution branches to `setup_workspace` simultaneously.
+*   **Execution Isolation:** Because each branch has its own isolated state scope, they execute in complete isolation on the LangGraph worker. They spawn independent rootless Podman containers, avoiding race conditions or dirty directory states.
+*   **Result Aggregation (Fan-in):** Once all parallel repository branches run to completion (or block/fail), the orchestrator intercepts them at a join node (`aggregate_parallel_results`). It merges PR URLs, completed repositories list, implemented task logs, and handles error propagation before routing to the global CI/CD gate.
+
+#### Core Execution Nodes & Workspace Lifecycle
+Each repository execution branch navigates through five sequential steps:
+1.  **Workspace Setup (`setup_workspace`):** A clean clone of the target repository is fetched from GitHub, checked out to a newly created branch named after the ticket (e.g., `forge/feature/AISOS-2169`), and mounted to the host path.
+2.  **Code Implementation (`implement_task`):** Forge prepares `.forge/task.json` and spins up the ephemeral Podman sandbox container. The containerized Deep Agent acts autonomously, editing target files and running local test suites iteratively. If execution fails, the state machine allows up to 3 retries.
+3.  **Local Code Review (`local_review`):** The local workspace code-review loop runs formatting (e.g., `ruff format`, `gofmt`) and linting (`ruff check`, `go vet`). The linter feedback is fed directly back to the agent inside the container to fix syntax and style issues in-place before committing.
+4.  **Documentation Updates (`update_documentation`):** Forge automatically detects changes to public APIs, structures, and configuration files. It scans the repository's documentation directory, identifies stale or outdated markdown files, and applies minimal, targeted documentation edits to keep guides in sync with code changes.
+5.  **PR Creation (`create_pr`) & Workspace Teardown (`teardown_workspace`):** Code changes are staged, committed with a standardized structured commit message, and pushed to GitHub. A Pull Request is created, and `teardown_workspace` removes host mounts, halts and deletes the Podman container, and releases resources.
+
+---
+
+### 3. The CI/CD Validation & Review Phase
+
+The Validation & Review Phase guarantees the robustness and security of the code contributions through autonomous self-healing, test suites execution, and rigorous human PR reviews.
+
+```
+       PR Published
+            │
+            ▼
+┌──────────────────────────────┐
+│       wait_for_ci_gate       │<─────────────────────────────┐
+└──────────────┬───────────────┘                              │
+               ▼                                              │
+┌──────────────────────────────┐                              │ Retry Loop
+│         ci_evaluator         │                              │ (Max 5 attempts)
+└──────────────┬───────────────┘                              │
+               │                                              │
+               ├───────────────────> attempt_ci_fix ──────────┘
+               │ Failing CI Check
+               │
+               │ Passed CI Checks
+               ▼
+┌──────────────────────────────┐
+│      human_review_gate       │
+└──────────────┬───────────────┘
+               │ Approved / Merged
+               ▼
+┌──────────────────────────────┐
+│        complete_tasks        │
+└──────────────┬───────────────┘
+               ▼
+              END
+```
+
+#### Self-Healing Loops and the 5-Attempt CI Fix Limit
+Once a Pull Request is successfully created, Forge subscribes to GitHub Check Runs and Actions webhooks.
+
+*   **CI Evaluator Gate (`wait_for_ci_gate` & `ci_evaluator`):** Forge waits for all remote CI status checks to complete. When status updates arrive, `ci_evaluator` parses the check-run logs, compiling any standard output, error dumps, and stack traces of failing tests.
+*   **Autonomous CI Fix (`attempt_ci_fix`):** If any CI validation checks fail, Forge initiates an autonomous self-healing cycle. It triggers `attempt_ci_fix` which reads the build logs, identifies compiling errors or unit test regressions, and spins up a dedicated Podman sandbox container with the `analyze-ci` and `fix-ci` skills. The agent patches the workspace code, runs local tests, generates a fix commit, and pushes the modifications directly to the active PR branch.
+*   **The 5-Attempt Retry Cap:** To prevent infinite execution loops and billing runaways on complex system failures, the self-healing cycle is capped. Forge tracks the attempt counter (`ci_fix_attempts`).
+    *   **Attempts < 5:** Forge posts a progress comment on the PR detailing the failure and the planned remedy, triggers the patch commit, and routes back to `wait_for_ci_gate` to await the new CI build execution.
+    *   **Attempts >= 5:** If CI continues to fail after the fifth remediation commit, Forge suspends the loop. It transitions the state machine to `escalate_blocked`, marks the ticket/PR with the `forge:blocked` label, and posts a comprehensive summary of the failures, logs, and attempted patches to Jira/GitHub, escalating the ticket to human developers for manual intervention.
+
+#### PR Review, Human Gate, and Final Merge Logic
+*   **The Human Review Gate (`human_review_gate`):** Once CI passes successfully, the state machine transitions to `human_review_gate`. Forge leaves a status message indicating the code is ready for review and waits for engineer feedback.
+*   **AI Code Review (`review-code`):** While waiting, Forge runs its internal code-reviewer skill to inspect the diff against PRD/Spec requirements, adding helpful comments directly on lines of code to assist the human reviewer.
+*   **Interactive Review Feedback (`implement_review`):** If human reviewers leave requested changes or comment on the PR, Forge detects these comments. It transitions to `implement_review` to plan corrections, spawns a container to apply the feedback, and pushes updates to the PR, subsequently routing back to `wait_for_ci_gate` to re-validate the CI tests.
+*   **PR Merge and Closeout (`complete_tasks`):** When a human reviewer approves and merges the Pull Request, Forge receives the merge event. The state machine transitions to `complete_tasks` which marks all associated Jira tasks as completed, transitions the parent Epic and Feature tickets, and terminates gracefully to `END`.
