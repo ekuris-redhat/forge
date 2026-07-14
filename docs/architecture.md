@@ -71,17 +71,17 @@
 │   >> = human checkpoint (auto-approved with forge:yolo label)           │
 │                                                                         │
 └────────────────────────────┬────────────────────────────────────────────┘
-                             │
+                             v
               ┌──────────────┼──────────────┐
-              │ LLM calls    │              │ LLM calls
-              v              v              v
+              │ LLM calls                   │ LLM calls
+              v                             v
 ┌────────────────────────────┐   ┌────────────────────────────────────────┐
 │  LLM Backends              │   │  Podman Container (ephemeral)          │
 │                            │   │                                        │
 │  Anthropic API (Claude)    │   │  ┌──────────────────────────────────┐  │
 │  Vertex AI (Claude)        │   │  │ Deep Agents (library) + MCP      │  │
 │  Vertex AI (Gemini)        │   │  │ /task.json (task description)    │  │
-│                            │   │  │ /workspace (repo mounted)        │  │
+│                            │<->│  │ /workspace (repo mounted)        │  │
 │  Called by orchestrator    │   │  │ commits changes locally          │  │
 │  nodes and container       │   │  └──────────────────────────────────┘  │
 │  agents (bidirectional)    │   │                                        │
