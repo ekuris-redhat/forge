@@ -79,6 +79,268 @@ graph TD
 *   **Generate Tasks:** Translates Epics into discrete, actionable developer tasks.
 *   **Execution:** Executes the tasks sequentially or in parallel inside secure sandboxes.
 
+---
+
+## Feature Workflow State Machine Diagram & Detail
+
+Below is the detailed, 1:1 code-aligned state machine diagram representing the full Feature Workflow managed in `src/forge/workflow/feature/graph.py`.
+
+```mermaid
+flowchart TD
+    %% Styling and classes
+    classDef planning fill:#E1F5FE,stroke:#01579B,stroke-width:2px;
+    classDef execution fill:#E8F5E9,stroke:#1B5E20,stroke-width:2px;
+    classDef cicd fill:#FFF3E0,stroke:#E65100,stroke-width:2px;
+    classDef human fill:#EDE7F6,stroke:#4A148C,stroke-width:2px;
+    classDef qa fill:#FFFDE7,stroke:#F57F17,stroke-width:2px;
+    classDef terminal fill:#FFEBEE,stroke:#B71C1C,stroke-width:2px;
+
+    %% Nodes
+    %% Entry Routing
+    route_entry([route_entry]):::planning
+
+    %% Planning States
+    generate_prd[generate_prd]:::planning
+    prd_approval_gate{prd_approval_gate}:::human
+    regenerate_prd[regenerate_prd]:::planning
+
+    generate_spec[generate_spec]:::planning
+    spec_approval_gate{spec_approval_gate}:::human
+    regenerate_spec[regenerate_spec]:::planning
+
+    decompose_epics[decompose_epics]:::planning
+    plan_approval_gate{plan_approval_gate}:::human
+    regenerate_all_epics[regenerate_all_epics]:::planning
+    update_single_epic[update_single_epic]:::planning
+
+    generate_tasks[generate_tasks]:::planning
+    task_approval_gate{task_approval_gate}:::human
+    regenerate_all_tasks[regenerate_all_tasks]:::planning
+    update_single_task[update_single_task]:::planning
+    regenerate_epic_tasks[regenerate_epic_tasks]:::planning
+
+    %% Execution States
+    task_router{task_router}:::execution
+    setup_workspace[setup_workspace]:::execution
+    implement_task[implement_task]:::execution
+    local_review[local_review]:::execution
+    update_documentation[update_documentation]:::execution
+    create_pr[create_pr]:::execution
+    teardown_workspace[teardown_workspace]:::execution
+
+    %% CI/CD & Validation States
+    wait_for_ci_gate{wait_for_ci_gate}:::cicd
+    ci_evaluator{ci_evaluator}:::cicd
+    attempt_ci_fix[attempt_ci_fix]:::cicd
+    escalate_blocked[escalate_blocked]:::cicd
+
+    %% Human Review States
+    human_review_gate{human_review_gate}:::human
+    implement_review[implement_review]:::human
+    review_response_gate{review_response_gate}:::human
+
+    %% Q&A State
+    answer_question[answer_question]:::qa
+
+    %% Rebase State
+    rebase_pr[rebase_pr]:::execution
+
+    %% Terminal States
+    complete_tasks[complete_tasks]:::terminal
+    aggregate_epic_status[aggregate_epic_status]:::terminal
+    aggregate_feature_status[aggregate_feature_status]:::terminal
+    END([END]):::terminal
+
+    %% Edges / Transitions
+
+    %% Entry Transitions
+    route_entry -->|initial / resume generate_prd| generate_prd
+    route_entry -->|resume prd_approval_gate| prd_approval_gate
+    route_entry -->|resume generate_spec| generate_spec
+    route_entry -->|resume regenerate_prd| regenerate_prd
+    route_entry -->|resume spec_approval_gate| spec_approval_gate
+    route_entry -->|resume regenerate_spec| regenerate_spec
+    route_entry -->|resume decompose_epics| decompose_epics
+    route_entry -->|resume regenerate_all_epics| regenerate_all_epics
+    route_entry -->|resume update_single_epic| update_single_epic
+    route_entry -->|resume plan_approval_gate| plan_approval_gate
+    route_entry -->|resume generate_tasks| generate_tasks
+    route_entry -->|resume regenerate_all_tasks| regenerate_all_tasks
+    route_entry -->|resume update_single_task| update_single_task
+    route_entry -->|resume regenerate_epic_tasks| regenerate_epic_tasks
+    route_entry -->|resume task_approval_gate| task_approval_gate
+    route_entry -->|resume task_router / escalate_blocked| task_router
+    route_entry -->|resume setup_workspace| setup_workspace
+    route_entry -->|resume implement_task| implement_task
+    route_entry -->|resume create_pr / blocked| create_pr
+    route_entry -->|resume teardown_workspace| teardown_workspace
+    route_entry -->|resume local_review| local_review
+    route_entry -->|resume update_documentation| update_documentation
+    route_entry -->|resume wait_for_ci_gate| wait_for_ci_gate
+    route_entry -->|resume ci_evaluator| ci_evaluator
+    route_entry -->|resume human_review_gate| human_review_gate
+    route_entry -->|resume implement_review| implement_review
+    route_entry -->|resume review_response_gate| review_response_gate
+    route_entry -->|resume rebase_pr| rebase_pr
+    route_entry -->|resume complete_tasks| complete_tasks
+    route_entry -->|resume aggregate_epic_status| aggregate_epic_status
+    route_entry -->|resume aggregate_feature_status| aggregate_feature_status
+    route_entry -->|resume END| END
+
+    %% PRD Flow
+    generate_prd -->|success| prd_approval_gate
+    generate_prd -->|failure| END
+    prd_approval_gate -->|approved| generate_spec
+    prd_approval_gate -->|revision feedback| regenerate_prd
+    prd_approval_gate -->|question prefix '?'| answer_question
+    prd_approval_gate -->|pause / empty| END
+    regenerate_prd -->|success| prd_approval_gate
+    regenerate_prd -->|failure| END
+
+    %% Spec Flow
+    generate_spec -->|success| spec_approval_gate
+    generate_spec -->|failure| END
+    spec_approval_gate -->|approved| decompose_epics
+    spec_approval_gate -->|revision feedback| regenerate_spec
+    spec_approval_gate -->|question prefix '?'| answer_question
+    spec_approval_gate -->|pause / empty| END
+    regenerate_spec -->|success| spec_approval_gate
+    regenerate_spec -->|failure| END
+
+    %% Epic Plan Flow
+    decompose_epics -->|success| plan_approval_gate
+    decompose_epics -->|failure| END
+    plan_approval_gate -->|approved| generate_tasks
+    plan_approval_gate -->|feature-level rejection| regenerate_all_epics
+    plan_approval_gate -->|epic-level rejection| update_single_epic
+    plan_approval_gate -->|question prefix '?'| answer_question
+    plan_approval_gate -->|pause / empty| END
+    regenerate_all_epics -->|success| plan_approval_gate
+    regenerate_all_epics -->|failure| END
+    update_single_epic -->|success| plan_approval_gate
+    update_single_epic -->|failure| END
+
+    %% Task Flow
+    generate_tasks -->|success| task_approval_gate
+    generate_tasks -->|failure| END
+    task_approval_gate -->|approved| task_router
+    task_approval_gate -->|feature-level rejection| regenerate_all_tasks
+    task_approval_gate -->|epic-level rejection| regenerate_epic_tasks
+    task_approval_gate -->|task-level rejection| update_single_task
+    task_approval_gate -->|question prefix '?'| answer_question
+    task_approval_gate -->|pause / empty| END
+    regenerate_all_tasks -->|success| task_approval_gate
+    regenerate_all_tasks -->|failure| END
+    update_single_task -->|success| task_approval_gate
+    update_single_task -->|failure| END
+    regenerate_epic_tasks -->|success| task_approval_gate
+    regenerate_epic_tasks -->|failure| END
+
+    %% Execution & Workspace Flow
+    task_router -->|parallel fan-out (Send)| setup_workspace
+    setup_workspace -->|success| implement_task
+    setup_workspace -->|failure| escalate_blocked
+    implement_task -->|tasks remaining / retry < 3| implement_task
+    implement_task -->|all tasks done| local_review
+    implement_task -->|failure / retry >= 3| escalate_blocked
+    
+    local_review -->|local_review| local_review
+    local_review -->|create_pr| update_documentation
+    update_documentation --> create_pr
+    
+    create_pr -->|success / partial| teardown_workspace
+    create_pr -->|failure| escalate_blocked
+    teardown_workspace -->|more repos remaining| setup_workspace
+    teardown_workspace -->|no repos remaining| wait_for_ci_gate
+
+    %% CI/CD & Validation Flow
+    wait_for_ci_gate -->|is_paused == true| END
+    wait_for_ci_gate -->|is_paused == false| ci_evaluator
+    ci_evaluator -->|passed| human_review_gate
+    ci_evaluator -->|fixing| attempt_ci_fix
+    ci_evaluator -->|pending / waiting| END
+    ci_evaluator -->|failed / escalate| escalate_blocked
+    attempt_ci_fix -->|wait_for_ci_gate / retry| wait_for_ci_gate
+    attempt_ci_fix -->|ci_evaluator| ci_evaluator
+    attempt_ci_fix -->|escalate_blocked| escalate_blocked
+    escalate_blocked --> END
+
+    %% Human Review Flow
+    human_review_gate -->|review feedback| implement_review
+    human_review_gate -->|approved / merged| complete_tasks
+    human_review_gate -->|pause / pending| END
+    
+    implement_review -->|wait_for_ci_gate| wait_for_ci_gate
+    implement_review -->|review_response_gate| review_response_gate
+    implement_review -->|implement_review / self-loop| implement_review
+    implement_review -->|human_review_gate| human_review_gate
+    implement_review -->|escalate_blocked| escalate_blocked
+    
+    review_response_gate -->|implement_review| implement_review
+    review_response_gate -->|human_review_gate| human_review_gate
+    review_response_gate -->|pause / pending| END
+
+    %% Q&A Back-routing
+    answer_question -->|return to sender| prd_approval_gate
+    answer_question -->|return to sender| spec_approval_gate
+    answer_question -->|return to sender| plan_approval_gate
+    answer_question -->|return to sender| task_approval_gate
+
+    %% Rebase Flow
+    rebase_pr -->|resume to current_node| prd_approval_gate
+    rebase_pr -->|resume to current_node| spec_approval_gate
+    rebase_pr -->|resume to current_node| plan_approval_gate
+    rebase_pr -->|resume to current_node| task_approval_gate
+    rebase_pr -->|resume to current_node| task_router
+    rebase_pr -->|resume to current_node| setup_workspace
+    rebase_pr -->|resume to current_node| implement_task
+    rebase_pr -->|resume to current_node| local_review
+    rebase_pr -->|resume to current_node| update_documentation
+    rebase_pr -->|resume to current_node| create_pr
+    rebase_pr -->|resume to current_node| teardown_workspace
+    rebase_pr -->|resume to current_node| wait_for_ci_gate
+    rebase_pr -->|resume to current_node| ci_evaluator
+    rebase_pr -->|resume to current_node| human_review_gate
+    rebase_pr -->|resume to current_node| implement_review
+    rebase_pr -->|resume to current_node| review_response_gate
+    rebase_pr -->|resume to current_node| complete_tasks
+    rebase_pr -->|resume to current_node| aggregate_epic_status
+    rebase_pr -->|resume to current_node| aggregate_feature_status
+    rebase_pr -->|resume to current_node| escalate_blocked
+    rebase_pr -->|resume to current_node / fallback| END
+
+    %% Post-Implementation Termination Chain
+    complete_tasks --> aggregate_epic_status
+    aggregate_epic_status --> aggregate_feature_status
+    aggregate_feature_status --> END
+```
+
+### Detailed State Transitions
+
+#### 1. Entry & Resumability (`route_entry`)
+When a Feature workflow starts or is retried/resumed, `route_entry` analyzes the state's `current_node`. It maps the `current_node` to its counterpart node inside the state machine. If no `current_node` exists, it defaults to starting the pipeline at `generate_prd`.
+
+#### 2. Planning Phase
+*   **PRD Stage:** `generate_prd` creates the PRD. Success routes to `prd_approval_gate`; failure terminates to `END`. `prd_approval_gate` waits for human feedback. On approval, it goes to `generate_spec`. On rejection (indicated by an exclamation mark `!`), it routes to `regenerate_prd`. Questions starting with `?` or `@forge ask` route to `answer_question`, which handles the query and returns state to `prd_approval_gate`.
+*   **Spec Stage:** `generate_spec` is executed upon PRD approval. On success, it routes to `spec_approval_gate`. On rejection, it routes to `regenerate_spec` for correction. Questions trigger `answer_question` routing.
+*   **Epic Decomposition Stage:** `decompose_epics` structures the specification into Epic plans. Once processed, it moves to `plan_approval_gate`. A feature-level rejection routes to `regenerate_all_epics`, whereas a targeted Epic rejection routes to `update_single_epic`.
+*   **Task Generation Stage:** `generate_tasks` decomposes the Epics into discrete Developer tasks. This routes to `task_approval_gate`. Feedback loops can trigger `regenerate_all_tasks` (feature-level), `regenerate_epic_tasks` (epic-level), or `update_single_task` (individual task level).
+
+#### 3. Execution Phase
+*   **Routing & Workspaces:** `task_router` schedules and routes tasks. Workspaces are initialized with `setup_workspace`. If workspace setup fails, it transitions to `escalate_blocked`; otherwise, it proceeds to `implement_task`.
+*   **Implementation & Reviews:** `implement_task` is called iteratively until all tasks in a repository are marked completed, or until the maximum retry limit (3 retries) is exceeded (escalating to `escalate_blocked`). Upon completion, `local_review` is called to analyze the git diff, after which `update_documentation` identifies and fixes stale documentation files before `create_pr` builds and publishes the Pull Request. Finally, `teardown_workspace` cleans up the sandbox and advances to either the next repository or to `wait_for_ci_gate`.
+
+#### 4. Validation (CI/CD) Phase
+*   **Gateways:** `wait_for_ci_gate` pauses execution if CI is still running. Once CI completes, it transitions to `ci_evaluator`.
+*   **Evaluation & Self-Heal:** `ci_evaluator` assesses CI status. If CI passed, it goes to `human_review_gate`. If failing, it goes to `attempt_ci_fix` up to 5 times before giving up and escalating to `escalate_blocked`.
+
+#### 5. Human Review & Termination
+*   **Human Review Gate:** `human_review_gate` tracks reviewer reactions and comments on the implementation PR. On approval or merge, it routes to `complete_tasks` to finalize the work items. If review comments require codebase updates, it routes to `implement_review` to analyze and plan fixes.
+*   **Implementation Review:** `implement_review` routes either back to `wait_for_ci_gate` to check CI on new commits, to `review_response_gate` to wait for further feedback, back to itself, back to `human_review_gate`, or escalates to `escalate_blocked` on critical failures.
+*   **Terminal Chain:** Once all changes are fully merged and approved, `complete_tasks` executes, followed by `aggregate_epic_status` and `aggregate_feature_status` to close out corresponding planning tickets before routing to `END`.
+
+#### 1. Feature Lifecycle (Epic/Feature Decomposition)
+
 #### 2. Bug Triage & Fix Lifecycle (RCA-driven)
 *   **Analyze Bug:** Executes tests, inspects code, and produces a structured Root Cause Analysis (RCA) with potential fix options.
 *   **RCA Approval Gate:** Holds execution until a developer selects the preferred fix approach.
