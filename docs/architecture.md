@@ -652,3 +652,257 @@ Once a Pull Request is successfully created, Forge subscribes to GitHub Check Ru
 *   **AI Code Review (`review-code`):** While waiting, Forge runs its internal code-reviewer skill to inspect the diff against PRD/Spec requirements, adding helpful comments directly on lines of code to assist the human reviewer.
 *   **Interactive Review Feedback (`implement_review`):** If human reviewers leave requested changes or comment on the PR, Forge detects these comments. It transitions to `implement_review` to plan corrections, spawns a container to apply the feedback, and pushes updates to the PR, subsequently routing back to `wait_for_ci_gate` to re-validate the CI tests.
 *   **PR Merge and Closeout (`complete_tasks`):** When a human reviewer approves and merges the Pull Request, Forge receives the merge event. The state machine transitions to `complete_tasks` which marks all associated Jira tasks as completed, transitions the parent Epic and Feature tickets, and terminates gracefully to `END`.
+
+---
+
+## Bug Workflow State Machine Diagram & Detail
+
+Below is the detailed, 1:1 code-aligned state machine diagram representing the full Bug Workflow managed in `src/forge/workflow/bug/graph.py`.
+
+```mermaid
+flowchart TD
+    %% Styling and classes
+    classDef planning fill:#E1F5FE,stroke:#01579B,stroke-width:2px;
+    classDef execution fill:#E8F5E9,stroke:#1B5E20,stroke-width:2px;
+    classDef cicd fill:#FFF3E0,stroke:#E65100,stroke-width:2px;
+    classDef human fill:#EDE7F6,stroke:#4A148C,stroke-width:2px;
+    classDef qa fill:#FFFDE7,stroke:#F57F17,stroke-width:2px;
+    classDef terminal fill:#FFEBEE,stroke:#B71C1C,stroke-width:2px;
+
+    %% Nodes
+    route_entry([route_entry]):::planning
+
+    %% Triage
+    triage_check[triage_check]:::planning
+    triage_gate{triage_gate}:::human
+
+    %% Analysis + Reflection
+    analyze_bug[analyze_bug]:::planning
+    reflect_rca[reflect_rca]:::planning
+
+    %% RCA Option Gate
+    rca_option_gate{rca_option_gate}:::human
+    regenerate_rca[regenerate_rca]:::planning
+
+    %% Planning
+    plan_bug_fix[plan_bug_fix]:::planning
+    plan_approval_gate{plan_approval_gate}:::human
+    regenerate_plan[regenerate_plan]:::planning
+    decompose_plan[decompose_plan]:::planning
+
+    %% Q&A State
+    answer_question[answer_question]:::qa
+
+    %% Backward-compat/Execution
+    setup_workspace[setup_workspace]:::execution
+    implement_bug_fix[implement_bug_fix]:::execution
+    local_review[local_review]:::execution
+    update_documentation[update_documentation]:::execution
+    create_pr[create_pr]:::execution
+    teardown_workspace[teardown_workspace]:::execution
+
+    %% CI/CD & Validation
+    wait_for_ci_gate{wait_for_ci_gate}:::cicd
+    ci_evaluator{ci_evaluator}:::cicd
+    attempt_ci_fix[attempt_ci_fix]:::cicd
+    escalate_blocked[escalate_blocked]:::cicd
+
+    %% Review
+    human_review_gate{human_review_gate}:::human
+    implement_review[implement_review]:::human
+    review_response_gate{review_response_gate}:::human
+
+    %% Rebase State
+    rebase_pr[rebase_pr]:::execution
+
+    %% Terminal Nodes
+    post_merge_summary[post_merge_summary]:::terminal
+    END([END]):::terminal
+
+    %% Edges / Transitions
+
+    %% Entry Transitions
+    route_entry -->|initial / resume triage_check| triage_check
+    route_entry -->|resume triage_gate| triage_gate
+    route_entry -->|resume analyze_bug| analyze_bug
+    route_entry -->|resume reflect_rca| reflect_rca
+    route_entry -->|resume rca_option_gate / rca_approval_gate| rca_option_gate
+    route_entry -->|resume plan_bug_fix| plan_bug_fix
+    route_entry -->|resume plan_approval_gate| plan_approval_gate
+    route_entry -->|resume regenerate_plan| regenerate_plan
+    route_entry -->|resume decompose_plan| decompose_plan
+    route_entry -->|resume setup_workspace| setup_workspace
+    route_entry -->|resume implement_bug_fix| implement_bug_fix
+    route_entry -->|resume local_review| local_review
+    route_entry -->|resume update_documentation| update_documentation
+    route_entry -->|resume create_pr| create_pr
+    route_entry -->|resume teardown_workspace| teardown_workspace
+    route_entry -->|resume wait_for_ci_gate| wait_for_ci_gate
+    route_entry -->|resume ci_evaluator| ci_evaluator
+    route_entry -->|resume human_review_gate / ai_review| human_review_gate
+    route_entry -->|resume implement_review| implement_review
+    route_entry -->|resume review_response_gate| review_response_gate
+    route_entry -->|resume post_merge_summary / complete_tasks / aggregate_epic_status| post_merge_summary
+    route_entry -->|resume escalate_blocked / escalate_blocked| escalate_blocked
+    route_entry -->|resume END| END
+
+    %% Triage Flow
+    triage_check -->|_route_after_triage_check| triage_gate
+    triage_check -->|_route_after_triage_check: triage_check| triage_check
+    triage_check -->|_route_after_triage_check: analyze_bug| analyze_bug
+    triage_check -->|_route_after_triage_check: escalate_blocked| escalate_blocked
+
+    triage_gate -->|route_triage_gate: triage_check| triage_check
+    triage_gate -->|route_triage_gate: END / pause| END
+
+    %% Analysis & Reflection Loop
+    analyze_bug -->|_route_after_analyze_bug: success| reflect_rca
+    analyze_bug -->|_route_after_analyze_bug: escalate_blocked| escalate_blocked
+    analyze_bug -->|_route_after_analyze_bug: retry limit / container fail| END
+
+    reflect_rca -->|_route_after_reflect_rca: count < 3 & critique empty| rca_option_gate
+    reflect_rca -->|_route_after_reflect_rca: count < 3 & critique present| analyze_bug
+    reflect_rca -->|_route_after_reflect_rca: count >= 3| rca_option_gate
+    reflect_rca -->|_route_after_reflect_rca: escalate_blocked| escalate_blocked
+    reflect_rca -->|_route_after_reflect_rca: container fail| END
+
+    %% RCA Option Gate
+    rca_option_gate -->|route_rca_option: plan_bug_fix| plan_bug_fix
+    rca_option_gate -->|route_rca_option: regenerate_rca| regenerate_rca
+    rca_option_gate -->|route_rca_option: answer_question| answer_question
+    rca_option_gate -->|route_rca_option: pause / empty| END
+
+    regenerate_rca --> analyze_bug
+
+    %% Planning Flow
+    plan_bug_fix -->|_route_after_plan_bug_fix: plan_approval_gate| plan_approval_gate
+    plan_bug_fix -->|_route_after_plan_bug_fix: error & retry| plan_bug_fix
+    plan_bug_fix -->|_route_after_plan_bug_fix: retry limit| escalate_blocked
+    plan_bug_fix -->|_route_after_plan_bug_fix: other errors| END
+
+    plan_approval_gate -->|route_plan_approval: decompose_plan| decompose_plan
+    plan_approval_gate -->|route_plan_approval: regenerate_plan| regenerate_plan
+    plan_approval_gate -->|route_plan_approval: answer_question| answer_question
+    plan_approval_gate -->|route_plan_approval: pause / empty| END
+
+    regenerate_plan -->|_route_after_regenerate_plan: plan_approval_gate| plan_approval_gate
+    regenerate_plan -->|_route_after_regenerate_plan: error & retry| regenerate_plan
+    regenerate_plan -->|_route_after_regenerate_plan: retry limit| escalate_blocked
+    regenerate_plan -->|_route_after_regenerate_plan: other errors| END
+
+    decompose_plan -->|_route_after_decompose_plan: setup_workspace| setup_workspace
+    decompose_plan -->|_route_after_decompose_plan: error / escalate| escalate_blocked
+    decompose_plan -->|_route_after_decompose_plan: terminate| END
+
+    %% Q&A Return Logic
+    answer_question -->|_route_after_answer_bug: triage_gate| triage_gate
+    answer_question -->|_route_after_answer_bug: rca_option_gate| rca_option_gate
+    answer_question -->|_route_after_answer_bug: plan_approval_gate| plan_approval_gate
+
+    %% Backward-compat/Execution Flow
+    setup_workspace -->|_route_after_workspace_setup: success| implement_bug_fix
+    setup_workspace -->|_route_after_workspace_setup: failure| escalate_blocked
+
+    implement_bug_fix -->|_route_after_implementation: success| local_review
+    implement_bug_fix -->|_route_after_implementation: retry loop| implement_bug_fix
+    implement_bug_fix -->|_route_after_implementation: retry limit| escalate_blocked
+
+    local_review -->|_route_after_local_review: adequate / cap reached| update_documentation
+    local_review -->|_route_after_local_review: tests_incomplete / symptom_only| implement_bug_fix
+    local_review -->|_route_after_local_review: manual retry / other| local_review
+    local_review -->|_route_after_local_review: manual cap reached| update_documentation
+
+    update_documentation --> create_pr
+
+    create_pr -->|_route_after_pr_creation: success| teardown_workspace
+    create_pr -->|_route_after_pr_creation: failure| escalate_blocked
+
+    teardown_workspace -->|_route_after_teardown: remaining repos| setup_workspace
+    teardown_workspace -->|_route_after_teardown: done / wait CI| wait_for_ci_gate
+
+    %% CI/CD Flow
+    wait_for_ci_gate -->|is_paused == true| END
+    wait_for_ci_gate -->|is_paused == false| ci_evaluator
+
+    ci_evaluator -->|_route_ci_evaluation: passed| human_review_gate
+    ci_evaluator -->|_route_ci_evaluation: fixing| attempt_ci_fix
+    ci_evaluator -->|_route_ci_evaluation: pending| END
+    ci_evaluator -->|_route_ci_evaluation: failed / fallback| escalate_blocked
+
+    attempt_ci_fix -->|wait_for_ci_gate| wait_for_ci_gate
+    attempt_ci_fix -->|ci_evaluator| ci_evaluator
+    attempt_ci_fix -->|escalate_blocked| escalate_blocked
+
+    %% Review Flow
+    human_review_gate -->|_route_human_review_bug: approved / merged| post_merge_summary
+    human_review_gate -->|_route_human_review_bug: other status (review/pause)| human_review_gate
+    human_review_gate -->|_route_human_review_bug: pause / pending| END
+
+    implement_review -->|wait_for_ci_gate| wait_for_ci_gate
+    implement_review -->|review_response_gate| review_response_gate
+    implement_review -->|implement_review / self-loop| implement_review
+    implement_review -->|human_review_gate| human_review_gate
+    implement_review -->|escalate_blocked| escalate_blocked
+
+    review_response_gate -->|route_review_response: implement_review| implement_review
+    review_response_gate -->|route_review_response: human_review_gate| human_review_gate
+    review_response_gate -->|route_review_response: pause / pending| END
+
+    %% Rebase Flow
+    rebase_pr --> triage_gate
+    rebase_pr --> rca_option_gate
+    rebase_pr --> plan_approval_gate
+    rebase_pr --> setup_workspace
+    rebase_pr --> implement_bug_fix
+    rebase_pr --> local_review
+    rebase_pr --> update_documentation
+    rebase_pr --> create_pr
+    rebase_pr --> teardown_workspace
+    rebase_pr --> wait_for_ci_gate
+    rebase_pr --> ci_evaluator
+    rebase_pr --> human_review_gate
+    rebase_pr --> implement_review
+    rebase_pr --> review_response_gate
+    rebase_pr --> post_merge_summary
+    rebase_pr --> escalate_blocked
+    rebase_pr --> END
+
+    %% Post-Merge Terminal
+    post_merge_summary --> END
+    escalate_blocked --> END
+```
+
+### Detailed State Transitions & Phase Summaries
+
+The Bug Workflow is structured around a highly deterministic five-stage pipeline to ensure rigorous triaging, precise Root Cause Analysis (RCA), and safe, containerized implementation of bug fixes.
+
+#### 1. Bug Triage Phase
+The entry point of any bug lifecycle is designed to validate incoming bug reports for completeness and actionability.
+*   **Triage Check (`triage_check`):** Evaluates if the reported bug ticket contains sufficient information (e.g., reproduction steps, environment details, expected vs actual behavior) to proceed. If information is missing, the ticket is transitioned to `triage_gate` or escalated directly to `escalate_blocked` if critical setup constraints fail.
+*   **Triage Gate (`triage_gate`):** Serves as an interactive human-in-the-loop checkpoint. It pauses execution if clarification is needed from the ticket creator, transitioning to `END`. Once the user responds or updates the ticket (such as with labels/comments), `route_triage_gate` triggers a re-evaluation back to `triage_check`.
+
+#### 2. Analysis & Reflection Phase
+Once successfully triaged, the workflow initiates a deep-dive exploration of the bug's context and code environment.
+*   **Analyze Bug (`analyze_bug`):** Spins up a dedicated Podman sandbox container running the `analyze-bug` skill. The agent analyzes the codebase, implements reproduction tests, and drafts a structured Root Cause Analysis (RCA) highlighting potential fix options.
+*   **RCA Reflection (`reflect_rca`):** An automated verification pass. An LLM-based reflection node evaluates the generated RCA and reproduction tests for completeness and evidence quality. If any gaps are identified (up to 3 reflection attempts), a critique is compiled, and the workflow loops back to `analyze_bug` to refine the analysis.
+*   **RCA Option Gate (`rca_option_gate`):** A pause point. It posts the finalized RCA options to Jira, applies the `forge:rca-pending` label, and waits for a human engineer to choose the preferred solution (e.g., using comments like `>option 1`). If the engineer asks questions, the state routes through `answer_question` and returns.
+
+#### 3. Bug Planning Phase
+Upon selecting a fix approach, the workflow prepares a targeted execution plan.
+*   **Plan Bug Fix (`plan_bug_fix`):** Synthesizes the chosen RCA fix option into a concrete, step-by-step implementation plan with targeted file modifications and regression testing specifications.
+*   **Plan Approval Gate (`plan_approval_gate`):** Posts the detailed implementation plan to Jira, applies `forge:plan-pending`, and pauses for engineer approval. Revision requests (prefixed with `!`) route to `regenerate_plan`.
+*   **Decompose Plan (`decompose_plan`):** Takes the approved plan and decomposes it into isolated workspace setup tasks. Once mapped, it transitions execution to the implementation workspace.
+
+#### 4. Execution & Backward-Compatibility Phase
+For backward compatibility and standalone, non-decomposed execution, the Bug Workflow maintains a robust, containerized implementation pathway.
+*   **Workspace Preparation (`setup_workspace` & `teardown_workspace`):** Clones the codebase, checkouts dedicated bugfix branches (e.g., `forge/bug/AISOS-123`), and handles container volume mounts.
+*   **Implementation (`implement_bug_fix`):** Executes code modification and local test suites inside an isolated container. It retries up to 3 times on transient failures.
+*   **Local Review & Quality Cap (`local_review`):** Performs local qualitative and syntactic reviews (linters/formatters). It determines whether the fix is adequate, if tests are incomplete, or if only symptoms were addressed. If the qualitative review is not "adequate", the loop routes back to `implement_bug_fix`. To prevent infinite execution runaways, this loop is strictly capped (`_QUALITATIVE_CAP` and `MAX_REVIEW_ATTEMPTS`).
+*   **PR Generation (`create_pr`):** Commits changes according to git standards, pushes them to GitHub, and publishes the Pull Request.
+
+#### 5. Validation, Review & Post-Merge Phase
+*   **CI/CD Validation (`wait_for_ci_gate` & `ci_evaluator`):** Listens to webhook status updates for remote CI. Failing builds trigger `attempt_ci_fix` to autonomously patch and update the PR branch (capped at 5 attempts to prevent runaways).
+*   **Human Review & Revision (`human_review_gate` & `implement_review`):** Coordinates pull request feedback. Approvals or direct merges on the PR branch route to `post_merge_summary` to close out tickets. Comments or requested changes trigger `implement_review` to patch the codebase and update the PR branch before re-submitting to CI evaluation.
+*   **Post-Merge Summary (`post_merge_summary`):** Generates a high-level summary of the bug resolution, publishes it as a closing comment on Jira, transitions associated tickets to resolved, and finishes at `END`.
+
+---
