@@ -141,6 +141,63 @@ Actual code modifications, test executions, and linting/formatting happen inside
 
 ---
 
+## Isolated Podman Container & Execution Environment Lifecycle
+
+This section details the design, layout, security model, and execution lifecycle of the containerized sandbox environment where task implementation and code execution take place.
+
+### 1. The Host-Worker-to-Container Relationship
+The execution environment relies on a 1:1, non-overlapping relationship between a worker task execution and a dedicated, ephemeral container instance:
+- **Forge Worker Host:** The global orchestrator or worker pool runs on a host server. When the state machine transitions to an execution or implementation node, it dynamically initializes a `ContainerRunner`.
+- **Ephemeral Instance Allocation:** Each workflow task spawns exactly one Podman container instance.
+- **Unique Naming & Traceability:** Containers are named with the pattern `forge-{ticket_key}-{unique_hash}` (e.g., `forge-AISOS-189-a1b2c3`) using a UUID hash to prevent collision in multi-pass executions or concurrent runs. This maps the container execution state and host metrics back to specific Jira tickets and GitHub PR branches.
+
+### 2. Container Construction and Image Layout
+The sandbox image (`localhost/forge-dev:latest` by default) is built on top of a highly robust foundation designed for development containers:
+- **Base Image:** `mcr.microsoft.com/devcontainers/universal:linux`, providing pre-installed toolchains for Python, Node.js, Go, Rust, Java, and common development tools.
+- **Agent Integration Layer:** Bundles `deepagents` (the autonomous tool-use framework), `anthropic` and `langchain` clients for cognitive capabilities, and `langchain-mcp-adapters` for Model Context Protocol interactions.
+- **Context7 Integration:** Configured with Upstash's `@upstash/context7-mcp` NPM package to resolve, download, and query up-to-date third-party programming documentation securely.
+
+### 3. Isolation Patterns and Workspace Mappings
+The sandbox ensures total file system and network isolation while allowing autonomous modifications of the targeted codebase:
+- **Workspace Volume Mount:** The local clone of the target repository is mounted from the host into the container filesystem at `/workspace` with the `:Z` SELinux relabeling flag:
+  `podman run -v /host/path/to/workspace:/workspace:Z`
+- **Dynamic Task Payload Injection:** A temporary metadata payload containing the task specification is written by the runner to `.forge/task.json` inside the workspace directory, then mounted read-only to `/task.json` in the container.
+- **Skill Mounts:** Specialized capability libraries are resolved dynamically on the host and mounted read-only at `/skills/skill_{n}:ro,Z`.
+- **Resource Constraints:** Containers are strictly bounded using native Podman control groups (cgroups) to prevent resource exhaustion or denial-of-service on the worker host:
+  - `--memory 4g` (or custom limit via `container_memory` config)
+  - `--cpus 2` (or custom limit via `container_cpus` config)
+- **Network Isolation:** Rootless containers run using `slirp4netns` to restrict host network interface exposure.
+
+### 4. Environment Variable and Credential Security
+To maintain a zero-trust architecture, sensitive credentials on the worker host are shielded and selectively exposed using narrow-scope environment injection:
+- **Credential Masking:** Raw credentials are kept as pydantic Secrets on the host and passed to the container's virtual environment only at runtime using the `-e` flag (e.g., `-e ANTHROPIC_API_KEY=...`).
+- **Cloud Credential Isolation:** For Vertex AI authentication, the Google Application Default Credentials (ADC) JSON file is mounted read-only (`-v /path/to/adc.json:/root/.config/gcloud/...:ro,Z`), avoiding persistent storage of GCP tokens in the image or workspace filesystem.
+- **Developer Attribution:** User identity details (git user name/email) are injected via env vars (`GIT_USER_NAME`, `GIT_USER_EMAIL`) and applied within the container to configure git globally prior to commit generation.
+
+### 5. Task Execution Lifecycle & Entrypoint Protocol
+When a container is started, its behavior is strictly orchestrated by `entrypoint.py`:
+1. **Bootstrap & Configuration:** Reads variables, configures global git settings, and loads repository-specific guardrails (such as `CLAUDE.md` and `AGENTS.md`).
+2. **Context Resolution:** Rebuilds the system prompt from `FORGE_SYSTEM_PROMPT_TEMPLATE` by interpolating task metadata from `/task.json`. Loads Context7 MCP tools for documentation lookup.
+3. **Agent Action:** Instantiates `create_deep_agent` with a `LocalShellBackend` targeting `/workspace` with a default 10-minute operation timeout, executing autonomous steps.
+4. **Validation and Verification:** Detects the repository test runner (e.g., `pytest`, `go test`, `npm test`) and runs tests. If tests fail, it can retry task execution up to the configured limit (`max-retries`).
+5. **Git Commit Creation:** Stages code modifications and newly created files while explicitly excluding `.forge/` and non-tracked runtime files, then generates a structured commit.
+6. **Execution Signals:** The container terminates and returns an explicit exit code mapping the outcome:
+   - `0` (Success)
+   - `1` (Task execution failed)
+   - `2` (Tests failed after max retries)
+   - `3` (Configuration or runtime bootstrap error)
+
+### 6. Container Teardown and Preservation Policies
+Once execution finishes, the worker orchestrator handles cleanup and debug availability:
+- **Clean Execution (Default):** The runner runs with `--rm` enabled, prompting Podman to automatically remove the container, free up isolated namespaces, and reclaim disk space immediately upon termination.
+- **Fail-Safe Cleanup:** If a task times out, the runner halts the container gracefully via `podman stop -t 10`. If unresponsive, it issues a `podman kill` to terminate all subprocesses.
+- **Preservation Mode (`FORGE_CONTAINER_KEEP=true`):** To aid debugging, container destruction can be disabled when failures occur. The runner logs the persistent container ID, offering immediate diagnostic commands:
+  - `podman logs <container_name>` (access stdout/stderr)
+  - `podman export <container_name> | tar -xC /tmp/<container_name>` (inspect filesystem state)
+  - `podman rm <container_name>` (manual disposal once completed)
+
+---
+
 ## State and Resumability
 
 Every node execution transition represents a state checkpoint. 
