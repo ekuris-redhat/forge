@@ -63,7 +63,19 @@ class TestFieldResolvers:
         assert resolve_field(TracingField.PROJECT_ID, _make_state(ticket_key="NODASH")) is None
 
     def test_workflow_step(self) -> None:
-        assert resolve_field(TracingField.WORKFLOW_STEP, _make_state()) == "analyze_bug"
+        assert resolve_field(TracingField.WORKFLOW_STEP, _make_state(retry_count=0)) == "analyze_bug:initial_generation:unknown"
+
+    def test_workflow_step_epic_breakdown(self) -> None:
+        state = _make_state(current_node="decompose_epics", retry_count=0)
+        assert resolve_field(TracingField.WORKFLOW_STEP, state) == "decompose_epics:breakdown:epic_breakdown"
+
+    def test_workflow_step_spec_qa(self) -> None:
+        state = _make_state(current_node="spec_approval_gate", is_question=True, retry_count=0)
+        assert resolve_field(TracingField.WORKFLOW_STEP, state) == "spec_approval_gate:question_asking:spec"
+
+    def test_workflow_step_spec_revision(self) -> None:
+        state = _make_state(current_node="regenerate_spec", is_revision=True, retry_count=2)
+        assert resolve_field(TracingField.WORKFLOW_STEP, state) == "regenerate_spec:revision:spec:attempt-2"
 
     def test_workflow_step_missing(self) -> None:
         state = _make_state()
@@ -313,7 +325,7 @@ class TestResolveTraceFields:
     """Integration: resolve configured fields from workflow state."""
 
     def test_resolves_tags_and_metadata(self) -> None:
-        state = _make_state()
+        state = _make_state(retry_count=0)
         tag_fields = [TracingField.TICKET_TYPE, TracingField.PROJECT_ID, TracingField.WORKFLOW_STEP]
         metadata_fields = [TracingField.TICKET_KEY, TracingField.RETRY_COUNT]
 
@@ -328,8 +340,8 @@ class TestResolveTraceFields:
 
             tags, metadata = resolve_trace_fields(state)
 
-        assert tags == ["Bug", "PROJ", "analyze_bug"]
-        assert metadata == {"ticket_key": "PROJ-42", "retry_count": "3"}
+        assert tags == ["Bug", "PROJ", "analyze_bug:initial_generation:unknown"]
+        assert metadata == {"ticket_key": "PROJ-42", "retry_count": "0"}
 
     def test_skips_missing_fields(self) -> None:
         state = _make_state()
