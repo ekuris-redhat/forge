@@ -63,7 +63,49 @@ class TestFieldResolvers:
         assert resolve_field(TracingField.PROJECT_ID, _make_state(ticket_key="NODASH")) is None
 
     def test_workflow_step(self) -> None:
-        assert resolve_field(TracingField.WORKFLOW_STEP, _make_state()) == "analyze_bug"
+        assert (
+            resolve_field(TracingField.WORKFLOW_STEP, _make_state(retry_count=0))
+            == "analyze_bug:initial_generation:unknown"
+        )
+
+    def test_workflow_step_epic_breakdown(self) -> None:
+        state = _make_state(current_node="decompose_epics", retry_count=0)
+        assert (
+            resolve_field(TracingField.WORKFLOW_STEP, state)
+            == "decompose_epics:breakdown:epic_breakdown"
+        )
+
+    def test_workflow_step_generate_tasks(self) -> None:
+        state = _make_state(current_node="generate_tasks", retry_count=0)
+        assert resolve_field(TracingField.WORKFLOW_STEP, state) == "generate_tasks:breakdown:tasks"
+
+    def test_workflow_step_spec_qa(self) -> None:
+        state = _make_state(current_node="spec_approval_gate", is_question=True, retry_count=0)
+        assert (
+            resolve_field(TracingField.WORKFLOW_STEP, state)
+            == "spec_approval_gate:question_asking:spec"
+        )
+
+    def test_workflow_step_spec_revision(self) -> None:
+        state = _make_state(current_node="regenerate_spec", is_revision=True, retry_count=2)
+        assert (
+            resolve_field(TracingField.WORKFLOW_STEP, state)
+            == "regenerate_spec:revision:spec:attempt-2"
+        )
+
+    def test_workflow_step_prd_approval_gate(self) -> None:
+        state = _make_state(current_node="prd_approval_gate", retry_count=0)
+        assert (
+            resolve_field(TracingField.WORKFLOW_STEP, state)
+            == "prd_approval_gate:approval_gate:prd"
+        )
+
+    def test_workflow_step_explicit_artifact_type(self) -> None:
+        state = _make_state(current_node="answer_question", artifact_type="custom_type", retry_count=0)
+        assert (
+            resolve_field(TracingField.WORKFLOW_STEP, state)
+            == "answer_question:question_asking:custom_type"
+        )
 
     def test_workflow_step_missing(self) -> None:
         state = _make_state()
@@ -313,14 +355,12 @@ class TestResolveTraceFields:
     """Integration: resolve configured fields from workflow state."""
 
     def test_resolves_tags_and_metadata(self) -> None:
-        state = _make_state()
+        state = _make_state(retry_count=0)
         tag_fields = [TracingField.TICKET_TYPE, TracingField.PROJECT_ID, TracingField.WORKFLOW_STEP]
         metadata_fields = [TracingField.TICKET_KEY, TracingField.RETRY_COUNT]
 
         with (
-            patch(
-                "forge.config.get_settings"
-            ) as mock_get_settings,
+            patch("forge.config.get_settings") as mock_get_settings,
         ):
             mock_settings = mock_get_settings.return_value
             type(mock_settings).trace_tag_fields = PropertyMock(return_value=tag_fields)
@@ -328,8 +368,8 @@ class TestResolveTraceFields:
 
             tags, metadata = resolve_trace_fields(state)
 
-        assert tags == ["Bug", "PROJ", "analyze_bug"]
-        assert metadata == {"ticket_key": "PROJ-42", "retry_count": "3"}
+        assert tags == ["Bug", "PROJ", "analyze_bug:initial_generation:unknown"]
+        assert metadata == {"ticket_key": "PROJ-42", "retry_count": "0"}
 
     def test_skips_missing_fields(self) -> None:
         state = _make_state()
@@ -337,9 +377,7 @@ class TestResolveTraceFields:
         tag_fields = [TracingField.TICKET_TYPE, TracingField.REPO]
         metadata_fields = [TracingField.PR_NUMBER]
 
-        with patch(
-            "forge.config.get_settings"
-        ) as mock_get_settings:
+        with patch("forge.config.get_settings") as mock_get_settings:
             mock_settings = mock_get_settings.return_value
             type(mock_settings).trace_tag_fields = PropertyMock(return_value=tag_fields)
             type(mock_settings).trace_metadata_fields = PropertyMock(return_value=metadata_fields)
@@ -350,9 +388,7 @@ class TestResolveTraceFields:
         assert metadata == {"pr_number": "99"}
 
     def test_empty_config_returns_empty(self) -> None:
-        with patch(
-            "forge.config.get_settings"
-        ) as mock_get_settings:
+        with patch("forge.config.get_settings") as mock_get_settings:
             mock_settings = mock_get_settings.return_value
             type(mock_settings).trace_tag_fields = PropertyMock(return_value=[])
             type(mock_settings).trace_metadata_fields = PropertyMock(return_value=[])
@@ -366,9 +402,7 @@ class TestResolveTraceFields:
         state = _make_state(system_prompt_length=4523)
         metadata_fields = [TracingField.SYSTEM_PROMPT_LENGTH]
 
-        with patch(
-            "forge.config.get_settings"
-        ) as mock_get_settings:
+        with patch("forge.config.get_settings") as mock_get_settings:
             mock_settings = mock_get_settings.return_value
             type(mock_settings).trace_tag_fields = PropertyMock(return_value=[])
             type(mock_settings).trace_metadata_fields = PropertyMock(return_value=metadata_fields)
@@ -382,9 +416,7 @@ class TestResolveTraceFields:
         state = _make_state(llm_model="claude-sonnet-4-6-20250514")
         tag_fields = [TracingField.LLM_MODEL]
 
-        with patch(
-            "forge.config.get_settings"
-        ) as mock_get_settings:
+        with patch("forge.config.get_settings") as mock_get_settings:
             mock_settings = mock_get_settings.return_value
             type(mock_settings).trace_tag_fields = PropertyMock(return_value=tag_fields)
             type(mock_settings).trace_metadata_fields = PropertyMock(return_value=[])

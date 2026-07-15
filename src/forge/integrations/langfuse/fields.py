@@ -70,8 +70,84 @@ def _resolve_project_id(state: dict[str, Any]) -> str | None:
 
 
 def _resolve_workflow_step(state: dict[str, Any]) -> str | None:
-    val = state.get("current_node")
-    return str(val) if val is not None else None
+    current_node = state.get("current_node")
+    if current_node is None:
+        return None
+
+    node_str = str(current_node)
+
+    # Determine workflow_stage_or_node
+    # If the active operation is decompose_epics or generate_tasks, categorize under breakdown flow
+    if node_str in ("decompose_epics", "generate_tasks"):
+        stage_or_node = "decompose_epics" if node_str == "decompose_epics" else "generate_tasks"
+    else:
+        stage_or_node = node_str
+
+    # Determine operation_type
+    is_question = state.get("is_question", False)
+    is_revision = state.get("is_revision", False)
+    revision_requested = state.get("revision_requested", False)
+
+    if is_question or "qa" in node_str or "question" in node_str:
+        operation_type = "question_asking"
+    elif (
+        is_revision
+        or revision_requested
+        or node_str.startswith("regenerate_")
+        or "revise" in node_str
+    ):
+        operation_type = "revision"
+    elif node_str in ("decompose_epics", "generate_tasks"):
+        operation_type = "breakdown"
+    elif "gate" in node_str or "approval" in node_str:
+        operation_type = "approval_gate"
+    else:
+        operation_type = "initial_generation"
+
+    # Determine artifact_type
+    # Map based on node name, task, or state properties
+    # Target artifacts: spec, prd, plan, tasks, epic_breakdown, etc.
+    if state.get("artifact_type") is not None:
+        artifact_type = str(state["artifact_type"])
+    else:
+        artifact_type = "unknown"
+        task = state.get("task", "") or ""
+        task_str = str(task).lower()
+
+        # Analyze state/node to map artifact type
+        if "spec" in node_str or "spec" in task_str:
+            artifact_type = "spec"
+        elif "prd" in node_str or "prd" in task_str:
+            artifact_type = "prd"
+        elif "plan" in node_str or "plan" in task_str:
+            artifact_type = "plan"
+        elif "task" in node_str or "task" in task_str:
+            artifact_type = "tasks"
+        elif (
+            "epic" in node_str
+            or "epic" in task_str
+            or "breakdown" in node_str
+            or "breakdown" in task_str
+            or node_str == "decompose_epics"
+        ):
+            artifact_type = "epic_breakdown"
+        elif node_str == "generate_tasks":
+            artifact_type = "tasks"
+
+    # Format base label: [workflow_stage_or_node]:[operation_type]:[artifact_type]
+    label = f"{stage_or_node}:{operation_type}:{artifact_type}"
+
+    # Appended when retry_count is greater than 0
+    retry_count = state.get("retry_count", 0)
+    try:
+        retry_int = int(retry_count) if retry_count is not None else 0
+    except (ValueError, TypeError):
+        retry_int = 0
+
+    if retry_int > 0:
+        label += f":attempt-{retry_int}"
+
+    return label
 
 
 def _resolve_repo(state: dict[str, Any]) -> str | None:
