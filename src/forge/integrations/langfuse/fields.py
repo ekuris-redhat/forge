@@ -107,29 +107,32 @@ def _resolve_workflow_step(state: dict[str, Any]) -> str | None:
     # Determine artifact_type
     # Map based on node name, task, or state properties
     # Target artifacts: spec, prd, plan, tasks, epic_breakdown, etc.
-    artifact_type = "unknown"
-    task = state.get("task", "") or ""
-    task_str = str(task).lower()
+    if state.get("artifact_type") is not None:
+        artifact_type = str(state["artifact_type"])
+    else:
+        artifact_type = "unknown"
+        task = state.get("task", "") or ""
+        task_str = str(task).lower()
 
-    # Analyze state/node to map artifact type
-    if "spec" in node_str or "spec" in task_str:
-        artifact_type = "spec"
-    elif "prd" in node_str or "prd" in task_str:
-        artifact_type = "prd"
-    elif "plan" in node_str or "plan" in task_str:
-        artifact_type = "plan"
-    elif "task" in node_str or "task" in task_str:
-        artifact_type = "tasks"
-    elif (
-        "epic" in node_str
-        or "epic" in task_str
-        or "breakdown" in node_str
-        or "breakdown" in task_str
-        or node_str == "decompose_epics"
-    ):
-        artifact_type = "epic_breakdown"
-    elif node_str == "generate_tasks":
-        artifact_type = "tasks"
+        # Analyze state/node to map artifact type
+        if "spec" in node_str or "spec" in task_str:
+            artifact_type = "spec"
+        elif "prd" in node_str or "prd" in task_str:
+            artifact_type = "prd"
+        elif "plan" in node_str or "plan" in task_str:
+            artifact_type = "plan"
+        elif "task" in node_str or "task" in task_str:
+            artifact_type = "tasks"
+        elif (
+            "epic" in node_str
+            or "epic" in task_str
+            or "breakdown" in node_str
+            or "breakdown" in task_str
+            or node_str == "decompose_epics"
+        ):
+            artifact_type = "epic_breakdown"
+        elif node_str == "generate_tasks":
+            artifact_type = "tasks"
 
     # Format base label: [workflow_stage_or_node]:[operation_type]:[artifact_type]
     label = f"{stage_or_node}:{operation_type}:{artifact_type}"

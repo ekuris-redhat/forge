@@ -100,6 +100,13 @@ class TestFieldResolvers:
             == "prd_approval_gate:approval_gate:prd"
         )
 
+    def test_workflow_step_explicit_artifact_type(self) -> None:
+        state = _make_state(current_node="answer_question", artifact_type="custom_type", retry_count=0)
+        assert (
+            resolve_field(TracingField.WORKFLOW_STEP, state)
+            == "answer_question:question_asking:custom_type"
+        )
+
     def test_workflow_step_missing(self) -> None:
         state = _make_state()
         del state["current_node"]
