@@ -4,13 +4,13 @@ Thanks for your interest. This document explains what kind of contributions Forg
 
 ## Have an idea or need help?
 
-Open a [GitHub issue](https://github.com/Forge-sdlc/forge/issues). Issues are the right place for feature ideas, questions, bug reports, and anything else you want to discuss before writing code. If your idea is larger in scope — a new workflow type, a significant change to the pipeline, a new integration — you can also submit a proposal following the format in `proposals/TEMPLATE.md`. Proposals give everyone a chance to read, comment, and align before implementation starts.
+Open a [GitHub issue](https://github.com/Forge-sdlc/forge/issues). Issues are the right place for feature ideas, questions, bug reports, and anything else you want to discuss before writing code. If your idea is larger in scope (such as a new workflow type, a significant change to the pipeline, or a new integration) you can also submit a proposal following the format in `proposals/TEMPLATE.md`. Proposals give everyone a chance to read, comment, and align before implementation starts.
 
 The point is to work on things together. An early conversation usually leads to a better outcome than a PR that surprises everyone.
 
 ## Customize Forge for your project
 
-Skills are the primary customization mechanism — they define how Forge generates PRDs, analyzes CI failures, implements code, and more. Since the [skill installer](https://github.com/forge-sdlc/forge/pull/34) landed, teams keep their skills in their own Git repository and point Forge at it via a Jira project property (think of a _plugin_). You never need to fork the Forge repo to customize behavior.
+Skills are the primary customization mechanism; they define how Forge generates PRDs, analyzes CI failures, implements code, and more. Since the [skill installer](https://github.com/forge-sdlc/forge/pull/34) landed, teams keep their skills in their own Git repository and point Forge at it via a Jira project property (think of a _plugin_). You never need to fork the Forge repo to customize behavior.
 
 ### 1. Author your skills
 
@@ -38,7 +38,7 @@ forge project-setup MYPROJ \
   --add-skill source=https://github.com/myorg/forge-skills-myteam,ref=v1.0,path=
 ```
 
-This writes three Jira project properties — `forge.repos`, `forge.default_repo`, and `forge.skills` — that Forge reads per ticket.
+This writes three Jira project properties: `forge.repos`, `forge.default_repo`, and `forge.skills` that Forge reads per ticket.
 
 For a monorepo where skills live in a subdirectory, use `skill_mapping` mode instead of `path`:
 
@@ -49,7 +49,7 @@ forge project-setup MYPROJ \
 
 ### 3. Auto-sync
 
-The Forge worker reads the `forge.skills` project property at the start of every workflow and fetches any packages that have changed (SHA-based comparison against `skills/skills.lock`). No restart needed — push a new tag to your skills repo, update the `ref` via `forge project-setup`, and the next workflow run picks it up.
+The Forge worker reads the `forge.skills` project property at the start of every workflow and fetches any packages that have changed using a SHA-based comparison against `skills/skills.lock`. No restart needed: push a new tag to your skills repo, update the `ref` via `forge project-setup`, and the next workflow run picks it up.
 
 ### Local development
 
@@ -73,13 +73,13 @@ forge skills update --project MYPROJ
 
 ### Bug fixes
 
-If something in the core workflow is broken, a focused fix with a test is always welcome. Keep the scope tight — a bug fix should fix the bug and nothing else.
+If something in the core workflow is broken, a focused fix with a test is always welcome. Keep the scope tight: a bug fix should fix the bug and nothing else.
 
 ### Default skill improvements
 
-The skills in `skills/default/` should work for any software project regardless of stack. If you find something in a default skill that's OpenShift-specific, Java-specific, or otherwise not genuinely general — that's a bug. Fix it and submit a PR.
+The skills in `skills/default/` should work for any software project regardless of stack. If you find something in a default skill that is OpenShift-specific, Java-specific, or otherwise not genuinely general, that is a bug. Fix it and submit a PR.
 
-If you want to improve a default skill's quality (better structure, clearer instructions, a missing edge case) — open an issue first to discuss, especially for significant changes that affect everyone.
+If you want to improve a default skill's quality (better structure, clearer instructions, a missing edge case), open an issue first to discuss, especially for significant changes that affect everyone.
 
 ### New workflow ideas
 
@@ -103,11 +103,11 @@ uv run mypy src/forge/
 
 ## Pull request guidelines
 
-- **One thing per PR.** A skill set, a bug fix, or a doc improvement — not all three.
+- **One thing per PR.** A skill set, a bug fix, or a doc improvement (not all three).
 - **Tests for code changes.** New logic needs tests. Skills don't need tests, but the resolver does.
 - **No unrelated cleanup.** If you notice something off while working on your change, open a separate issue.
 - **Short description.** What does this change and why? One paragraph is enough.
 
 ## Questions
 
-Open a [GitHub issue](https://github.com/Forge-sdlc/forge/issues) — for "how do I" questions, sharing what your team built, or early feedback before you start writing code.
+Open a [GitHub issue](https://github.com/Forge-sdlc/forge/issues) to ask questions, share what your team built, or get early feedback before writing code.
