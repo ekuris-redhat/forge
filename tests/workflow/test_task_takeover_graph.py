@@ -235,7 +235,7 @@ class TestQualitativeReviewRouting:
             qualitative_review_retry_count=2,
             qualitative_review_failed=True,
         )
-        assert _route_after_qualitative_review(state) == "create_pr"
+        assert _route_after_qualitative_review(state) == "escalate_blocked"
 
 
 class TestPostPrRouting:
