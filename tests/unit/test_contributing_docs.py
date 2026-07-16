@@ -20,3 +20,14 @@ def test_contributing_md_exists():
     # Check code block formatting
     assert "```bash" in content
     assert "uv run pytest tests/unit/ -v" in content
+
+def test_contributing_md_no_periods_in_bullet_headers():
+    """Verify contributing.md has standard colon phrasing rather than periods/AI structures in bullet lists."""
+    contributing_path = pathlib.Path(__file__).parent.parent.parent / "docs" / "dev" / "contributing.md"
+    with open(contributing_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    
+    assert "- **One thing per PR**:" in content
+    assert "- **Tests for code changes**:" in content
+    assert "- **No unrelated cleanup**:" in content
+    assert "- **Short description**:" in content

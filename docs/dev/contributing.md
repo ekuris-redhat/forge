@@ -103,10 +103,10 @@ uv run mypy src/forge/
 
 ## Pull request guidelines
 
-- **One thing per PR.** A skill set, a bug fix, or a doc improvement (not all three).
-- **Tests for code changes.** New logic needs tests. Skills don't need tests, but the resolver does.
-- **No unrelated cleanup.** If you notice something off while working on your change, open a separate issue.
-- **Short description.** What does this change and why? One paragraph is enough.
+- **One thing per PR**: A skill set, a bug fix, or a doc improvement (not all three).
+- **Tests for code changes**: New logic needs tests. Skills don't need tests, but the resolver does.
+- **No unrelated cleanup**: If you notice something off while working on your change, open a separate issue.
+- **Short description**: What does this change and why? One paragraph is enough.
 
 ## Questions
 
