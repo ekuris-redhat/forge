@@ -155,6 +155,19 @@ def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
     limit = QUALITATIVE_REVIEW_MAX_ATTEMPTS
 
     if retry_count >= limit:
+        commit_info = state.get("commit_info") or {}
+        committed = (
+            commit_info.get("committed")
+            if isinstance(commit_info, dict)
+            else getattr(commit_info, "committed", False)
+        )
+
+        if last_error or not committed:
+            logger.warning(
+                "Qualitative review retry limit reached with active error or no committed changes. Escalating."
+            )
+            return "escalate_blocked"
+
         logger.warning(
             f"Qualitative review cap ({limit}) reached on task takeover workflow, "
             "proceeding to PR creation with review state retained"

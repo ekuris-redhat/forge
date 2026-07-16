@@ -182,15 +182,39 @@ class TestQualitativeReviewRouting:
         assert _route_after_qualitative_review(state) == "execute_task_changes"
 
     def test_route_after_qualitative_review_failed_at_or_above_limit(self) -> None:
-        """If review is failed or incomplete and at/above the limit, proceed to PR creation."""
+        """If review is failed or incomplete and at/above the limit, proceed to PR creation if changes exist."""
         from forge.workflow.task_takeover.graph import _route_after_qualitative_review
 
         state = make_task_state(
             review_verdict="tests_incomplete",
             qualitative_review_retry_count=2,
+            commit_info={"committed": True},
         )
         # retry_count of 2 is at/above the limit of 2, so stop retrying but keep Jira silent.
         assert _route_after_qualitative_review(state) == "create_pr"
+
+    def test_route_after_qualitative_review_no_changes_escalates(self) -> None:
+        """When qualitative_review_retry_count reaches max and commit_info.committed is False, escalate."""
+        from forge.workflow.task_takeover.graph import _route_after_qualitative_review
+
+        state = make_task_state(
+            review_verdict="tests_incomplete",
+            qualitative_review_retry_count=2,
+            commit_info={"committed": False},
+        )
+        assert _route_after_qualitative_review(state) == "escalate_blocked"
+
+    def test_route_after_qualitative_review_with_last_error_escalates(self) -> None:
+        """When qualitative_review_retry_count reaches max and state.last_error is set, escalate."""
+        from forge.workflow.task_takeover.graph import _route_after_qualitative_review
+
+        state = make_task_state(
+            review_verdict="tests_incomplete",
+            qualitative_review_retry_count=2,
+            commit_info={"committed": True},
+            last_error="Container execution failed",
+        )
+        assert _route_after_qualitative_review(state) == "escalate_blocked"
 
     def test_route_after_qualitative_review_error_without_verdict_escalates(self) -> None:
         """If review hit an error without producing a verdict, escalate to blocked."""
