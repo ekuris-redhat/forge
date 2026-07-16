@@ -158,3 +158,25 @@ class TestRouteAfterQualitativeReview:
             commit_info={"committed": True},
         )
         assert _route_after_qualitative_review(state) == "create_pr"
+
+    def test_route_after_qualitative_review_infrastructure_failure_routes_to_escalate_blocked_at_limit(
+        self,
+    ) -> None:
+        """Verifies: When qualitative review has an active error and no verdict, it escalates to escalate_blocked if limit is reached."""
+        state = _task_state(
+            qualitative_review_retry_count=2,
+            review_verdict=None,
+            last_error="Docker/Podman daemon not running",
+        )
+        assert _route_after_qualitative_review(state) == "escalate_blocked"
+
+    def test_route_after_qualitative_review_infrastructure_failure_retries_under_limit(
+        self,
+    ) -> None:
+        """Verifies: When qualitative review has an active error and no verdict, it retries review under the limit."""
+        state = _task_state(
+            qualitative_review_retry_count=1,
+            review_verdict=None,
+            last_error="Docker/Podman daemon not running",
+        )
+        assert _route_after_qualitative_review(state) == "run_qualitative_review"

@@ -4,6 +4,7 @@ This module builds the LangGraph StateGraph for the Task Takeover workflow.
 """
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from langgraph.graph import END, StateGraph
@@ -35,6 +36,8 @@ from forge.workflow.nodes import (
 )
 from forge.workflow.task_takeover.state import TaskTakeoverState
 from forge.workflow.utils import resolve_shared_resume_node, update_state_timestamp
+from forge.workspace.git_ops import GitOperations
+from forge.workspace.manager import Workspace
 
 logger = logging.getLogger(__name__)
 QUALITATIVE_REVIEW_MAX_ATTEMPTS = 2
@@ -143,10 +146,10 @@ def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
     retry_count = state.get("qualitative_review_retry_count", 0)
     last_error = state.get("last_error")
 
+    limit = QUALITATIVE_REVIEW_MAX_ATTEMPTS
+
     if verdict == "adequate":
         return "create_pr"
-
-    limit = QUALITATIVE_REVIEW_MAX_ATTEMPTS
 
     # Review infrastructure failures are bounded like negative verdicts. Retry
     # the review itself (not implementation), then proceed with the failure
@@ -154,11 +157,11 @@ def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
     if last_error and not verdict:
         if retry_count >= limit:
             logger.error(
-                "Qualitative review failed %s times; skipping review and proceeding to PR: %s",
+                "Qualitative review failed %s times; skipping review and escalating due to active error: %s",
                 retry_count,
                 last_error,
             )
-            return "create_pr"
+            return "escalate_blocked"
         logger.warning(
             "Qualitative review execution failed; retrying review (%s/%s): %s",
             retry_count,
@@ -176,10 +179,39 @@ def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
         )
 
         if last_error or not committed:
-            logger.warning(
-                "Qualitative review retry limit reached with active error or no committed changes. Escalating."
-            )
-            return "escalate_blocked"
+            # Re-verify if branch actually has commits by checking if it diverges from its base branch (e.g. main/origin).
+            # This is done to prevent false escalations due to transient/overwritten committed flags when we actually
+            # have committed code changes in the branch.
+            has_commits = False
+            workspace_path = state.get("workspace_path")
+            current_repo = state.get("current_repo")
+            branch_name = state.get("context", {}).get("branch_name")
+            ticket_key = state.get("ticket_key")
+            if workspace_path and current_repo and branch_name and ticket_key:
+                try:
+                    git = GitOperations(
+                        Workspace(
+                            path=Path(workspace_path),
+                            repo_name=current_repo,
+                            branch_name=branch_name,
+                            ticket_key=ticket_key,
+                        )
+                    )
+                    # Get diff or commits to see if we've diverged from origin/main
+                    # If git log origin/main..HEAD returns any commit SHAs, we have committed changes on this branch
+                    result = git._run_git(
+                        "log", f"origin/main..{branch_name}", "--oneline", check=False
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        has_commits = True
+                except Exception as e:
+                    logger.warning("Failed to check branch commit status via git log: %s", e)
+
+            if not has_commits:
+                logger.warning(
+                    "Qualitative review retry limit reached with active error or no committed changes. Escalating."
+                )
+                return "escalate_blocked"
 
         logger.warning(
             f"Qualitative review cap ({limit}) reached on task takeover workflow, "
