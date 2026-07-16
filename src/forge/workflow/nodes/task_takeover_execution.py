@@ -89,6 +89,15 @@ async def execute_task_changes(state: TaskTakeoverState) -> TaskTakeoverState:
             git.stage_all()
             committed = git.commit(commit_message)
 
+        # Preserve the cumulative committed state if we've already committed in a previous attempt
+        prev_commit_info = state.get("commit_info") or {}
+        prev_committed = (
+            prev_commit_info.get("committed")
+            if isinstance(prev_commit_info, dict)
+            else getattr(prev_commit_info, "committed", False)
+        )
+        has_ever_committed = prev_committed or committed
+
         current_sha = git.get_current_sha()
         # Review may be consumed by another worker with a different local
         # filesystem.  Persist the exact commit before checkpointing this node.
@@ -112,7 +121,7 @@ async def execute_task_changes(state: TaskTakeoverState) -> TaskTakeoverState:
                     "commit_info": {
                         "sha": current_sha,
                         "message": commit_message,
-                        "committed": committed,
+                        "committed": has_ever_committed,
                     },
                     "current_node": "execute_task_changes",
                     "last_error": None if result.success else result.error_message,

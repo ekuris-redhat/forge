@@ -181,6 +181,38 @@ class TestTaskTakeoverExecutionNode:
         assert result_state["current_node"] == "execute_task_changes"
 
     @pytest.mark.asyncio
+    async def test_preserves_earlier_successful_commit_on_retry(self) -> None:
+        """Verify that an earlier successful commit is preserved during a subsequent no-op feedback retry."""
+        state = _make_state()
+        state["commit_info"] = {
+            "sha": "previous_sha_123",
+            "message": "previous_commit",
+            "committed": True,
+        }
+        mock_jira = _make_mock_jira()
+        mock_runner = _make_mock_runner()
+        mock_git = _make_mock_git(has_changes=False, sha="current_sha_456")
+
+        with (
+            patch(
+                "forge.workflow.nodes.task_takeover_execution.JiraClient", return_value=mock_jira
+            ),
+            patch(
+                "forge.workflow.nodes.task_takeover_execution.ContainerRunner",
+                return_value=mock_runner,
+            ),
+            patch(
+                "forge.workflow.nodes.task_takeover_execution.prepare_workspace",
+                return_value=("/tmp/ws", mock_git),
+            ),
+            patch("forge.workflow.nodes.task_takeover_execution.get_settings"),
+        ):
+            result_state = await execute_task_changes(state)
+
+        assert result_state["commit_info"]["committed"] is True
+        assert result_state["commit_info"]["sha"] == "current_sha_456"
+
+    @pytest.mark.asyncio
     async def test_unexpected_exception(self) -> None:
         """Test that unexpected exceptions are caught, logged, and updated in state."""
         state = _make_state()

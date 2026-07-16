@@ -4,7 +4,6 @@ This module builds the LangGraph StateGraph for the Task Takeover workflow.
 """
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from langgraph.graph import END, StateGraph
@@ -36,8 +35,6 @@ from forge.workflow.nodes import (
 )
 from forge.workflow.task_takeover.state import TaskTakeoverState
 from forge.workflow.utils import resolve_shared_resume_node, update_state_timestamp
-from forge.workspace.git_ops import GitOperations
-from forge.workspace.manager import Workspace
 
 logger = logging.getLogger(__name__)
 QUALITATIVE_REVIEW_MAX_ATTEMPTS = 2
@@ -135,12 +132,12 @@ def _route_after_answer(state: TaskTakeoverState) -> str:
 def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
     """Route after run_qualitative_review considering qualitative verdict and retry count.
 
-    If the review is adequate (success), proceed to create_pr.
-    If the review is failed or incomplete:
-      - Check if we've reached the configured retry limit.
-      - If limit reached: proceed to PR creation with the failed-review state retained.
-      - Otherwise: transition back to execute_task_changes.
-    If the node hit an unrecoverable error (no workspace), escalate.
+    The routing logic is state-driven:
+      - If review is adequate, proceed to create_pr.
+      - If there is an active error (last_error is set), always route to escalate_blocked if we've reached or exceeded the retry cap limit.
+      - Under the retry cap, if there is an execution error (last_error without verdict), retry the review.
+      - If we reached the retry cap and there are no active errors, we can proceed to create_pr only if commits were successfully made (commit_info.committed is True).
+      - Otherwise, escalate or loop back to execute_task_changes.
     """
     verdict = state.get("review_verdict")
     retry_count = state.get("qualitative_review_retry_count", 0)
@@ -151,26 +148,14 @@ def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
     if verdict == "adequate":
         return "create_pr"
 
-    # Review infrastructure failures are bounded like negative verdicts. Retry
-    # the review itself (not implementation), then proceed with the failure
-    # retained in state so the PR warns human reviewers.
-    if last_error and not verdict:
-        if retry_count >= limit:
+    if retry_count >= limit:
+        if last_error:
             logger.error(
-                "Qualitative review failed %s times; skipping review and escalating due to active error: %s",
-                retry_count,
+                "Qualitative review retry limit reached with active error: %s. Escalating.",
                 last_error,
             )
             return "escalate_blocked"
-        logger.warning(
-            "Qualitative review execution failed; retrying review (%s/%s): %s",
-            retry_count,
-            limit,
-            last_error,
-        )
-        return "run_qualitative_review"
 
-    if retry_count >= limit:
         commit_info = state.get("commit_info") or {}
         committed = (
             commit_info.get("committed")
@@ -178,46 +163,27 @@ def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
             else getattr(commit_info, "committed", False)
         )
 
-        if last_error or not committed:
-            # Re-verify if branch actually has commits by checking if it diverges from its base branch (e.g. main/origin).
-            # This is done to prevent false escalations due to transient/overwritten committed flags when we actually
-            # have committed code changes in the branch.
-            has_commits = False
-            workspace_path = state.get("workspace_path")
-            current_repo = state.get("current_repo")
-            branch_name = state.get("context", {}).get("branch_name")
-            ticket_key = state.get("ticket_key")
-            if workspace_path and current_repo and branch_name and ticket_key:
-                try:
-                    git = GitOperations(
-                        Workspace(
-                            path=Path(workspace_path),
-                            repo_name=current_repo,
-                            branch_name=branch_name,
-                            ticket_key=ticket_key,
-                        )
-                    )
-                    # Get diff or commits to see if we've diverged from origin/main
-                    # If git log origin/main..HEAD returns any commit SHAs, we have committed changes on this branch
-                    result = git._run_git(
-                        "log", f"origin/main..{branch_name}", "--oneline", check=False
-                    )
-                    if result.returncode == 0 and result.stdout.strip():
-                        has_commits = True
-                except Exception as e:
-                    logger.warning("Failed to check branch commit status via git log: %s", e)
-
-            if not has_commits:
-                logger.warning(
-                    "Qualitative review retry limit reached with active error or no committed changes. Escalating."
-                )
-                return "escalate_blocked"
+        if not committed:
+            logger.warning(
+                "Qualitative review retry limit reached with no committed changes. Escalating."
+            )
+            return "escalate_blocked"
 
         logger.warning(
             f"Qualitative review cap ({limit}) reached on task takeover workflow, "
             "proceeding to PR creation with review state retained"
         )
         return "create_pr"
+
+    # Under the limit
+    if last_error and not verdict:
+        logger.warning(
+            "Qualitative review execution failed; retrying review (%s/%s): %s",
+            retry_count,
+            limit,
+            last_error,
+        )
+        return "run_qualitative_review"
 
     logger.info(
         f"Qualitative review verdict is {verdict!r}, retry attempt {retry_count}/{limit}, "

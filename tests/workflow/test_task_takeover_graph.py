@@ -226,14 +226,14 @@ class TestQualitativeReviewRouting:
         )
         assert _route_after_qualitative_review(state) == "run_qualitative_review"
 
-    def test_route_after_qualitative_review_error_at_cap_skips(self) -> None:
-        """Review execution errors proceed to PR after the bounded retry cap."""
+    def test_route_after_qualitative_review_error_at_cap_escalates(self) -> None:
+        """Review execution errors escalate after retry limit when error is present with review_verdict=None."""
         from forge.workflow.task_takeover.graph import _route_after_qualitative_review
 
         state = make_task_state(
             last_error="Review container unavailable",
             qualitative_review_retry_count=2,
-            qualitative_review_failed=True,
+            review_verdict=None,
         )
         assert _route_after_qualitative_review(state) == "escalate_blocked"
 
