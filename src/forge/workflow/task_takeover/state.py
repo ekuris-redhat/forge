@@ -76,6 +76,9 @@ def create_initial_task_takeover_state(ticket_key: str, **kwargs: Any) -> TaskTa
             "message": None,
             "committed": False,
         },
+        "implementation_push_pending": False,
+        "implementation_push_pending_task": None,
+        "persistence_retry_count": 0,
     }
     defaults.update(kwargs)
     return cast(TaskTakeoverState, defaults)

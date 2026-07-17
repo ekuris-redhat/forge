@@ -8,6 +8,8 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
+from forge.integrations.jira.client import JiraClient
+from forge.models.workflow import ForgeLabel, JiraStatus
 from forge.workflow.gates.task_plan_approval import (
     route_task_plan_approval,
     task_plan_approval_gate,
@@ -129,6 +131,16 @@ def _route_after_answer(state: TaskTakeoverState) -> str:
     return "task_plan_approval_gate"
 
 
+def _route_after_execution(state: TaskTakeoverState) -> str:
+    """Never review an implementation whose branch was not persisted."""
+    last_error = state.get("last_error")
+    if not last_error:
+        return "run_qualitative_review"
+    if state.get("persistence_retry_count", 0) >= 3 or state.get("retry_count", 0) >= 3:
+        return "escalate_blocked"
+    return "execute_task_changes"
+
+
 def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
     """Route after run_qualitative_review considering qualitative verdict and retry count.
 
@@ -233,7 +245,21 @@ def _route_human_review_task_takeover(state: TaskTakeoverState) -> str:
 
 
 async def complete_task_takeover(state: TaskTakeoverState) -> TaskTakeoverState:
-    """Mark Task Takeover workflow complete after PR merge."""
+    """Mark Task Takeover workflow complete after PR merge and transition Jira ticket."""
+    ticket_key = state["ticket_key"]
+    logger.info(f"Completing task takeover workflow for ticket: {ticket_key}")
+
+    jira = JiraClient()
+    try:
+        try:
+            await jira.transition_issue(ticket_key, JiraStatus.CLOSED.value)
+            await jira.set_workflow_label(ticket_key, ForgeLabel.TASK_REVIEW_APPROVED)
+            logger.info(f"Task {ticket_key} successfully transitioned to Closed/Done")
+        except Exception as e:
+            logger.warning(f"Failed to transition Jira status/label for {ticket_key}: {e}")
+    finally:
+        await jira.close()
+
     return update_state_timestamp(
         {
             **state,
@@ -346,7 +372,15 @@ def build_task_takeover_graph() -> StateGraph[TaskTakeoverState, Any, Any]:
 
     # Execution flow
     graph.add_edge("setup_workspace", "execute_task_changes")
-    graph.add_edge("execute_task_changes", "run_qualitative_review")
+    graph.add_conditional_edges(
+        "execute_task_changes",
+        _route_after_execution,
+        {
+            "execute_task_changes": "execute_task_changes",
+            "run_qualitative_review": "run_qualitative_review",
+            "escalate_blocked": "escalate_blocked",
+        },
+    )
     graph.add_conditional_edges(
         "run_qualitative_review",
         _route_after_qualitative_review,
