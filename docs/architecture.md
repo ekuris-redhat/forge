@@ -22,8 +22,8 @@ flowchart TD
     end
 
     subgraph Gateway["FastAPI Gateway (:8000)"]
-        JiraWH["POST /webhooks/jira"]
-        GitHubWH["POST /webhooks/github"]
+        JiraWH["POST /api/v1/webhooks/jira"]
+        GitHubWH["POST /api/v1/webhooks/github"]
     end
 
     subgraph Queue["Redis"]
@@ -83,7 +83,7 @@ flowchart TD
     J --> K[setup_workspace]
     K --> L["implement_task\n(Podman + Deep Agents)"]
     L --> M[local_review]
-    M -->|"needs work (up to 2x)"| L
+    M -->|"mechanical fixes (up to 2x)"| M
     M --> N[update_documentation]
     N --> O[create_pr]
     O --> P["teardown_workspace"]
