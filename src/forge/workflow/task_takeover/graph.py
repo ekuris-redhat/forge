@@ -145,9 +145,8 @@ def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
     """Route after run_qualitative_review considering qualitative verdict and retry count.
 
     The routing logic is state-driven:
+      - If there is an active error (last_error is set), always route to escalate_blocked if we've reached or exceeded the retry cap limit, or retry the review if under the limit.
       - If review is adequate, proceed to create_pr.
-      - If there is an active error (last_error is set), always route to escalate_blocked if we've reached or exceeded the retry cap limit.
-      - Under the retry cap, if there is an execution error (last_error without verdict), retry the review.
       - If we reached the retry cap and there are no active errors, we can proceed to create_pr only if commits were successfully made (commit_info.committed is True).
       - Otherwise, escalate or loop back to execute_task_changes.
     """
@@ -157,17 +156,26 @@ def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
 
     limit = QUALITATIVE_REVIEW_MAX_ATTEMPTS
 
-    if verdict == "adequate":
-        return "create_pr"
-
-    if retry_count >= limit:
-        if last_error:
+    if last_error:
+        if retry_count >= limit:
             logger.error(
                 "Qualitative review retry limit reached with active error: %s. Escalating.",
                 last_error,
             )
             return "escalate_blocked"
+        else:
+            logger.warning(
+                "Qualitative review execution failed; retrying review (%s/%s): %s",
+                retry_count,
+                limit,
+                last_error,
+            )
+            return "run_qualitative_review"
 
+    if verdict == "adequate":
+        return "create_pr"
+
+    if retry_count >= limit:
         commit_info = state.get("commit_info") or {}
         committed = (
             commit_info.get("committed")
@@ -186,16 +194,6 @@ def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
             "proceeding to PR creation with review state retained"
         )
         return "create_pr"
-
-    # Under the limit
-    if last_error and not verdict:
-        logger.warning(
-            "Qualitative review execution failed; retrying review (%s/%s): %s",
-            retry_count,
-            limit,
-            last_error,
-        )
-        return "run_qualitative_review"
 
     logger.info(
         f"Qualitative review verdict is {verdict!r}, retry attempt {retry_count}/{limit}, "

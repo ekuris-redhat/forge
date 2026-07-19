@@ -265,6 +265,40 @@ class TestTaskTakeoverExecutionNode:
         assert result["persistence_retry_count"] == 3
 
     @pytest.mark.asyncio
+    async def test_preserves_earlier_successful_commit_on_push_failure_retry(self) -> None:
+        """Verify that an earlier successful commit is preserved during a subsequent no-op retry where push fails."""
+        state = _make_state()
+        state["commit_info"] = {
+            "sha": "previous_sha_123",
+            "message": "previous_commit",
+            "committed": True,
+        }
+        mock_jira = _make_mock_jira()
+        mock_runner = _make_mock_runner()
+        mock_git = _make_mock_git(has_changes=False, sha="current_sha_456")
+        mock_git.push_to_fork.side_effect = RuntimeError("authentication failed")
+
+        with (
+            patch(
+                "forge.workflow.nodes.task_takeover_execution.JiraClient", return_value=mock_jira
+            ),
+            patch(
+                "forge.workflow.nodes.task_takeover_execution.ContainerRunner",
+                return_value=mock_runner,
+            ),
+            patch(
+                "forge.workflow.nodes.task_takeover_execution.prepare_workspace",
+                return_value=("/tmp/ws", mock_git),
+            ),
+            patch("forge.workflow.nodes.task_takeover_execution.get_settings"),
+        ):
+            result = await execute_task_changes(state)
+
+        assert result["commit_info"]["committed"] is True
+        assert result["commit_info"]["sha"] == "current_sha_456"
+        assert result["implementation_push_pending"] is True
+
+    @pytest.mark.asyncio
     async def test_pending_push_does_not_rerun_container(self, tmp_path) -> None:
         state = _make_state(workspace_path=str(tmp_path))
         state["implementation_push_pending"] = True

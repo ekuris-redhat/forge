@@ -251,6 +251,32 @@ class TestQualitativeReviewRouting:
         )
         assert _route_after_qualitative_review(state) == "escalate_blocked"
 
+    def test_route_after_qualitative_review_active_error_with_adequate_verdict_escalates_at_limit(
+        self,
+    ) -> None:
+        """Verifies: When last_error is set and review_verdict is 'adequate', but we are at/above the limit, it escalates instead of routing to create_pr."""
+        from forge.workflow.task_takeover.graph import _route_after_qualitative_review
+
+        state = make_task_state(
+            last_error="Active execution error",
+            qualitative_review_retry_count=2,
+            review_verdict="adequate",
+        )
+        assert _route_after_qualitative_review(state) == "escalate_blocked"
+
+    def test_route_after_qualitative_review_active_error_with_adequate_verdict_retries_under_limit(
+        self,
+    ) -> None:
+        """Verifies: When last_error is set and review_verdict is 'adequate', but we are under the limit, it retries instead of routing to create_pr."""
+        from forge.workflow.task_takeover.graph import _route_after_qualitative_review
+
+        state = make_task_state(
+            last_error="Active execution error",
+            qualitative_review_retry_count=1,
+            review_verdict="adequate",
+        )
+        assert _route_after_qualitative_review(state) == "run_qualitative_review"
+
 
 class TestPostPrRouting:
     """Test Task Takeover post-PR CI and review routing."""

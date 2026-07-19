@@ -161,7 +161,7 @@ async def execute_task_changes(state: TaskTakeoverState) -> TaskTakeoverState:
             "commit_info": {
                 "sha": current_sha,
                 "message": commit_message,
-                "committed": committed,
+                "committed": has_ever_committed,
             },
             "current_node": "execute_task_changes",
             "last_error": None if result.success else result.error_message,
@@ -195,11 +195,6 @@ async def execute_task_changes(state: TaskTakeoverState) -> TaskTakeoverState:
             update_state_timestamp(
                 {
                     **execution_state,
-                    "commit_info": {
-                        "sha": current_sha,
-                        "message": commit_message,
-                        "committed": has_ever_committed,
-                    },
                     "implementation_push_pending": False,
                     "implementation_push_pending_task": None,
                     "persistence_retry_count": 0,

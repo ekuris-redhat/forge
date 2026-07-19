@@ -180,3 +180,25 @@ class TestRouteAfterQualitativeReview:
             last_error="Docker/Podman daemon not running",
         )
         assert _route_after_qualitative_review(state) == "run_qualitative_review"
+
+    def test_route_after_qualitative_review_active_error_with_adequate_verdict_escalates_at_limit(
+        self,
+    ) -> None:
+        """Verifies: When last_error is set and review_verdict is 'adequate', but we are at the limit, it escalates instead of routing to create_pr."""
+        state = _task_state(
+            qualitative_review_retry_count=2,
+            review_verdict="adequate",
+            last_error="Active execution error",
+        )
+        assert _route_after_qualitative_review(state) == "escalate_blocked"
+
+    def test_route_after_qualitative_review_active_error_with_adequate_verdict_retries_under_limit(
+        self,
+    ) -> None:
+        """Verifies: When last_error is set and review_verdict is 'adequate', but we are under the limit, it retries instead of routing to create_pr."""
+        state = _task_state(
+            qualitative_review_retry_count=1,
+            review_verdict="adequate",
+            last_error="Active execution error",
+        )
+        assert _route_after_qualitative_review(state) == "run_qualitative_review"
