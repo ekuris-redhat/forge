@@ -21,7 +21,7 @@ flowchart TD
         Langfuse["Langfuse (Observability)"]
     end
 
-    subgraph API["FastAPI Server (:8000)"]
+    subgraph Gateway["FastAPI Gateway (:8000)"]
         JiraWH["POST /webhooks/jira"]
         GitHubWH["POST /webhooks/github"]
     end
@@ -31,8 +31,8 @@ flowchart TD
         State["AsyncRedisSaver\nLangGraph checkpointing"]
     end
 
-    subgraph Router["WorkflowRouter"]
-        Route{"Route by\nissue type"}
+    subgraph Workers["Worker Processes (consumer group: forge-workers)"]
+        Router{"WorkflowRouter\nroute by issue type"}
         Feature["FeatureWorkflow\n(Feature/Story)"]
         Bug["BugWorkflow\n(Bug)"]
         Task["TaskTakeoverWorkflow\n(Task/Epic)"]
@@ -48,18 +48,18 @@ flowchart TD
     GitHub -- webhooks --> GitHubWH
     JiraWH --> Streams
     GitHubWH --> Streams
-    Streams --> Route
-    Route --> Feature
-    Route --> Bug
-    Route --> Task
+    Streams --> Router
+    Router --> Feature
+    Router --> Bug
+    Router --> Task
     Feature --> Container
     Bug --> Container
     Task --> Container
-    Router <--> LLM
+    Workers <--> LLM
     Container <--> LLM
-    Router --> Jira
-    Router --> GitHub
-    Router --> Langfuse
+    Workers --> Jira
+    Workers --> GitHub
+    Workers --> Langfuse
 ```
 
 ## Feature Ticket Lifecycle
@@ -96,10 +96,10 @@ flowchart TD
     R -->|pass| T[">> human_review_gate"]
     T -->|changes_requested| U[implement_review]
     U --> Q
-    T -->|approved| V["complete_tasks\naggregate_epic_status\naggregate_feature_status\nEND"]
+    T -->|merged| V["complete_tasks\naggregate_epic_status\naggregate_feature_status\nEND"]
 ```
 
-"&gt;&gt;" = human checkpoint (auto-approved when forge:yolo label is set)
+`>>` = human checkpoint (auto-approved when forge:yolo label is set)
 
 ## Bug Ticket Lifecycle
 
@@ -113,9 +113,9 @@ flowchart TD
     B -->|missing fields| C[">> triage_gate"]
     C --> B
     B -->|sufficient| D[analyze_bug]
-    D --> E["reflect_rca\n(up to 3 cycles)"]
-    E --> D
-    D --> F[">> rca_option_gate\nuser selects >option N"]
+    D --> E{reflect_rca}
+    E -->|"needs refinement (up to 3x)"| D
+    E -->|"analysis complete"| F[">> rca_option_gate\nuser selects >option N"]
     F --> G[plan_bug_fix]
     G --> H[">> plan_approval_gate"]
     H --> I[decompose_plan]
@@ -159,7 +159,7 @@ flowchart TD
     E -->|approved| G[setup_workspace]
 
     G --> H["execute_task_changes\n(Podman + Deep Agents)"]
-    H --> I[qualitative_review]
+    H --> I[run_qualitative_review]
     I -->|"needs work (up to 2x)"| H
     I -->|adequate| J[create_pr]
     J --> K[teardown_workspace]
