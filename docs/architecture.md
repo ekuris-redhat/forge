@@ -7,7 +7,7 @@ Forge is an AI-powered SDLC orchestrator. It listens for Jira and GitHub events,
 Forge is built from six layers that form a pipeline from external events to code changes.
 
 - **External Systems:** Jira (ticket lifecycle), GitHub (PRs, CI, code review), and Langfuse (observability and cost tracking). Forge receives webhooks from Jira and GitHub and writes back to both throughout the workflow.
-- **FastAPI Server:** A lightweight API layer that validates incoming webhooks and enqueues them as events. It also exposes health and Prometheus metrics endpoints.
+- **FastAPI Gateway:** A lightweight API layer that validates incoming webhooks and enqueues them as events. It also exposes health and Prometheus metrics endpoints.
 - **Redis:** Serves two roles: an event bus (Redis Streams with consumer groups for reliable delivery) and a state store (LangGraph's AsyncRedisSaver checkpoints workflow state per ticket so workflows survive restarts).
 - **WorkflowRouter:** The orchestration core. Incoming events are dispatched to one of three LangGraph StateGraph workflows based on Jira issue type: **FeatureWorkflow** (Feature/Story), **BugWorkflow** (Bug), or **TaskTakeoverWorkflow** (Task/Epic). Each workflow is a graph of nodes connected by conditional edges, with human approval gates at key decision points.
 - **Podman Container:** Implementation runs in ephemeral rootless containers. Each container mounts the target repository, receives a task description, and uses Deep Agents (an AI coding library) with MCP tool access to make changes and commit them locally. The orchestrator handles pushing and PR creation after the container exits.
@@ -99,8 +99,6 @@ flowchart TD
     T -->|merged| V["complete_tasks\naggregate_epic_status\naggregate_feature_status\nEND"]
 ```
 
-`>>` = human checkpoint (auto-approved when forge:yolo label is set)
-
 ## Bug Ticket Lifecycle
 
 The Bug workflow starts with triage. Forge checks whether the ticket has enough context to investigate. If information is missing, it pauses and asks the reporter to fill in the gaps. Once the report is sufficient, Forge performs root cause analysis with up to three reflection cycles to refine its understanding. It then presents numbered fix options and waits for the user to select one with a ">option N" comment.
@@ -174,6 +172,8 @@ flowchart TD
     P --> L
     O -->|merged| Q[complete_task_takeover]
 ```
+
+In all workflow diagrams above, `>>` marks a human checkpoint (auto-approved when the forge:yolo label is set).
 
 ## Data Flow Summary
 

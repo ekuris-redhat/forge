@@ -18,6 +18,7 @@ nav = [
   ]},
   {"Developer Guide" = [
     {"Overview" = "developer-guide.md"},
+    {"Architecture" = "architecture.md"},
     {"Local Setup" = "dev/setup.md"},
     {"Testing" = "dev/testing.md"},
     {"Contributing" = "dev/contributing.md"},
