@@ -4,7 +4,7 @@ Forge is an AI-powered SDLC orchestrator. It listens for Jira and GitHub events,
 
 ## System Overview
 
-Forge is built from five layers that form a pipeline from external events to code changes.
+Forge is built from six layers that form a pipeline from external events to code changes.
 
 - **External Systems:** Jira (ticket lifecycle), GitHub (PRs, CI, code review), and Langfuse (observability and cost tracking). Forge receives webhooks from Jira and GitHub and writes back to both throughout the workflow.
 - **FastAPI Server:** A lightweight API layer that validates incoming webhooks and enqueues them as events. It also exposes health and Prometheus metrics endpoints.
