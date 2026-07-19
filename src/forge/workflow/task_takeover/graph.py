@@ -177,11 +177,7 @@ def _route_after_qualitative_review(state: TaskTakeoverState) -> str:
 
     if retry_count >= limit:
         commit_info = state.get("commit_info") or {}
-        committed = (
-            commit_info.get("committed")
-            if isinstance(commit_info, dict)
-            else getattr(commit_info, "committed", False)
-        )
+        committed = commit_info.get("committed", False)
 
         if not committed:
             logger.warning(

@@ -139,11 +139,7 @@ async def execute_task_changes(state: TaskTakeoverState) -> TaskTakeoverState:
 
         # Preserve the cumulative committed state if we've already committed in a previous attempt
         prev_commit_info = state.get("commit_info") or {}
-        prev_committed = (
-            prev_commit_info.get("committed")
-            if isinstance(prev_commit_info, dict)
-            else getattr(prev_commit_info, "committed", False)
-        )
+        prev_committed = prev_commit_info.get("committed", False)
         has_ever_committed = prev_committed or committed
 
         current_sha = git.get_current_sha()
