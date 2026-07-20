@@ -703,7 +703,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT sum(duration_s) as value FROM (SELECT dateDiff('second', min(o.start_time), max(coalesce(o.end_time, o.start_time))) as duration_s FROM default.traces t FINAL JOIN default.observations o FINAL ON t.id = o.trace_id WHERE t.session_id = '${jira_issue}' GROUP BY t.id)"
+                        "rawSql": "SELECT sum(duration_s) as value FROM (SELECT dateDiff('second', min(o.start_time), max(coalesce(o.end_time, o.start_time))) as duration_s FROM traces t FINAL JOIN observations o FINAL ON t.id = o.trace_id WHERE t.session_id = '${jira_issue}' GROUP BY t.id)"
                       }
                     },
                     "refId": "A",
@@ -773,7 +773,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT sum(usage_details['total']) as value FROM default.observations FINAL WHERE trace_id IN (SELECT id FROM default.traces FINAL WHERE session_id = '${jira_issue}')"
+                        "rawSql": "SELECT sum(usage_details['total']) as value FROM observations FINAL WHERE trace_id IN (SELECT id FROM traces FINAL WHERE session_id = '${jira_issue}')"
                       }
                     },
                     "refId": "A",
@@ -843,7 +843,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT count() as value FROM default.traces FINAL WHERE session_id = '${jira_issue}' AND JSONExtractString(metadata, 'workflow_step') = 'attempt_ci_fix'"
+                        "rawSql": "SELECT count() as value FROM traces FINAL WHERE session_id = '${jira_issue}' AND splitByChar(':', coalesce(nullIf(JSONExtractString(metadata, 'workflow_step'), ''), 'unknown'))[1] = 'attempt_ci_fix'"
                       }
                     },
                     "refId": "A",
@@ -951,7 +951,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT CASE JSONExtractString(metadata, 'workflow_step')\n  WHEN 'entry' THEN 'Entry'\n  WHEN 'prd_approval_gate' THEN 'PRD'\n  WHEN 'spec_approval_gate' THEN 'Spec'\n  WHEN 'plan_approval_gate' THEN 'Epic Plan'\n  WHEN 'task_approval_gate' THEN 'Tasks'\n  WHEN 'create_pr' THEN 'PR Creation'\n  WHEN 'human_review_gate' THEN 'Human Review'\n  WHEN 'ci_evaluator' THEN 'CI'\n  WHEN 'attempt_ci_fix' THEN 'CI Fix'\n  ELSE JSONExtractString(metadata, 'workflow_step')\nEND AS workflow_step, count() AS iteration_count FROM default.traces FINAL WHERE session_id = '${jira_issue}' AND JSONExtractString(metadata, 'workflow_step') != '' GROUP BY workflow_step ORDER BY iteration_count DESC"
+                        "rawSql": "SELECT /* NOTE: Keep this CASE WHEN block in sync with panel-35 */ CASE splitByChar(':', coalesce(nullIf(JSONExtractString(metadata, 'workflow_step'), ''), 'unknown'))[1]\n  WHEN 'entry' THEN 'Entry'\n  WHEN 'prd_approval_gate' THEN 'PRD'\n  WHEN 'spec_approval_gate' THEN 'Spec'\n  WHEN 'plan_approval_gate' THEN 'Epic Plan'\n  WHEN 'task_approval_gate' THEN 'Tasks'\n  WHEN 'create_pr' THEN 'PR Creation'\n  WHEN 'human_review_gate' THEN 'Human Review'\n  WHEN 'ci_evaluator' THEN 'CI'\n  WHEN 'attempt_ci_fix' THEN 'CI Fix'\n  ELSE splitByChar(':', coalesce(nullIf(JSONExtractString(metadata, 'workflow_step'), ''), 'unknown'))[1]\nEND AS workflow_step, count() AS iteration_count FROM traces FINAL WHERE session_id = '${jira_issue}' AND splitByChar(':', coalesce(nullIf(JSONExtractString(metadata, 'workflow_step'), ''), 'unknown'))[1] NOT IN ('', 'unknown') GROUP BY workflow_step ORDER BY iteration_count DESC"
                       }
                     },
                     "refId": "A",
@@ -1005,7 +1005,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT step, machine_s as machine_time, greatest(wall_s - machine_s, 0) as idle_time FROM (SELECT CASE JSONExtractString(t.metadata, 'workflow_step')\n  WHEN 'entry' THEN 'Entry'\n  WHEN 'prd_approval_gate' THEN 'PRD'\n  WHEN 'spec_approval_gate' THEN 'Spec'\n  WHEN 'plan_approval_gate' THEN 'Epic Plan'\n  WHEN 'task_approval_gate' THEN 'Tasks'\n  WHEN 'create_pr' THEN 'PR Creation'\n  WHEN 'human_review_gate' THEN 'Human Review'\n  WHEN 'ci_evaluator' THEN 'CI'\n  WHEN 'attempt_ci_fix' THEN 'CI Fix'\n  ELSE JSONExtractString(t.metadata, 'workflow_step')\nEND AS step, sum(dateDiff('second', o.start_time, coalesce(o.end_time, o.start_time))) as machine_s, dateDiff('second', min(o.start_time), max(coalesce(o.end_time, o.start_time))) as wall_s FROM default.traces t FINAL JOIN default.observations o FINAL ON t.id = o.trace_id WHERE t.session_id = '${jira_issue}' AND JSONExtractString(t.metadata, 'workflow_step') != '' GROUP BY step) ORDER BY machine_time + idle_time DESC"
+                        "rawSql": "SELECT step, machine_s as machine_time, greatest(wall_s - machine_s, 0) as idle_time FROM (SELECT /* NOTE: Keep this CASE WHEN block in sync with panel-28 */ CASE splitByChar(':', coalesce(nullIf(JSONExtractString(t.metadata, 'workflow_step'), ''), 'unknown'))[1]\n  WHEN 'entry' THEN 'Entry'\n  WHEN 'prd_approval_gate' THEN 'PRD'\n  WHEN 'spec_approval_gate' THEN 'Spec'\n  WHEN 'plan_approval_gate' THEN 'Epic Plan'\n  WHEN 'task_approval_gate' THEN 'Tasks'\n  WHEN 'create_pr' THEN 'PR Creation'\n  WHEN 'human_review_gate' THEN 'Human Review'\n  WHEN 'ci_evaluator' THEN 'CI'\n  WHEN 'attempt_ci_fix' THEN 'CI Fix'\n  ELSE splitByChar(':', coalesce(nullIf(JSONExtractString(t.metadata, 'workflow_step'), ''), 'unknown'))[1]\nEND AS step, sum(dateDiff('second', o.start_time, coalesce(o.end_time, o.start_time))) as machine_s, dateDiff('second', min(o.start_time), max(coalesce(o.end_time, o.start_time))) as wall_s FROM traces t FINAL JOIN observations o FINAL ON t.id = o.trace_id WHERE t.session_id = '${jira_issue}' AND splitByChar(':', coalesce(nullIf(JSONExtractString(t.metadata, 'workflow_step'), ''), 'unknown'))[1] NOT IN ('', 'unknown') GROUP BY step) ORDER BY machine_time + idle_time DESC"
                       }
                     },
                     "refId": "A",
@@ -1218,7 +1218,7 @@
                       "spec": {
                         "x": 0,
                         "y": 0,
-                        "width": 8,
+                        "width": 10,
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
@@ -1229,10 +1229,10 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 8,
+                        "x": 10,
                         "y": 0,
-                        "width": 8,
-                        "height": 8,
+                        "width": 4,
+                        "height": 4,
                         "element": {
                           "kind": "ElementReference",
                           "name": "panel-32"
@@ -1242,9 +1242,9 @@
                     {
                       "kind": "GridLayoutItem",
                       "spec": {
-                        "x": 16,
+                        "x": 14,
                         "y": 0,
-                        "width": 8,
+                        "width": 10,
                         "height": 8,
                         "element": {
                           "kind": "ElementReference",
