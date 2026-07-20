@@ -6,13 +6,13 @@ Forge is an AI-powered SDLC orchestrator. It listens for Jira and GitHub events,
 
 Forge consists of three main services: the Gateway, the Worker, and Redis.
 
-- **Gateway (FastAPI)** accepts Jira and GitHub webhooks, validates signatures, deduplicates events, and publishes them to Redis Streams. It performs no workflow logic — its only job is ingestion. It also serves health, readiness, and Prometheus metrics endpoints.
-- **Worker** consumes events from Redis Streams via consumer groups, resolves the target LangGraph workflow (Feature, Bug, or Task Takeover) based on ticket type, and drives execution through planning, implementation, CI repair, and human review stages. Implementation runs inside ephemeral Podman containers using Deep Agents. Multiple workers can run concurrently — Redis consumer groups distribute events across them, and each message is delivered to exactly one worker.
+- **Gateway (FastAPI)** accepts Jira and GitHub webhooks, validates signatures, deduplicates events, and publishes them to Redis Streams. It performs no workflow logic; its only job is ingestion. It also serves health, readiness, and Prometheus metrics endpoints.
+- **Worker** consumes events from Redis Streams via consumer groups, resolves the target LangGraph workflow (Feature, Bug, or Task Takeover) based on ticket type, and drives execution through planning, implementation, CI repair, and human review stages. Implementation runs inside ephemeral Podman containers using Deep Agents. Multiple workers can run concurrently, Redis consumer groups distribute events across them, and each message is delivered to exactly one worker.
 - **Redis** ties the system together. It serves as the event bus (Streams with consumer groups for reliable delivery), the workflow state store (LangGraph AsyncRedisSaver checkpoints per ticket for pause/resume and crash recovery), the retry queue (sorted set with exponential backoff), and supporting indexes (PR-to-ticket mapping, webhook deduplication).
 
 Because the Gateway and Workers communicate only through Redis, they can be deployed and scaled independently.
 
-In the workflow diagrams below, `>>` marks a human checkpoint where the workflow pauses for approval, revision, or questions. These gates are auto-approved when the `forge:yolo` label is set. Diagrams show the primary flow only — error-handling, revision loops, and question-answering nodes are omitted for clarity.
+In the workflow diagrams below, `>>` marks a human checkpoint where the workflow pauses for approval, revision, or questions. These gates are auto-approved when the `forge:yolo` label is set. Diagrams show the primary flow only; error-handling, revision loops, and question-answering nodes are omitted for clarity.
 
 ```mermaid
 flowchart LR
@@ -126,7 +126,7 @@ flowchart TD
 
 The Bug workflow starts with triage. Forge checks whether the ticket has enough context to investigate. If information is missing, it pauses and asks the reporter to fill in the gaps. Once the report is sufficient, Forge performs root cause analysis with up to three reflection cycles to refine its understanding. It then presents numbered fix options and waits for the user to select one with a ">option N" comment.
 
-After the user selects a fix approach, Forge generates a fix plan, pauses for approval, and decomposes it into implementation tasks. From there the workflow shares the same implementation path as the Feature workflow: container execution, local review, PR creation, CI repair loop, and human review. After the PR is merged, Forge posts a summary of the fix back to the Jira ticket.
+After the user selects a fix approach, Forge generates a fix plan, pauses for approval, and decomposes it into implementation tasks. From there, the workflow shares the same implementation path as the Feature workflow: container execution, local review, PR creation, CI repair loop, and human review. After the PR is merged, Forge posts a summary of the fix back to the Jira ticket.
 
 ```mermaid
 flowchart TD
@@ -163,7 +163,7 @@ flowchart TD
 
 ## Task Ticket Lifecycle
 
-The Task workflow is the shortest path from ticket to PR. It handles standalone Jira Tasks and Epics that are already scoped enough to implement directly, without PRD, spec, or epic decomposition. Forge triages the ticket for sufficient context, generates an implementation plan, and pauses for approval. At the approval gate, reviewers can ask questions ("?"), request revisions ("!"), or approve to proceed.
+The Task workflow is the shortest path from ticket to PR. It handles standalone Jira Tasks and Epics that are already scoped enough to implement directly, without PRD, spec, or epic decomposition. Forge triages the ticket for sufficient context, generates an implementation plan, and pauses for approval. At the approval gate, reviewers can ask questions ("?"), Request revisions ("!"), or approve to proceed.
 
 After approval, implementation follows the same container-based execution as the other workflows: Forge sets up a workspace, runs the changes in a Podman container with Deep Agents, reviews the output for quality (up to 2 retries), and opens a PR. The CI repair loop and human review gate work identically to the Feature and Bug workflows.
 
