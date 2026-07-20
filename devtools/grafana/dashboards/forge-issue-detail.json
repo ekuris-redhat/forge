@@ -74,7 +74,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT CASE t.metadata['workflow_step']\n  WHEN 'entry' THEN 'Entry'\n  WHEN 'prd_approval_gate' THEN 'PRD'\n  WHEN 'spec_approval_gate' THEN 'Spec'\n  WHEN 'plan_approval_gate' THEN 'Epic Plan'\n  WHEN 'task_approval_gate' THEN 'Tasks'\n  WHEN 'create_pr' THEN 'PR Creation'\n  WHEN 'human_review_gate' THEN 'Human Review'\n  WHEN 'ci_evaluator' THEN 'CI'\n  WHEN 'attempt_ci_fix' THEN 'CI Fix'\n  ELSE t.metadata['workflow_step']\nEND as step, round(sum(o.total_cost), 4) as cost FROM default.traces t FINAL JOIN default.observations o FINAL ON t.id = o.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' GROUP BY step ORDER BY cost DESC"
+                        "rawSql": "SELECT\n  splitByChar(':', coalesce(nullIf(t.metadata['workflow_step'], ''), 'unknown'))[1] AS step,\n  round(sum(o.total_cost), 4) AS cost\nFROM traces t FINAL\nJOIN observations o FINAL ON t.id = o.trace_id\nWHERE t.session_id = '${jira_issue}'\n  AND coalesce(nullIf(t.metadata['workflow_step'], ''), '') != ''\nGROUP BY step\nORDER BY cost DESC"
                       }
                     },
                     "refId": "A",
@@ -128,7 +128,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT CASE t.metadata['workflow_step']\n  WHEN 'entry' THEN 'Entry'\n  WHEN 'prd_approval_gate' THEN 'PRD'\n  WHEN 'spec_approval_gate' THEN 'Spec'\n  WHEN 'plan_approval_gate' THEN 'Epic Plan'\n  WHEN 'task_approval_gate' THEN 'Tasks'\n  WHEN 'create_pr' THEN 'PR Creation'\n  WHEN 'human_review_gate' THEN 'Human Review'\n  WHEN 'ci_evaluator' THEN 'CI'\n  WHEN 'attempt_ci_fix' THEN 'CI Fix'\n  ELSE t.metadata['workflow_step']\nEND as step, sum(o.usage_details['input']) as input_tokens, sum(o.usage_details['output']) as output_tokens FROM default.traces t FINAL JOIN default.observations o FINAL ON t.id = o.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' GROUP BY step ORDER BY input_tokens DESC"
+                        "rawSql": "SELECT\n  splitByChar(':', coalesce(nullIf(t.metadata['workflow_step'], ''), 'unknown'))[1] AS step,\n  sum(coalesce(o.usage_details['input'], 0)) AS input_tokens,\n  sum(coalesce(o.usage_details['output'], 0)) AS output_tokens\nFROM traces t FINAL\nJOIN observations o FINAL ON t.id = o.trace_id\nWHERE t.session_id = '${jira_issue}'\n  AND coalesce(nullIf(t.metadata['workflow_step'], ''), '') != ''\nGROUP BY step\nORDER BY input_tokens DESC"
                       }
                     },
                     "refId": "A",
@@ -250,7 +250,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT CASE t.metadata['workflow_step'] WHEN 'entry' THEN 'Entry' WHEN 'prd_approval_gate' THEN 'PRD' WHEN 'spec_approval_gate' THEN 'Spec' WHEN 'plan_approval_gate' THEN 'Epic Plan' WHEN 'task_approval_gate' THEN 'Tasks' WHEN 'create_pr' THEN 'PR Creation' WHEN 'human_review_gate' THEN 'Human Review' WHEN 'ci_evaluator' THEN 'CI' WHEN 'attempt_ci_fix' THEN 'CI Fix' ELSE t.metadata['workflow_step'] END AS step, row_number() OVER (PARTITION BY t.metadata['workflow_step'] ORDER BY t.timestamp ASC) AS iteration, t.id as id, o_agg.model, round(o_agg.latency_s, 1) as latency_s, round(o_agg.cost, 4) as cost, o_agg.total_tokens as tokens FROM default.traces t FINAL JOIN (SELECT trace_id, any(provided_model_name) as model, dateDiff('second', min(start_time), max(coalesce(end_time, start_time))) as latency_s, sum(total_cost) as cost, sum(usage_details['total']) as total_tokens FROM default.observations o FINAL GROUP BY trace_id) o_agg ON t.id = o_agg.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' ORDER BY t.timestamp"
+                        "rawSql": "SELECT\n  splitByChar(':', coalesce(nullIf(t.metadata['workflow_step'], ''), 'unknown'))[1] AS step,\n  row_number() OVER (PARTITION BY splitByChar(':', coalesce(nullIf(t.metadata['workflow_step'], ''), 'unknown'))[1] ORDER BY t.timestamp ASC) AS iteration,\n  t.id AS id,\n  o_agg.model,\n  round(o_agg.latency_s, 1) AS latency_s,\n  round(o_agg.cost, 4) AS cost,\n  o_agg.total_tokens AS tokens\nFROM traces t FINAL\nJOIN (\n  SELECT\n    trace_id,\n    any(coalesce(nullIf(provided_model_name, ''), 'unknown')) AS model,\n    dateDiff('second', min(start_time), max(coalesce(end_time, start_time))) AS latency_s,\n    sum(coalesce(total_cost, 0)) AS cost,\n    sum(coalesce(usage_details['total'], 0)) AS total_tokens\n  FROM observations FINAL\n  GROUP BY trace_id\n) o_agg ON t.id = o_agg.trace_id\nWHERE t.session_id = '${jira_issue}'\n  AND coalesce(nullIf(t.metadata['workflow_step'], ''), '') != ''\nORDER BY t.timestamp"
                       }
                     },
                     "refId": "A",
@@ -898,7 +898,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT CASE t.metadata['workflow_step']\n  WHEN 'entry' THEN 'Entry'\n  WHEN 'prd_approval_gate' THEN 'PRD'\n  WHEN 'spec_approval_gate' THEN 'Spec'\n  WHEN 'plan_approval_gate' THEN 'Epic Plan'\n  WHEN 'task_approval_gate' THEN 'Tasks'\n  WHEN 'create_pr' THEN 'PR Creation'\n  WHEN 'human_review_gate' THEN 'Human Review'\n  WHEN 'ci_evaluator' THEN 'CI'\n  WHEN 'attempt_ci_fix' THEN 'CI Fix'\n  ELSE t.metadata['workflow_step']\nEND as step, dateDiff('second', min(o.start_time), max(coalesce(o.end_time, o.start_time))) as duration_s FROM default.traces t FINAL JOIN default.observations o FINAL ON t.id = o.trace_id WHERE t.session_id = '${jira_issue}' AND t.metadata['workflow_step'] != '' GROUP BY t.session_id, t.id, step ORDER BY min(o.start_time)"
+                        "rawSql": "SELECT\n  splitByChar(':', coalesce(nullIf(t.metadata['workflow_step'], ''), 'unknown'))[1] AS step,\n  dateDiff('second', min(o.start_time), max(coalesce(o.end_time, o.start_time))) AS duration_s\nFROM traces t FINAL\nJOIN observations o FINAL ON t.id = o.trace_id\nWHERE t.session_id = '${jira_issue}'\n  AND coalesce(nullIf(t.metadata['workflow_step'], ''), '') != ''\nGROUP BY t.session_id, t.id, step\nORDER BY min(o.start_time)"
                       }
                     },
                     "refId": "A",
