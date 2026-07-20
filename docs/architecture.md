@@ -2,6 +2,21 @@
 
 Forge is an AI-powered SDLC orchestrator. It listens for Jira and GitHub events, routes them through LangGraph workflows, and drives implementation end-to-end, from requirements through code generation, CI repair, and human review. This page describes the major components and how they connect.
 
+## High-Level Pipeline
+
+At its core, Forge is a four-stage pipeline. External events flow in through an API gateway, queue in Redis, get processed by worker processes running LangGraph workflows, and produce code changes inside ephemeral containers.
+
+```mermaid
+flowchart LR
+    A["Jira / GitHub\n(webhooks)"] --> B["FastAPI\nGateway"]
+    B --> C["Redis\n(Streams + State)"]
+    C --> D["Workers\n(LangGraph)"]
+    D --> E["Podman\nContainers"]
+    D <--> F["LLM\n(Claude / Gemini)"]
+    E <--> F
+    D --> A
+```
+
 ## System Overview
 
 Forge is built from six layers that form a pipeline from external events to code changes.
