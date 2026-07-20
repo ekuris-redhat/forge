@@ -2,13 +2,19 @@
 
 Forge is an AI-powered SDLC orchestrator. It listens for Jira and GitHub events, routes them through LangGraph workflows, and drives implementation end-to-end, from requirements through code generation, CI repair, and human review. This page describes the major components and how they connect.
 
-## High-Level Pipeline
+## High-Level Architecture
 
-At its core, Forge is a four-stage pipeline. External events flow in through an API gateway, queue in Redis, get processed by worker processes running LangGraph workflows, and produce code changes inside ephemeral containers.
+Forge consists of three main services: the Gateway, the Worker, and Redis.
+
+- **Gateway (FastAPI)** accepts Jira and GitHub webhooks, validates signatures, deduplicates events, and publishes them to Redis Streams. It performs no workflow logic — its only job is ingestion. It also serves health, readiness, and Prometheus metrics endpoints.
+- **Worker** consumes events from Redis Streams via consumer groups, resolves the target LangGraph workflow (Feature, Bug, or Task Takeover) based on ticket type, and drives execution through planning, implementation, CI repair, and human review stages. Implementation runs inside ephemeral Podman containers using Deep Agents. Multiple workers can run concurrently — Redis consumer groups distribute events across them, and each message is delivered to exactly one worker.
+- **Redis** ties the system together. It serves as the event bus (Streams with consumer groups for reliable delivery), the workflow state store (LangGraph AsyncRedisSaver checkpoints per ticket for pause/resume and crash recovery), the retry queue (sorted set with exponential backoff), and supporting indexes (PR-to-ticket mapping, webhook deduplication).
+
+Because the Gateway and Workers communicate only through Redis, they can be deployed and scaled independently.
 
 ```mermaid
 flowchart LR
-    A["Jira / GitHub\n(webhooks)"] --> B["FastAPI\nGateway"]
+    A["Jira / GitHub\n(webhooks)"] --> B["Gateway\n(FastAPI)"]
     B --> C["Redis\n(Streams + State)"]
     C --> D["Workers\n(LangGraph)"]
     D --> E["Podman\nContainers"]
