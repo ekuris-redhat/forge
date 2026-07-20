@@ -12,6 +12,8 @@ Forge consists of three main services: the Gateway, the Worker, and Redis.
 
 Because the Gateway and Workers communicate only through Redis, they can be deployed and scaled independently.
 
+In the workflow diagrams below, `>>` marks a human checkpoint where the workflow pauses for approval, revision, or questions. These gates are auto-approved when the `forge:yolo` label is set. Diagrams show the primary flow only — error-handling, revision loops, and question-answering nodes are omitted for clarity.
+
 ```mermaid
 flowchart LR
     A["Jira / GitHub\n(webhooks)"] --> B["Gateway\n(FastAPI)"]
@@ -87,7 +89,7 @@ flowchart TD
 
 The Feature workflow handles the largest scope of work. It takes a Jira Feature or Story from a one-line description through a full planning pipeline (PRD, technical spec, epic decomposition, and task breakdown) before any code is written. Each planning stage produces an artifact posted to Jira (or as a GitHub PR in the proposals repo) and pauses at a human approval gate. Reviewers can approve, request revisions with a "!" comment, or ask questions with "?" without advancing the workflow.
 
-Once all planning is approved, Forge groups tasks by target repository and implements them in parallel. Each task runs in its own Podman container. After implementation, Forge reviews the diff, updates documentation, and opens a PR. If CI fails, Forge analyzes the failure and attempts automated fixes (up to 5 times). When CI passes, the workflow pauses for human PR review. Review feedback triggers another implementation-CI cycle. After merge, Forge aggregates status up through tasks, epics, and the parent feature.
+Once all planning is approved, Forge groups tasks by target repository and implements them in parallel. Each task runs in its own Podman container. After implementation, Forge reviews the diff, updates documentation, and opens a PR. If CI fails, Forge analyzes the failure and attempts automated fixes (up to 5 times by default, configurable via `CI_FIX_MAX_RETRIES`). When CI passes, the workflow pauses for human PR review. Review feedback triggers another implementation-CI cycle. After merge, Forge aggregates status up through tasks, epics, and the parent feature.
 
 ```mermaid
 flowchart TD
@@ -112,7 +114,7 @@ flowchart TD
 
     P --> Q[wait_for_ci_gate]
     Q --> R{ci_evaluator}
-    R -->|fail| S["attempt_ci_fix\n(up to 5x)"]
+    R -->|fail| S["attempt_ci_fix\n(default 5x)"]
     S --> Q
     R -->|pass| T[">> human_review_gate"]
     T -->|changes_requested| U[implement_review]
@@ -193,8 +195,6 @@ flowchart TD
     P --> L
     O -->|merged| Q[complete_task_takeover]
 ```
-
-In all workflow diagrams above, `>>` marks a human checkpoint (auto-approved when the forge:yolo label is set).
 
 ## Data Flow Summary
 
