@@ -684,7 +684,7 @@
         "kind": "Panel",
         "spec": {
           "id": 39,
-          "title": "Total Duration",
+          "title": "Cumulative Duration",
           "description": "",
           "links": [],
           "data": {
