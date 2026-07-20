@@ -773,7 +773,7 @@
                       },
                       "spec": {
                         "format": "table",
-                        "rawSql": "SELECT sum(usage_details['total']) as value FROM observations FINAL WHERE trace_id IN (SELECT id FROM traces FINAL WHERE session_id = '${jira_issue}')"
+                        "rawSql": "SELECT sum(coalesce(usage_details['total'], 0)) as value FROM observations FINAL WHERE trace_id IN (SELECT id FROM traces FINAL WHERE session_id = '${jira_issue}')"
                       }
                     },
                     "refId": "A",
