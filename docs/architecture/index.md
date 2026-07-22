@@ -1,13 +1,11 @@
 # Forge Architecture
 
-This is the primary architecture reference for Forge, an AI-powered SDLC orchestrator. It covers system structure, runtime topology, state management, failure modes, security boundaries, and key design decisions.
+Architecture reference for Forge, an AI-powered SDLC orchestrator. Covers system structure, runtime topology, state management, failure modes, security boundaries, and key design decisions.
 
-**Audience:** Maintainers, operators, and contributors who need to understand how Forge works, why it is built this way, and what constraints govern its operation.
-
-The architecture documentation is organized into three parts:
+For workflow details, see the [Feature](../guide/feature-workflow.md), [Bug](../guide/bug-workflow.md), and [Task](../guide/task-workflow.md) guides. For API reference, see the OpenAPI spec at `/docs` when the gateway is running.
 
 | Part | Contents |
 |------|----------|
-| [System & Components](overview.md) | Scope, system context, external actors, component responsibilities |
-| [Internals](internals.md) | Runtime topology, state and concurrency model, failure recovery, security boundaries |
-| [Reference](reference.md) | Quality attributes, architectural decisions, known limitations, workflow lifecycles |
+| [System & Components](overview.md) | System context, external actors, component responsibilities |
+| [Internals](internals.md) | Runtime topology, state and concurrency, failure recovery, security |
+| [Reference](reference.md) | Architectural decisions, known limitations, workflow lifecycles |
