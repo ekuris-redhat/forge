@@ -1438,3 +1438,88 @@ class TestHandleResumeEventReviewGates:
         assert result["is_paused"] is False
         assert result["revision_requested"] is True
         assert result["feedback_comment"] == "Needs changes"
+
+    @pytest.mark.asyncio
+    @patch("forge.orchestrator.worker.post_status_comment", new_callable=AsyncMock)
+    @patch("forge.orchestrator.worker.GitHubClient")
+    async def test_handle_resume_event_pr_commented_review_at_review_response_gate(
+        self, mock_github_client, _mock_post_comment
+    ):
+        """When at review_response_gate and a PR review with state 'commented' occurs, unpause the workflow."""
+        mock_gh = AsyncMock()
+        mock_gh.get_pull_request_review_comments.return_value = [
+            {"path": "src/app.py", "position": 5, "body": "Nit: rename this variable."}
+        ]
+        mock_github_client.return_value = mock_gh
+
+        worker = OrchestratorWorker(consumer_name="test-worker")
+        state = {
+            "ticket_key": "TEST-123",
+            "current_node": "review_response_gate",
+            "is_paused": True,
+            "context": {},
+        }
+        message = QueueMessage(
+            message_id="msg-123",
+            event_id="evt-123",
+            source=EventSource.GITHUB,
+            event_type="pull_request_review",
+            ticket_key="TEST-123",
+            payload={
+                "review": {
+                    "state": "commented",
+                    "body": "",
+                },
+                "pull_request": {
+                    "number": 42,
+                },
+                "repository": {
+                    "full_name": "owner/repo",
+                },
+            },
+        )
+
+        result = await worker._handle_resume_event(message, state)
+
+        assert result is not state
+        assert result["is_paused"] is False
+        assert result["revision_requested"] is True
+        assert "src/app.py" in result["feedback_comment"]
+        mock_gh.get_pull_request_review_comments.assert_called_once_with("owner", "repo", 42)
+
+    @pytest.mark.asyncio
+    @patch("forge.orchestrator.worker.post_status_comment", new_callable=AsyncMock)
+    async def test_handle_resume_event_pr_review_ignored_when_not_paused_at_review_response_gate(
+        self, _mock_post_comment
+    ):
+        """A PR review event arriving when is_paused=False at review_response_gate must be ignored."""
+        worker = OrchestratorWorker(consumer_name="test-worker")
+        state = {
+            "ticket_key": "TEST-123",
+            "current_node": "review_response_gate",
+            "is_paused": False,
+            "context": {},
+        }
+        message = QueueMessage(
+            message_id="msg-123",
+            event_id="evt-123",
+            source=EventSource.GITHUB,
+            event_type="pull_request_review",
+            ticket_key="TEST-123",
+            payload={
+                "review": {
+                    "state": "changes_requested",
+                    "body": "Fix this",
+                },
+                "pull_request": {
+                    "number": 42,
+                },
+                "repository": {
+                    "full_name": "owner/repo",
+                },
+            },
+        )
+
+        result = await worker._handle_resume_event(message, state)
+
+        assert result is state

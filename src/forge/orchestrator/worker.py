@@ -68,6 +68,7 @@ _FRESH_INVOKE_NODES = (
     "ci_evaluator",
     "attempt_ci_fix",
     "human_review_gate",
+    "review_response_gate",
     "rebase_pr",
     "setup_workspace",
 )
@@ -1047,12 +1048,13 @@ class OrchestratorWorker:
                             f"Spec PR feedback for {message.ticket_key}: {comment_body[:100]}..."
                         )
 
-        # GitHub pull_request_review events — handled when at human_review_gate or review_response_gate.
+        # GitHub pull_request_review events — handled when paused at human_review_gate or review_response_gate.
         # A review submission is the primary signal for the human review stage.
         if (
             message.source == EventSource.GITHUB
             and "pull_request_review" in message.event_type
             and current_node in _REVIEW_GATES
+            and current_state.get("is_paused", True)
         ):
             review = payload.get("review", {})
             review_state = review.get("state", "").lower()
@@ -1386,6 +1388,7 @@ class OrchestratorWorker:
             "regenerate_epic_tasks": "the tasks",
             "update_single_task": "the task",
             "human_review_gate": "the implementation review",
+            "review_response_gate": "the implementation review",
         }
         return node_to_stage.get(current_node, "the current workflow stage")
 
