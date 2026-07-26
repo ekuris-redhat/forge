@@ -68,7 +68,6 @@ _FRESH_INVOKE_NODES = (
     "ci_evaluator",
     "attempt_ci_fix",
     "human_review_gate",
-    "review_response_gate",
     "rebase_pr",
     "setup_workspace",
 )
@@ -1237,6 +1236,8 @@ class OrchestratorWorker:
             updated_state["is_paused"] = False
             updated_state["revision_requested"] = True
             updated_state["feedback_comment"] = feedback
+            if current_node == "review_response_gate":
+                updated_state["contested_comments"] = []
             if comment_ticket_key and comment_ticket_type == "epic":
                 updated_state["current_epic_key"] = comment_ticket_key
                 updated_state["current_task_key"] = None
