@@ -416,6 +416,10 @@ class TestQuestionDetection:
             **base_state,
             "current_node": "review_response_gate",
             "is_paused": True,
+            "is_blocked": True,
+            "retry_count": 2,
+            "last_error": "some error",
+            "auto_retry_cap_notified": True,
             "contested_comments": [{"text": "Objection: renaming breaks the public API"}],
             "revision_requested": True,
             "feedback_comment": "Changes requested",
@@ -449,6 +453,10 @@ class TestQuestionDetection:
         assert result["revision_requested"] is False
         assert result["feedback_comment"] is None
         assert result["context"]["force_fresh_invoke"] is True
+        assert result["is_blocked"] is False
+        assert result["retry_count"] == 0
+        assert result["last_error"] is None
+        assert result["auto_retry_cap_notified"] is False
 
     @pytest.mark.asyncio
     async def test_prd_label_change_to_approved_sets_approved_flag(
