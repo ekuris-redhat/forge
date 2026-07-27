@@ -1,10 +1,15 @@
 """Tests for the implement_review node and review_response_gate (proposal 007)."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langgraph.graph import END
 
+from forge.models.workflow import TicketType
+from forge.workflow.feature.graph import build_feature_graph
+from forge.workflow.bug.graph import build_bug_graph
+from forge.workflow.task_takeover.graph import build_task_takeover_graph
 from tests.fixtures.workflow_states import make_workflow_state
 
 # ── State fields ──────────────────────────────────────────────────────────────
@@ -321,3 +326,50 @@ class TestImplementReviewStatusComment:
             )
 
         mock_github.create_issue_comment.assert_not_called()
+
+
+# ── resume path from review_response_gate after forge:retry ────────────────────
+
+
+class TestResumeFromReviewResponseGateAfterRetry:
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "ticket_type, graph_builder",
+        [
+            (TicketType.FEATURE, build_feature_graph),
+            (TicketType.BUG, build_bug_graph),
+            (TicketType.TASK, build_task_takeover_graph),
+        ],
+    )
+    async def test_graph_level_resume_from_review_response_gate_after_retry(
+        self, ticket_type: TicketType, graph_builder: Any
+    ) -> None:
+        """Verify that a resumed workflow starts fresh and pauses at human_review_gate."""
+        # 1. Compile the graph
+        compiled_graph = graph_builder().compile()
+
+        # 2. Setup initial state representing the state AFTER worker handles forge:retry.
+        # The worker transitions current_node to "human_review_gate" and clears review variables.
+        initial_state = make_workflow_state(
+            ticket_key="TEST-123",
+            ticket_type=ticket_type,
+            current_node="human_review_gate",
+            is_paused=False,  # Worker resumes execution
+            contested_comments=[],  # Cleared by worker
+            revision_requested=False,  # Cleared by worker
+            feedback_comment=None,  # Cleared by worker
+            context={"force_fresh_invoke": True},
+        )
+
+        # 3. Invoke the graph
+        result_state = await compiled_graph.ainvoke(initial_state)
+
+        # 4. Assertions:
+        # Verify that the graph routed into the human_review_gate node,
+        # executed it, and paused the workflow there, clearing any in-flight review state.
+        assert result_state["current_node"] == "human_review_gate"
+        assert result_state["is_paused"] is True
+        assert result_state["contested_comments"] == []
+        assert result_state["revision_requested"] is False
+        assert result_state["feedback_comment"] is None
