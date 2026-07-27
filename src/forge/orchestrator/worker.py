@@ -36,6 +36,9 @@ from forge.workflow.utils.jira_status import post_status_comment
 
 logger = logging.getLogger(__name__)
 
+_CI_STAGES = ("wait_for_ci_gate", "ci_evaluator", "attempt_ci_fix")
+_FORGE_COMMAND_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+
 
 def _is_workflow_errored(state: dict) -> bool:
     """Return True when workflow has a recorded error and is not paused for human input."""
@@ -499,9 +502,6 @@ class OrchestratorWorker:
 
         # GitHub issue_comment events: detect /forge skip-gate and /forge unskip-gate
         # commands posted as PR comments.
-        _CI_STAGES = ("wait_for_ci_gate", "ci_evaluator", "attempt_ci_fix")
-        _FORGE_COMMAND_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
-
         if message.source == EventSource.GITHUB and "issue_comment" in message.event_type:
             gh_comment_body = payload.get("comment", {}).get("body", "").strip()
             repo_full = payload.get("repository", {}).get("full_name", "")
