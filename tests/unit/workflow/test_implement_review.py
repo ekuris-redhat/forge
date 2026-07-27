@@ -74,6 +74,31 @@ class TestHumanReviewRoutingToImplementReview:
         )
         assert route_human_review(state) == END
 
+    def test_human_review_gate_skips_pause_when_pr_merged(self):
+        """human_review_gate must not re-pause when pr_merged is True."""
+        from forge.workflow.nodes.human_review import human_review_gate
+
+        state = make_workflow_state(
+            current_node="human_review_gate",
+            is_paused=False,
+            pr_merged=True,
+        )
+        result = human_review_gate(state)
+        assert result["is_paused"] is False
+        assert result["current_node"] == "human_review_gate"
+
+    def test_human_review_gate_pauses_when_pr_not_merged(self):
+        """human_review_gate pauses normally when pr_merged is False."""
+        from forge.workflow.nodes.human_review import human_review_gate
+
+        state = make_workflow_state(
+            current_node="human_review_gate",
+            is_paused=False,
+            pr_merged=False,
+        )
+        result = human_review_gate(state)
+        assert result["is_paused"] is True
+
 
 # ── review_response_gate pause node ──────────────────────────────────────────
 
@@ -90,6 +115,19 @@ class TestReviewResponseGate:
         )
         result = review_response_gate(state)
         assert result["is_paused"] is True
+        assert result["current_node"] == "review_response_gate"
+
+    def test_review_response_gate_skips_pause_when_pr_merged(self):
+        """review_response_gate must not re-pause when pr_merged is True."""
+        from forge.workflow.nodes.implement_review import review_response_gate
+
+        state = make_workflow_state(
+            current_node="review_response_gate",
+            is_paused=False,
+            pr_merged=True,
+        )
+        result = review_response_gate(state)
+        assert result["is_paused"] is False
         assert result["current_node"] == "review_response_gate"
 
     def test_route_review_response_confirmed_resumes_implement_review(self):
