@@ -500,17 +500,28 @@ class OrchestratorWorker:
         # GitHub issue_comment events: detect /forge skip-gate and /forge unskip-gate
         # commands posted as PR comments.
         _CI_STAGES = ("wait_for_ci_gate", "ci_evaluator", "attempt_ci_fix")
+        _FORGE_COMMAND_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+
         if message.source == EventSource.GITHUB and "issue_comment" in message.event_type:
             gh_comment_body = payload.get("comment", {}).get("body", "").strip()
             repo_full = payload.get("repository", {}).get("full_name", "")
             pr_number = payload.get("issue", {}).get("number")
             sender = payload.get("sender", {}).get("login", "")
+            author_association = payload.get("comment", {}).get("author_association", "")
             _owner, _, _repo = repo_full.partition("/")
 
             skip_prefix = "/forge skip-gate"
             unskip_prefix = "/forge unskip-gate"
 
             if gh_comment_body.lower().startswith(skip_prefix.lower()):
+                if author_association not in _FORGE_COMMAND_ASSOCIATIONS:
+                    logger.warning(
+                        "Unauthorized /forge skip-gate from %s (%s) on %s",
+                        sender,
+                        author_association,
+                        message.ticket_key,
+                    )
+                    return current_state
                 check_name = gh_comment_body[len(skip_prefix) :].strip()
                 if current_node in _CI_STAGES and check_name:
                     skipped = list(current_state.get("ci_skipped_checks", []))
@@ -535,6 +546,14 @@ class OrchestratorWorker:
                 return current_state
 
             elif gh_comment_body.lower().startswith(unskip_prefix.lower()):
+                if author_association not in _FORGE_COMMAND_ASSOCIATIONS:
+                    logger.warning(
+                        "Unauthorized /forge unskip-gate from %s (%s) on %s",
+                        sender,
+                        author_association,
+                        message.ticket_key,
+                    )
+                    return current_state
                 check_name = gh_comment_body[len(unskip_prefix) :].strip()
                 if current_node in _CI_STAGES and check_name:
                     skipped = [
@@ -560,6 +579,14 @@ class OrchestratorWorker:
 
             rebase_prefix = "/forge rebase"
             if gh_comment_body.lower().startswith(rebase_prefix.lower()):
+                if author_association not in _FORGE_COMMAND_ASSOCIATIONS:
+                    logger.warning(
+                        "Unauthorized /forge rebase from %s (%s) on %s",
+                        sender,
+                        author_association,
+                        message.ticket_key,
+                    )
+                    return current_state
                 if not current_state.get("current_pr_number"):
                     logger.warning(
                         f"Ignoring /forge rebase for {message.ticket_key}: no PR in state"
