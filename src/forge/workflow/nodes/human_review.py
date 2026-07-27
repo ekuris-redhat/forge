@@ -27,7 +27,9 @@ def human_review_gate(state: WorkflowState) -> WorkflowState:
 
     if state.get("pr_merged"):
         logger.info(f"Human review gate: PR already merged for {ticket_key}, skipping pause")
-        return update_state_timestamp({**state, "current_node": "human_review_gate"})
+        return update_state_timestamp(
+            {**state, "current_node": "human_review_gate", "is_paused": False}
+        )
 
     logger.info(f"Human review gate: pausing for {ticket_key} ({len(pr_urls)} PRs)")
 

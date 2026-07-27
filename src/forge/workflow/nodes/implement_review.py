@@ -33,7 +33,9 @@ def review_response_gate(state: WorkflowState) -> WorkflowState:
 
     if state.get("pr_merged"):
         logger.info(f"Review response gate: PR already merged for {ticket_key}, skipping pause")
-        return update_state_timestamp({**state, "current_node": "review_response_gate"})
+        return update_state_timestamp(
+            {**state, "current_node": "review_response_gate", "is_paused": False}
+        )
 
     logger.info(f"Review response gate: pausing for {ticket_key}")
     return set_paused(state, "review_response_gate")
