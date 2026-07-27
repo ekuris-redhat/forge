@@ -29,9 +29,7 @@ class SkillEntry(BaseModel):
     @classmethod
     def _validate_source_protocol(cls, v: str) -> str:
         if not v.startswith(("https://", "git@")):
-            raise ValueError(
-                f"Skill source must use https:// or git@ protocol, got: {v!r}"
-            )
+            raise ValueError(f"Skill source must use https:// or git@ protocol, got: {v!r}")
         return v
 
     ref: str | None = None
