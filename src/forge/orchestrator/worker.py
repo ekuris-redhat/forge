@@ -37,7 +37,6 @@ from forge.workflow.utils.jira_status import post_status_comment
 logger = logging.getLogger(__name__)
 
 _CI_STAGES = ("wait_for_ci_gate", "ci_evaluator", "attempt_ci_fix")
-_FORGE_COMMAND_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 
 
 def _is_workflow_errored(state: dict) -> bool:
@@ -514,7 +513,7 @@ class OrchestratorWorker:
             unskip_prefix = "/forge unskip-gate"
 
             if gh_comment_body.lower().startswith(skip_prefix.lower()):
-                if author_association not in _FORGE_COMMAND_ASSOCIATIONS:
+                if author_association not in self.settings.forge_command_associations:
                     logger.warning(
                         "Unauthorized /forge skip-gate from %s (%s) on %s",
                         sender,
@@ -546,7 +545,7 @@ class OrchestratorWorker:
                 return current_state
 
             elif gh_comment_body.lower().startswith(unskip_prefix.lower()):
-                if author_association not in _FORGE_COMMAND_ASSOCIATIONS:
+                if author_association not in self.settings.forge_command_associations:
                     logger.warning(
                         "Unauthorized /forge unskip-gate from %s (%s) on %s",
                         sender,
@@ -579,7 +578,7 @@ class OrchestratorWorker:
 
             rebase_prefix = "/forge rebase"
             if gh_comment_body.lower().startswith(rebase_prefix.lower()):
-                if author_association not in _FORGE_COMMAND_ASSOCIATIONS:
+                if author_association not in self.settings.forge_command_associations:
                     logger.warning(
                         "Unauthorized /forge rebase from %s (%s) on %s",
                         sender,

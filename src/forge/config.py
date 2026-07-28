@@ -259,6 +259,10 @@ class Settings(BaseSettings):
         default=False,
         description="Disable /docs, /redoc, and /openapi.json endpoints",
     )
+    forge_command_associations: set[str] = Field(
+        default={"OWNER", "MEMBER", "COLLABORATOR"},
+        description="GitHub author_association values allowed to run /forge PR commands",
+    )
     container_langchain_verbose: bool = Field(
         default=False,
         description="Enable LangChain verbose/debug logging in container",
