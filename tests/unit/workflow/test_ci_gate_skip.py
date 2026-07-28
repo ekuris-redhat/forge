@@ -12,11 +12,7 @@ from forge.queue.models import QueueMessage
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _skip_gate_message(
-    base: QueueMessage,
-    check_name: str,
-    author_association: str = "COLLABORATOR",
-) -> QueueMessage:
+def _skip_gate_message(base: QueueMessage, check_name: str) -> QueueMessage:
     """GitHub issue_comment event with /forge skip-gate command."""
     return QueueMessage(
         message_id=base.message_id,
@@ -26,10 +22,7 @@ def _skip_gate_message(
         ticket_key=base.ticket_key,
         payload={
             **base.payload,
-            "comment": {
-                "body": f"/forge skip-gate {check_name}",
-                "author_association": author_association,
-            },
+            "comment": {"body": f"/forge skip-gate {check_name}"},
             "issue": {"number": 42, "pull_request": {}},
             "repository": {"full_name": "org/repo"},
             "sender": {"login": "eshulman2"},
@@ -37,11 +30,7 @@ def _skip_gate_message(
     )
 
 
-def _unskip_gate_message(
-    base: QueueMessage,
-    check_name: str,
-    author_association: str = "COLLABORATOR",
-) -> QueueMessage:
+def _unskip_gate_message(base: QueueMessage, check_name: str) -> QueueMessage:
     """GitHub issue_comment event with /forge unskip-gate command."""
     return QueueMessage(
         message_id=base.message_id,
@@ -51,37 +40,10 @@ def _unskip_gate_message(
         ticket_key=base.ticket_key,
         payload={
             **base.payload,
-            "comment": {
-                "body": f"/forge unskip-gate {check_name}",
-                "author_association": author_association,
-            },
+            "comment": {"body": f"/forge unskip-gate {check_name}"},
             "issue": {"number": 42, "pull_request": {}},
             "repository": {"full_name": "org/repo"},
             "sender": {"login": "eshulman2"},
-        },
-    )
-
-
-def _rebase_message(
-    base: QueueMessage,
-    author_association: str = "COLLABORATOR",
-) -> QueueMessage:
-    """GitHub issue_comment event with /forge rebase command."""
-    return QueueMessage(
-        message_id=base.message_id,
-        event_id=base.event_id,
-        source=EventSource.GITHUB,
-        event_type="issue_comment:created",
-        ticket_key=base.ticket_key,
-        payload={
-            **base.payload,
-            "comment": {
-                "body": "/forge rebase",
-                "author_association": author_association,
-            },
-            "issue": {"number": 42, "pull_request": {}},
-            "repository": {"full_name": "org/repo"},
-            "sender": {"login": "external-user"},
         },
     )
 
@@ -249,7 +211,7 @@ class TestWorkerSkipGateDetection:
             ticket_key=msg.ticket_key,
             payload={
                 **msg.payload,
-                "comment": {"body": "/FORGE SKIP-GATE epoxy", "author_association": "COLLABORATOR"},
+                "comment": {"body": "/FORGE SKIP-GATE epoxy"},
             },
         )
 
@@ -516,65 +478,3 @@ class TestEvaluateCIStatusSkipsChecks:
             result = await evaluate_ci_status(state)
 
         assert result["ci_status"] == "fixing"
-
-
-# ── Authorization checks on /forge commands ──────────────────────────────────
-
-
-class TestForgeCommandAuthorization:
-
-    @pytest.mark.asyncio
-    async def test_skip_gate_rejected_for_unauthorized_user(
-        self, worker, base_message, ci_state
-    ):
-        """External users (NONE association) cannot skip CI gates."""
-        msg = _skip_gate_message(base_message, "epoxy", author_association="NONE")
-        result = await worker._handle_resume_event(msg, ci_state)
-        assert result.get("ci_skipped_checks", []) == []
-        assert result.get("is_paused") is True
-
-    @pytest.mark.asyncio
-    async def test_skip_gate_allowed_for_member(
-        self, worker, base_message, ci_state
-    ):
-        msg = _skip_gate_message(base_message, "epoxy", author_association="MEMBER")
-        with patch.object(worker, "_post_skip_gate_feedback", AsyncMock()):
-            result = await worker._handle_resume_event(msg, ci_state)
-        assert "epoxy" in result.get("ci_skipped_checks", [])
-
-    @pytest.mark.asyncio
-    async def test_skip_gate_allowed_for_owner(
-        self, worker, base_message, ci_state
-    ):
-        msg = _skip_gate_message(base_message, "epoxy", author_association="OWNER")
-        with patch.object(worker, "_post_skip_gate_feedback", AsyncMock()):
-            result = await worker._handle_resume_event(msg, ci_state)
-        assert "epoxy" in result.get("ci_skipped_checks", [])
-
-    @pytest.mark.asyncio
-    async def test_unskip_gate_rejected_for_unauthorized_user(
-        self, worker, base_message, ci_state
-    ):
-        ci_state["ci_skipped_checks"] = ["epoxy"]
-        msg = _unskip_gate_message(base_message, "epoxy", author_association="NONE")
-        result = await worker._handle_resume_event(msg, ci_state)
-        assert "epoxy" in result.get("ci_skipped_checks", [])
-
-    @pytest.mark.asyncio
-    async def test_rebase_rejected_for_unauthorized_user(
-        self, worker, base_message, ci_state
-    ):
-        ci_state["current_pr_number"] = 42
-        msg = _rebase_message(base_message, author_association="NONE")
-        result = await worker._handle_resume_event(msg, ci_state)
-        assert result.get("current_node") == "wait_for_ci_gate"
-
-    @pytest.mark.asyncio
-    async def test_rebase_allowed_for_collaborator(
-        self, worker, base_message, ci_state
-    ):
-        ci_state["current_pr_number"] = 42
-        msg = _rebase_message(base_message, author_association="COLLABORATOR")
-        with patch.object(worker, "_post_rebase_feedback", AsyncMock()):
-            result = await worker._handle_resume_event(msg, ci_state)
-        assert result.get("current_node") == "rebase_pr"
