@@ -94,11 +94,18 @@ async def update_docs_repo(state: WorkflowState) -> WorkflowState:
             branch_name=branch_name,
         )
 
-        # Clone upstream repo, add fork remote, checkout the PR branch
+        # Clone upstream code repo; try to reach the PR branch so the agent
+        # can run `git diff origin/main...HEAD` inside the container.
         code_git = GitOperations(code_workspace)
         code_git.clone()
-        code_git.add_fork_remote(fork_owner, fork_repo)
-        code_git.checkout_branch(branch_name, remote="fork")
+        if fork_owner and fork_repo:
+            code_git.add_fork_remote(fork_owner, fork_repo)
+            code_git.checkout_branch(branch_name, remote="fork")
+        else:
+            # No fork info (same-repo PR or fork state not populated).
+            # Fall back to origin; if the branch was auto-deleted after merge,
+            # checkout_branch raises and the outer try/except skips with a warning.
+            code_git.checkout_branch(branch_name, remote="origin")
 
         # Clone and set up the docs repo
         docs_git = GitOperations(docs_workspace)

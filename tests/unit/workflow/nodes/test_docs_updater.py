@@ -294,6 +294,64 @@ class TestUpdateDocsRepoRouting:
         assert result.get("docs_pr_url") is None
 
 
+    @pytest.mark.asyncio
+    async def test_origin_fallback_when_no_fork_info(self):
+        """Uses origin checkout when fork_owner/fork_repo are absent in state."""
+        from forge.workflow.nodes.update_docs_repo import update_docs_repo
+
+        state = make_workflow_state(
+            current_node="post_merge_summary",
+            current_repo="acme/backend",
+            ticket_key="PROJ-123",
+            # No fork_owner / fork_repo — same-repo PR
+            context={"branch_name": "forge/proj-123", "guardrails": ""},
+        )
+
+        mock_workspace = MagicMock()
+        mock_workspace.path = MagicMock()
+
+        with (
+            patch("forge.workflow.nodes.update_docs_repo.get_settings") as mock_settings,
+            patch("forge.workflow.nodes.update_docs_repo.JiraClient") as mock_jira_cls,
+            patch("forge.workflow.nodes.update_docs_repo.extract_project_key", return_value="PROJ"),
+            patch("forge.workflow.nodes.update_docs_repo.GitHubClient") as mock_github_cls,
+            patch("forge.workflow.nodes.update_docs_repo.WorkspaceManager") as mock_manager_cls,
+            patch("forge.workflow.nodes.update_docs_repo.GitOperations") as mock_git_cls,
+            patch("forge.workflow.nodes.update_docs_repo.ContainerRunner") as mock_runner_cls,
+            patch("forge.workflow.nodes.update_docs_repo.load_prompt", return_value="task prompt"),
+            patch("forge.workflow.nodes.update_docs_repo._configure_forge_exclude"),
+            patch("forge.workflow.nodes.update_docs_repo._branch_has_commits", return_value=False),
+        ):
+            mock_settings.return_value = MagicMock()
+
+            mock_jira = MagicMock()
+            mock_jira.get_project_docs_repo = AsyncMock(return_value="acme/docs")
+            mock_jira.close = AsyncMock()
+            mock_jira_cls.return_value = mock_jira
+
+            mock_github = MagicMock()
+            mock_github.get_repository = AsyncMock(return_value={"default_branch": "main"})
+            mock_github.close = AsyncMock()
+            mock_github_cls.return_value = mock_github
+
+            mock_manager = MagicMock()
+            mock_manager.create_workspace.return_value = mock_workspace
+            mock_manager_cls.return_value = mock_manager
+
+            mock_git = MagicMock()
+            mock_git.has_uncommitted_changes.return_value = False
+            mock_git_cls.return_value = mock_git
+
+            mock_runner = MagicMock()
+            mock_runner.run = AsyncMock()
+            mock_runner_cls.return_value = mock_runner
+
+            await update_docs_repo(state)
+
+        mock_git.add_fork_remote.assert_not_called()
+        mock_git.checkout_branch.assert_any_call("forge/proj-123", remote="origin")
+
+
 class TestExtraMountsInContainerRunner:
     """Tests for extra_mounts parameter in ContainerRunner."""
 
