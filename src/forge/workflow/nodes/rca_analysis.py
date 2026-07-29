@@ -12,6 +12,7 @@ from forge.prompts import load_prompt
 from forge.sandbox import ContainerRunner
 from forge.workflow.bug.state import BugState
 from forge.workflow.utils import update_state_timestamp
+from forge.workflow.utils.jira_status import post_status_comment
 
 logger = logging.getLogger(__name__)
 
@@ -51,25 +52,39 @@ async def analyze_bug(state: BugState) -> BugState:
     jira = JiraClient()
 
     try:
+        await post_status_comment(
+            jira,
+            ticket_key,
+            "🔍 Forge is analyzing the bug root cause — this may take a few minutes.",
+        )
+
         issue = await jira.get_issue(ticket_key)
 
         try:
             repos = await jira.get_project_repos(issue.project_key)
         except MissingProjectConfig as e:
-            await jira.add_comment(
-                ticket_key,
-                f"Cannot start RCA: repository configuration is missing for project "
-                f"`{issue.project_key}`.\n\n"
-                f"Set `forge.repos` on the Jira project to a comma-separated list of "
-                f"`owner/repo` values, then add `forge:retry` to resume.\n\n"
-                f"Details: {e}",
+            if settings.forge_require_project_config:
+                await post_status_comment(
+                    jira,
+                    ticket_key,
+                    f"Cannot start RCA: repository configuration is missing for project "
+                    f"`{issue.project_key}`.\n\n"
+                    f"Set `forge.repos` on the Jira project to a comma-separated list of "
+                    f"`owner/repo` values, then add `forge:retry` to resume.\n\n"
+                    f"Details: {e}",
+                )
+                await jira.set_workflow_label(ticket_key, ForgeLabel.BLOCKED)
+                return {
+                    **state,
+                    "last_error": str(e),
+                    "current_node": "analyze_bug",
+                }
+            repos = settings.known_repos
+            logger.info(
+                "Project %s: falling back to GITHUB_KNOWN_REPOS: %s",
+                issue.project_key,
+                repos,
             )
-            await jira.set_workflow_label(ticket_key, ForgeLabel.BLOCKED)
-            return {
-                **state,
-                "last_error": str(e),
-                "current_node": "analyze_bug",
-            }
 
         task_description = load_prompt(
             "analyze-bug",
@@ -228,12 +243,13 @@ async def reflect_rca(state: BugState) -> BugState:
         with tempfile.TemporaryDirectory() as tmpdir:
             workspace_path = Path(tmpdir)
             runner = ContainerRunner(settings)
+            task_key = f"{ticket_key}-reflect"
             result = await runner.run(
                 workspace_path=workspace_path,
                 task_summary=f"RCA reflection for {ticket_key}",
                 task_description=task_description,
                 ticket_key=ticket_key,
-                task_key=f"{ticket_key}-reflect",
+                task_key=task_key,
             )
 
             if not result.success:
@@ -241,7 +257,7 @@ async def reflect_rca(state: BugState) -> BugState:
                     f"Reflection container failed with exit_code={result.exit_code}: {result.stderr}"
                 )
 
-            verdict = result.stdout.strip()
+            verdict = _extract_reflection_verdict(workspace_path, task_key, result.stdout)
 
         if verdict.upper().strip() == "VALID":
             return update_state_timestamp(
@@ -255,7 +271,8 @@ async def reflect_rca(state: BugState) -> BugState:
         new_reflection_count = reflection_count + 1
 
         if new_reflection_count >= MAX_REFLECTION_ITERATIONS:
-            await jira.add_comment(
+            await post_status_comment(
+                jira,
                 ticket_key,
                 f"Reflection cap reached — proceeding with best available RCA after "
                 f"{new_reflection_count} validation attempts.",
@@ -293,3 +310,45 @@ async def reflect_rca(state: BugState) -> BugState:
 
     finally:
         await jira.close()
+
+
+def _extract_reflection_verdict(workspace_path: Path, task_key: str, stdout: str) -> str:
+    """Read the reflector's final assistant message, falling back to stdout.
+
+    Container stdout contains entrypoint logs. The entrypoint saves the actual
+    Deep Agents conversation to ``.forge/history/{task_key}.json``; for RCA
+    reflection that final assistant message is the verdict we care about.
+    """
+    history_file = workspace_path / ".forge" / "history" / f"{task_key}.json"
+    if history_file.exists():
+        try:
+            history = json.loads(history_file.read_text())
+            messages = history.get("messages", [])
+            for message in reversed(messages):
+                role = str(message.get("role", "")).lower()
+                if role not in {"ai", "assistant"}:
+                    continue
+                content = _stringify_message_content(message.get("content", ""))
+                if content.strip():
+                    return content.strip()
+        except Exception as e:
+            logger.warning(f"Could not read reflection history {history_file}: {e}")
+
+    return (stdout or "").strip()
+
+
+def _stringify_message_content(content: object) -> str:
+    """Convert LangChain message content variants into plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if text:
+                    parts.append(str(text))
+        return "\n".join(parts)
+    return str(content)

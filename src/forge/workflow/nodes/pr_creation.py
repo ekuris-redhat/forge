@@ -1,7 +1,10 @@
 """PR creation node for opening pull requests."""
 
+import contextlib
 import logging
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from forge.config import get_settings
 from forge.integrations.agents import ForgeAgent
@@ -10,14 +13,77 @@ from forge.integrations.jira.client import JiraClient
 from forge.models.workflow import ForgeLabel, TicketType
 from forge.orchestrator.checkpointer import set_pr_ticket_index
 from forge.prompts import load_prompt
-from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.nodes.code_review import sync_pr_description
 from forge.workflow.nodes.post_merge_summary import _extract_impact
 from forge.workflow.utils import update_state_timestamp
+from forge.workflow.utils.jira_status import post_status_comment
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.manager import Workspace
 
+WorkflowState = dict[str, Any]
+
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PullRequestTarget:
+    """Resolved upstream and fork repository for PR creation."""
+
+    owner: str
+    repo: str
+    fork_owner: str
+    fork_repo: str
+
+
+async def prepare_pull_request_target(
+    github: GitHubClient,
+    git: GitOperations,
+    current_repo: str,
+) -> PullRequestTarget:
+    """Prepare a fork remote for opening a pull request from the current workspace."""
+    if not current_repo or "/" not in current_repo:
+        raise ValueError(
+            f"Invalid repository format '{current_repo}': must be in owner/repo format"
+        )
+
+    owner, repo = current_repo.split("/", 1)
+
+    logger.info(f"Getting or creating fork for {current_repo}")
+    fork_data = await github.get_or_create_fork(owner, repo)
+    fork_owner = fork_data["owner"]["login"]
+    fork_repo = fork_data["name"]
+
+    await github.sync_fork_with_upstream(fork_owner, fork_repo)
+    git.add_fork_remote(fork_owner, fork_repo)
+
+    return PullRequestTarget(
+        owner=owner,
+        repo=repo,
+        fork_owner=fork_owner,
+        fork_repo=fork_repo,
+    )
+
+
+async def open_pull_request_from_fork(
+    github: GitHubClient,
+    target: PullRequestTarget,
+    *,
+    branch_name: str,
+    title: str,
+    body: str,
+    base: str = "main",
+    draft: bool = False,
+) -> dict:
+    """Open a pull request from the prepared fork branch to upstream."""
+    return await github.create_pull_request(
+        owner=target.owner,
+        repo=target.repo,
+        title=title,
+        body=body,
+        head=f"{target.fork_owner}:{branch_name}",
+        base=base,
+        draft=draft,
+    )
 
 
 async def check_merge_conflicts(
@@ -91,6 +157,9 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
     current_repo = state.get("current_repo", "")
     implemented_tasks = state.get("implemented_tasks", [])
 
+    if not implemented_tasks:
+        implemented_tasks = [state.get("current_task_key") or ticket_key]
+
     if not workspace_path:
         logger.error(f"No workspace for PR creation on {ticket_key}")
         return {
@@ -99,16 +168,6 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
             "current_node": "create_pr",
         }
 
-    if not implemented_tasks:
-        logger.warning(f"No tasks implemented for {ticket_key}")
-        return update_state_timestamp(
-            {
-                **state,
-                "current_node": "teardown_workspace",
-                "last_error": None,
-            }
-        )
-
     logger.info(f"Creating PR for {ticket_key} ({len(implemented_tasks)} tasks)")
 
     github = GitHubClient()
@@ -116,7 +175,9 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
 
     try:
         # Set up workspace reference
-        branch_name = state.get("context", {}).get("branch_name", "")
+        context = state.get("context", {})
+        branch_name = context.get("branch_name", "")
+        default_branch = context.get("default_branch", "main")
         workspace = Workspace(
             path=Path(workspace_path),
             repo_name=current_repo,
@@ -125,30 +186,18 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
         )
         git = GitOperations(workspace)
 
-        # Parse owner/repo for upstream
-        owner, repo = current_repo.split("/")
-
-        # Get or create fork
-        logger.info(f"Getting or creating fork for {current_repo}")
-        fork_data = await github.get_or_create_fork(owner, repo)
-        fork_owner = fork_data["owner"]["login"]
-        fork_repo = fork_data["name"]
-
-        # Sync fork with upstream
-        await github.sync_fork_with_upstream(fork_owner, fork_repo)
-
-        # Add fork as remote
-        git.add_fork_remote(fork_owner, fork_repo)
+        pr_target = await prepare_pull_request_target(github, git, current_repo)
 
         # Check for merge conflicts before pushing
-        has_conflicts, conflicting_files = await check_merge_conflicts(git, "main")
+        has_conflicts, conflicting_files = await check_merge_conflicts(git, default_branch)
 
         if has_conflicts:
             logger.warning(f"Merge conflicts detected for {ticket_key}: {conflicting_files}")
 
             # Transition to blocked status
             await jira.set_workflow_label(ticket_key, ForgeLabel.BLOCKED)
-            await jira.add_comment(
+            await post_status_comment(
+                jira,
                 ticket_key,
                 "**Merge Conflicts Detected**\n\n"
                 "Cannot create PR due to merge conflicts with main branch.\n\n"
@@ -183,32 +232,51 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
         if not pr_body:
             pr_body = _build_pr_body(state, implemented_tasks)
 
-        # Create PR from fork to upstream
-        # Head format: "fork_owner:branch_name"
-        pr_data = await github.create_pull_request(
-            owner=owner,
-            repo=repo,
+        project_key = ticket_key.split("-")[0] if "-" in ticket_key else ticket_key
+        is_draft = await jira.is_repo_draft(project_key, current_repo)
+
+        pr_data = await open_pull_request_from_fork(
+            github,
+            pr_target,
+            branch_name=branch_name,
             title=pr_title,
             body=pr_body,
-            head=f"{fork_owner}:{branch_name}",
-            base="main",
+            base=default_branch,
+            draft=is_draft,
         )
 
         pr_url = pr_data.get("html_url", "")
         pr_number = pr_data.get("number")
+
+        # Log PR number extraction status
+        if pr_number is not None:
+            logger.debug(f"Successfully extracted PR number {pr_number} from GitHub API response")
+        else:
+            logger.warning(
+                f"PR number not available in GitHub API response for {ticket_key}. "
+                f"PR URL: {pr_url or 'unknown'}"
+            )
 
         # Store PR URL
         pr_urls = state.get("pr_urls", [])
         pr_urls.append(pr_url)
 
         # Add comment to Jira with PR link
-        await jira.add_comment(
+        await post_status_comment(
+            jira,
             ticket_key,
             f"Pull request created: {pr_url}\n\nImplements {len(implemented_tasks)} tasks.",
         )
 
         # Add remote link so the poller can discover the PR
-        await jira.create_remote_link(ticket_key, pr_url, f"PR #{pr_number}")
+        # Use pr_number if available, otherwise use generic label
+        pr_label = f"PR #{pr_number}" if pr_number is not None else "Pull Request"
+        await jira.create_remote_link(ticket_key, pr_url, pr_label)
+
+        if pr_number is not None:
+            logger.info(f"Created PR #{pr_number}: {pr_url}")
+        else:
+            logger.info(f"Created PR (number unavailable): {pr_url}")
 
         # Index PR URL → ticket key so the worker can resolve ticket association
         # from GitHub events without relying on PR/branch name parsing.
@@ -221,14 +289,16 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
                 exc_info=True,
             )
 
-        logger.info(f"Created PR #{pr_number}: {pr_url}")
+        # Transition Jira ticket to "In Review"
+        with contextlib.suppress(Exception):
+            await jira.transition_issue(ticket_key, "In Review")
 
         # Sync description to catch any inaccuracies from local_review commits
         await sync_pr_description(
             state,
             git,
-            owner=owner,
-            repo=repo,
+            owner=pr_target.owner,
+            repo=pr_target.repo,
             pr_number=pr_number,
             attempt=0,
         )
@@ -239,8 +309,8 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
                 "pr_urls": pr_urls,
                 "current_pr_url": pr_url,
                 "current_pr_number": pr_number,
-                "fork_owner": fork_owner,
-                "fork_repo": fork_repo,
+                "fork_owner": pr_target.fork_owner,
+                "fork_repo": pr_target.fork_repo,
                 "current_node": "teardown_workspace",
                 "last_error": None,
             }
@@ -248,9 +318,6 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
 
     except Exception as e:
         logger.error(f"PR creation failed for {ticket_key}: {e}")
-        from forge.workflow.nodes.error_handler import notify_error
-
-        await notify_error(state, str(e), "create_pr")
         return {
             **state,
             "last_error": str(e),
@@ -410,8 +477,13 @@ async def _generate_pr_body_with_agent(
 
     try:
         # Get commit log from the branch
+        default_branch = state.get("context", {}).get("default_branch", "main")
         commit_log = git._run_git(
-            "log", "origin/main..HEAD", "--pretty=format:%h %s%n%b", "--no-merges", check=False
+            "log",
+            f"origin/{default_branch}..HEAD",
+            "--pretty=format:%h %s%n%b",
+            "--no-merges",
+            check=False,
         ).stdout.strip()
 
         if not commit_log:
@@ -457,8 +529,18 @@ async def _generate_pr_body_with_agent(
             prompt=prompt,
             context={
                 "ticket_key": ticket_key,
-                "repo": current_repo,
                 "task_count": len(implemented_tasks),
+            },
+            trace_context={
+                "ticket_key": ticket_key,
+                "ticket_type": state.get("ticket_type", ""),
+                "current_node": state.get("current_node", ""),
+                "repo": current_repo,
+                "pr_number": state.get("current_pr_number", ""),
+                "ci_status": state.get("ci_status", ""),
+                "event_type": state.get("event_type", ""),
+                "event_source": state.get("context", {}).get("source", ""),
+                "retry_count": state.get("retry_count", 0),
             },
             include_tools=False,  # No tools needed for text generation
         )
@@ -502,13 +584,22 @@ async def teardown_and_route(state: WorkflowState) -> WorkflowState:
     remaining = [r for r in repos_to_process if r not in repos_completed]
 
     if remaining:
-        # Move to next repo
+        # Move to next repo — reset per-repo state
         return update_state_timestamp(
             {
                 **state,
                 "repos_completed": repos_completed,
                 "current_repo": remaining[0],
                 "implemented_tasks": [],
+                "current_task_key": None,
+                "fork_owner": None,
+                "fork_repo": None,
+                "current_pr_url": None,
+                "current_pr_number": None,
+                "review_verdict": None,
+                "review_feedback": None,
+                "qualitative_review_retry_count": 0,
+                "qualitative_review_failed": False,
                 "current_node": "setup_workspace",
             }
         )

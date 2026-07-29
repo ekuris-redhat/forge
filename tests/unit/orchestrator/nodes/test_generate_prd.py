@@ -39,8 +39,11 @@ class TestGeneratePrd:
             )
         )
         mock.update_description = AsyncMock()
+        mock.add_comment = AsyncMock()
         mock.set_workflow_label = AsyncMock()
         mock.add_structured_comment = AsyncMock()
+        mock.get_prd_proposals_repo = AsyncMock(return_value=None)
+        mock.get_proposals_path = AsyncMock(return_value=None)
         mock.close = AsyncMock()
         return mock
 
@@ -152,7 +155,10 @@ class TestRegeneratePrdWithFeedback:
         """Mock Jira client."""
         mock = MagicMock()
         mock.update_description = AsyncMock()
+        mock.add_structured_comment = AsyncMock()
         mock.add_comment = AsyncMock()
+        mock.get_prd_proposals_repo = AsyncMock(return_value=None)
+        mock.get_proposals_path = AsyncMock(return_value=None)
         mock.close = AsyncMock()
         return mock
 
@@ -180,9 +186,11 @@ class TestRegeneratePrdWithFeedback:
     @pytest.mark.asyncio
     async def test_clears_feedback_after_regeneration(self, state_with_feedback, mock_jira, mock_agent):
         """Feedback is cleared after regeneration."""
-        with patch("forge.workflow.nodes.prd_generation.JiraClient", return_value=mock_jira):
-            with patch("forge.workflow.nodes.prd_generation.ForgeAgent", return_value=mock_agent):
-                result = await regenerate_prd_with_feedback(state_with_feedback)
+        with (
+            patch("forge.workflow.nodes.prd_generation.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.prd_generation.ForgeAgent", return_value=mock_agent),
+        ):
+            result = await regenerate_prd_with_feedback(state_with_feedback)
 
         assert result["feedback_comment"] is None
         assert result["revision_requested"] is False
@@ -195,6 +203,57 @@ class TestRegeneratePrdWithFeedback:
                 result = await regenerate_prd_with_feedback(state_with_feedback)
 
         assert result["current_node"] == "prd_approval_gate"
+
+    @pytest.mark.asyncio
+    async def test_counts_completed_automated_revision(
+        self, state_with_feedback, mock_jira, mock_agent
+    ):
+        state_with_feedback["automated_review_revision_count"] = 2
+        state_with_feedback["automated_review_revision_pending"] = True
+
+        with (
+            patch("forge.workflow.nodes.prd_generation.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.prd_generation.ForgeAgent", return_value=mock_agent),
+        ):
+            result = await regenerate_prd_with_feedback(state_with_feedback)
+
+        assert result["automated_review_revision_count"] == 3
+        assert result["automated_review_revision_pending"] is False
+
+    @pytest.mark.asyncio
+    async def test_stores_in_comment_when_configured(self, state_with_feedback, mock_jira, mock_agent):
+        """Regenerated PRD is stored as structured comment when jira_store_in_comments is true."""
+        mock_settings = MagicMock()
+        mock_settings.jira_store_in_comments = True
+
+        with patch("forge.workflow.nodes.prd_generation.JiraClient", return_value=mock_jira):
+            with patch("forge.workflow.nodes.prd_generation.ForgeAgent", return_value=mock_agent):
+                with patch("forge.workflow.nodes.prd_generation.get_settings", return_value=mock_settings):
+                    await regenerate_prd_with_feedback(state_with_feedback)
+
+        mock_jira.add_structured_comment.assert_called_once_with(
+            "TEST-123",
+            "Product Requirements Document (PRD)",
+            "# Revised PRD\n\n## User Persona\nDetailed user persona.",
+            comment_type="prd",
+        )
+        mock_jira.update_description.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stores_in_description_when_configured(self, state_with_feedback, mock_jira, mock_agent):
+        """Regenerated PRD updates description when jira_store_in_comments is false."""
+        mock_settings = MagicMock()
+        mock_settings.jira_store_in_comments = False
+
+        with patch("forge.workflow.nodes.prd_generation.JiraClient", return_value=mock_jira):
+            with patch("forge.workflow.nodes.prd_generation.ForgeAgent", return_value=mock_agent):
+                with patch("forge.workflow.nodes.prd_generation.get_settings", return_value=mock_settings):
+                    await regenerate_prd_with_feedback(state_with_feedback)
+
+        mock_jira.update_description.assert_called_once_with(
+            "TEST-123", "# Revised PRD\n\n## User Persona\nDetailed user persona."
+        )
+        mock_jira.add_structured_comment.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_feedback_returns_unchanged(self, mock_jira, mock_agent):

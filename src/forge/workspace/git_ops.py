@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from forge.config import get_settings
+from forge.utils.redaction import redact_secrets
 from forge.workspace.manager import Workspace
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,11 @@ class GitOperations:
         """
         self.workspace = workspace
         self.settings = get_settings()
+        # Set by workspace recovery when this instance represents a replacement
+        # clone rather than the workspace recorded in workflow state.  The path
+        # alone cannot identify that case because managed workspaces reuse a
+        # deterministic path for each ticket and repository.
+        self.workspace_recreated = False
 
     @property
     def repo_path(self) -> Path:
@@ -44,7 +50,8 @@ class GitOperations:
             CompletedProcess result.
         """
         cmd = ["git", *args]
-        logger.debug(f"Running: {' '.join(cmd)} in {self.repo_path}")
+        safe_cmd = redact_secrets(" ".join(cmd))
+        logger.debug(f"Running: {safe_cmd} in {self.repo_path}")
 
         result = subprocess.run(
             cmd,
@@ -56,7 +63,7 @@ class GitOperations:
 
         if check and result.returncode != 0:
             error_msg = result.stderr or result.stdout or "Unknown error"
-            raise GitError(f"Git command failed: {' '.join(cmd)}\n{error_msg}")
+            raise GitError(f"Git command failed: {safe_cmd}\n{error_msg}")
 
         return result
 
@@ -96,7 +103,7 @@ class GitOperations:
             elapsed = time.time() - start_time
             logger.info(f"Clone completed for {self.workspace.repo_name} in {elapsed:.1f}s")
             if result.stderr:
-                logger.debug(f"Clone stderr: {result.stderr[:500]}")
+                logger.debug(f"Clone stderr: {redact_secrets(result.stderr[:500])}")
         except subprocess.TimeoutExpired:
             elapsed = time.time() - start_time
             logger.error(
@@ -105,10 +112,16 @@ class GitOperations:
             )
             raise GitError(f"Clone timed out after {timeout}s for {self.workspace.repo_name}")
         except subprocess.CalledProcessError as e:
+            stderr = e.stderr or ""
+            stdout = e.stdout or ""
+            output = stderr or stdout or "Unknown error"
             logger.error(
-                f"Clone failed for {self.workspace.repo_name}: {e.stderr[:500] if e.stderr else 'no stderr'}"
+                f"Clone failed for {self.workspace.repo_name}: {redact_secrets(output[:500])}"
             )
-            raise
+            raise GitError(
+                f"Git clone failed for {self.workspace.repo_name} with exit code "
+                f"{e.returncode}: {output}"
+            )
 
     def pull_rebase(self, remote: str = "fork") -> None:
         """Fetch and rebase the current branch onto its remote counterpart.
@@ -123,6 +136,13 @@ class GitOperations:
         branch = self.workspace.branch_name
         logger.info(f"Syncing with {remote}/{branch} before implementing changes")
         self._run_git("fetch", remote)
+        if not self.remote_branch_exists(branch, remote=remote):
+            logger.info(
+                "Remote branch %s/%s does not exist yet; skipping rebase before first push",
+                remote,
+                branch,
+            )
+            return
         self._run_git("rebase", f"{remote}/{branch}")
         logger.info(f"Rebase onto {remote}/{branch} complete")
 
@@ -199,8 +219,9 @@ class GitOperations:
         logger.info(f"Checked out branch {branch}")
 
     def stage_all(self) -> None:
-        """Stage all changes."""
-        self._run_git("add", "-A")
+        """Stage all user-facing changes, excluding Forge internal files."""
+        self._run_git("rm", "-r", "--cached", "--ignore-unmatch", ".forge", check=False)
+        self._run_git("add", "-A", "--", ".", ":!.forge", ":!.forge/**")
 
     def stage_files(self, *files: str) -> None:
         """Stage specific files.
@@ -247,7 +268,7 @@ class GitOperations:
         Returns:
             True if the branch exists on the remote.
         """
-        result = self._run_git("ls-remote", "--heads", remote, branch_name, check=False)
+        result = self._run_git("ls-remote", "--heads", "--", remote, branch_name, check=False)
         return bool(result.stdout.strip())
 
     def check_for_conflicts(self, target_branch: str = "main") -> tuple[bool, list[str]]:
@@ -267,7 +288,7 @@ class GitOperations:
 
         # Check if remote branch exists
         result = self._run_git(
-            "ls-remote", "--heads", "origin", self.workspace.branch_name, check=False
+            "ls-remote", "--heads", "--", "origin", self.workspace.branch_name, check=False
         )
 
         if not result.stdout.strip():
@@ -404,4 +425,6 @@ class GitOperations:
 class GitError(Exception):
     """Raised when a git operation fails."""
 
-    pass
+    def __init__(self, message: object):
+        """Initialize with a redacted error message."""
+        super().__init__(redact_secrets(message))

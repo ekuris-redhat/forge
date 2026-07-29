@@ -5,7 +5,7 @@ The PRD approval workflow uses labels:
 - forge:prd-approved - PRD approved (triggers spec generation)
 
 To approve: Change label from forge:prd-pending to forge:prd-approved
-To request revision: Add a comment with feedback (keep forge:prd-pending)
+To request revision: Add a comment starting with ! (keep forge:prd-pending)
 """
 
 import logging
@@ -25,7 +25,7 @@ def prd_approval_gate(state: WorkflowState) -> WorkflowState:
     This gate pauses the workflow until a human approves or rejects
     the generated PRD. The workflow resumes when:
     - Label changes to forge:prd-approved -> continue to spec generation
-    - Comment added with feedback -> regenerate PRD with feedback
+    - Comment starting with ! -> regenerate PRD with feedback
 
     Args:
         state: Current workflow state.
@@ -44,7 +44,8 @@ def route_prd_approval(state: WorkflowState) -> str:
 
     This routing function determines the next node after PRD approval gate:
     - If question (Q&A mode) -> answer_question
-    - If feedback provided (revision requested) -> regenerate PRD
+    - If yolo_mode enabled -> auto-approve without human input
+    - If ! feedback provided (revision requested) -> regenerate PRD
     - If still paused -> END (wait for next webhook to resume)
     - Otherwise (approved) -> proceed to spec generation
 
@@ -59,7 +60,13 @@ def route_prd_approval(state: WorkflowState) -> str:
         logger.info(f"Q&A mode: routing to answer_question for {state['ticket_key']}")
         return "answer_question"
 
-    # Check if revision was requested via comment
+    # YOLO mode: auto-approve without human input
+    if state.get("yolo_mode"):
+        logger.info(f"YOLO mode: auto-approving PRD for {state['ticket_key']}")
+        record_approval("prd")
+        return "generate_spec"
+
+    # Check if revision was requested via ! comment
     if state.get("revision_requested") and state.get("feedback_comment"):
         logger.info(f"PRD revision requested for {state['ticket_key']}")
         record_revision_requested("prd")

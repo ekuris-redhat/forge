@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any
 
+from forge.config import get_settings
 from forge.models.workflow import TicketType
 from forge.workflow.base import (
     BaseState,
@@ -66,6 +67,7 @@ class BugState(
 def create_initial_bug_state(ticket_key: str, **kwargs: Any) -> BugState:
     """Create initial state for a new Bug workflow run."""
     now = datetime.utcnow().isoformat()
+    settings = get_settings()
 
     # Default values - can be overridden by kwargs
     defaults = {
@@ -86,6 +88,12 @@ def create_initial_bug_state(ticket_key: str, **kwargs: Any) -> BugState:
         "fork_repo": None,
         "merge_conflicts": [],
         "local_review_attempts": 0,
+        "local_review_pass_number": 1,
+        "implementation_push_pending": False,
+        "implementation_push_pending_task": None,
+        "persistence_retry_count": 0,
+        "review_push_pending": False,
+        "review_push_pending_updates": {},
         "tdd_approach": False,
         "ci_status": None,
         "current_pr_url": None,
@@ -96,8 +104,9 @@ def create_initial_bug_state(ticket_key: str, **kwargs: Any) -> BugState:
         "implemented_tasks": [],
         "current_task_key": None,
         "ci_failed_checks": [],
-        "ci_fix_attempts": 0,
         "ci_skipped_checks": [],
+        "ci_fix_attempt": 0,
+        "ci_fix_max_attempts": settings.ci_fix_max_retries,
         "ai_review_status": None,
         "ai_review_results": [],
         "human_review_status": None,
@@ -132,6 +141,7 @@ def create_initial_bug_state(ticket_key: str, **kwargs: Any) -> BugState:
         "qualitative_retry_count": 0,
         "qualitative_review_failed": False,
         "reflect_rca_retry_count": 0,
+        "yolo_mode": False,
     }
 
     # Merge with kwargs, letting kwargs override defaults

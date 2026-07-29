@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from forge.integrations.jira.client import JiraClient, MissingProjectConfig
+from forge.integrations.jira.models import JiraIssue
 from forge.models.workflow import ForgeLabel
 
 
@@ -88,6 +89,44 @@ class TestJiraClientGetIssue:
         assert issue.issue_type == "Feature"
 
 
+class TestJiraClientStructuredComments:
+    """Tests for structured artifact comments."""
+
+    @pytest.fixture
+    def jira_client(self):
+        """Create client with mocked settings."""
+        with patch("forge.integrations.jira.client.get_settings") as mock_settings:
+            mock_settings.return_value.jira_base_url = "https://test.atlassian.net"
+            mock_settings.return_value.jira_api_token = MagicMock()
+            mock_settings.return_value.jira_api_token.get_secret_value.return_value = "token"
+            mock_settings.return_value.jira_user_email = "test@example.com"
+            return JiraClient()
+
+    @pytest.mark.asyncio
+    async def test_add_structured_comment_includes_interaction_options_outside_marker(
+        self, jira_client
+    ):
+        """Artifact comments include actions without polluting stored content."""
+        jira_client.add_comment = AsyncMock(return_value=MagicMock())
+
+        await jira_client.add_structured_comment(
+            "TEST-123",
+            "Product Requirements Document (PRD)",
+            "# PRD\n\nGenerated content.",
+            comment_type="prd",
+        )
+
+        body = jira_client.add_comment.call_args.args[1]
+        assert body.startswith("[FORGE:PRD]\n# Product Requirements Document (PRD)")
+        assert "[/FORGE:PRD]\n\n## 🤖 Forge interaction options" in body
+        assert "**Approve:** add `forge:prd-approved` to continue." in body
+        assert "**Request changes:** add a Jira comment starting with `!`" in body
+        assert "**Ask a question:** add a Jira comment starting with `?`." in body
+        assert "@forge ask" not in body
+        marker_end = body.index("[/FORGE:PRD]")
+        assert "## 🤖 Forge interaction options" not in body[:marker_end]
+
+
 class TestJiraClientLabels:
     """Tests for label operations."""
 
@@ -168,6 +207,150 @@ class TestJiraClientLabels:
         assert any(op["add"] == ForgeLabel.PRD_APPROVED.value for op in add_ops)
 
 
+class TestJiraClientArchiveIssue:
+    """Tests for archive_issue method."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create client with mocked settings."""
+        with patch("forge.integrations.jira.client.get_settings") as mock_settings:
+            mock_settings.return_value.jira_base_url = "https://test.atlassian.net"
+            mock_settings.return_value.jira_api_token = MagicMock()
+            mock_settings.return_value.jira_api_token.get_secret_value.return_value = "token"
+            mock_settings.return_value.jira_user_email = "test@example.com"
+
+            client = JiraClient()
+            return client
+
+    @pytest.mark.asyncio
+    async def test_archive_issue_updates_labels_unlinks_parent_and_archives_natively(
+        self, mock_client
+    ):
+        """archive_issue cleans labels, unlinks parent, and calls native archive endpoint."""
+        issue = MagicMock()
+        issue.labels = ["forge:managed", "forge:task-pending", "repo:acme/backend"]
+        mock_client.get_issue = AsyncMock(return_value=issue)
+
+        label_response = MagicMock()
+        label_response.raise_for_status = MagicMock()
+        parent_response = MagicMock()
+        parent_response.raise_for_status = MagicMock()
+        archive_response = MagicMock()
+        archive_response.raise_for_status = MagicMock()
+        archive_response.json.return_value = {"errors": {}, "numberOfIssuesUpdated": 1}
+
+        with patch.object(mock_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.put = AsyncMock(
+                side_effect=[label_response, parent_response, archive_response]
+            )
+            mock_get_client.return_value = mock_http
+
+            await mock_client.archive_issue("TEST-123", archive_subtasks=False)
+
+        assert mock_http.put.await_args_list[0].args[0] == "/issue/TEST-123"
+        label_ops = mock_http.put.await_args_list[0].kwargs["json"]["update"]["labels"]
+        assert {"remove": "forge:managed"} in label_ops
+        assert {"remove": "forge:task-pending"} in label_ops
+        assert {"add": "forge:archived"} in label_ops
+
+        assert mock_http.put.await_args_list[1].args[0] == "/issue/TEST-123"
+        assert mock_http.put.await_args_list[1].kwargs["json"] == {"fields": {"parent": None}}
+
+        assert mock_http.put.await_args_list[2].args[0] == "/issue/archive"
+        assert mock_http.put.await_args_list[2].kwargs["json"] == {"issueIdsOrKeys": ["TEST-123"]}
+
+    @pytest.mark.asyncio
+    async def test_archive_issue_logs_native_archive_body_errors(self, mock_client, caplog):
+        """Jira may return HTTP 200 with per-issue archive failures in the body."""
+        import logging
+
+        issue = MagicMock()
+        issue.labels = ["forge:managed"]
+        mock_client.get_issue = AsyncMock(return_value=issue)
+
+        label_response = MagicMock()
+        label_response.raise_for_status = MagicMock()
+        parent_response = MagicMock()
+        parent_response.raise_for_status = MagicMock()
+        archive_response = MagicMock()
+        archive_response.raise_for_status = MagicMock()
+        archive_response.json.return_value = {
+            "errors": {
+                "issueIsSubtask": {
+                    "count": 1,
+                    "issueIdsOrKeys": ["TEST-123"],
+                    "message": "Issue is subtask.",
+                }
+            },
+            "numberOfIssuesUpdated": 0,
+        }
+
+        with patch.object(mock_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.put = AsyncMock(
+                side_effect=[label_response, parent_response, archive_response]
+            )
+            mock_get_client.return_value = mock_http
+
+            with caplog.at_level(logging.WARNING, logger="forge.integrations.jira.client"):
+                await mock_client.archive_issue("TEST-123", archive_subtasks=False)
+
+        assert any(
+            "Failed to natively archive TEST-123" in record.message
+            and "Issue is subtask." in record.message
+            for record in caplog.records
+        )
+
+
+class TestJiraClientErrorComments:
+    """Tests for error comment safety."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create client with mocked settings."""
+        with patch("forge.integrations.jira.client.get_settings") as mock_settings:
+            mock_settings.return_value.jira_base_url = "https://test.atlassian.net"
+            mock_settings.return_value.jira_api_token = MagicMock()
+            mock_settings.return_value.jira_api_token.get_secret_value.return_value = "token"
+            mock_settings.return_value.jira_user_email = "test@example.com"
+
+            client = JiraClient()
+            return client
+
+    @pytest.mark.asyncio
+    async def test_add_error_comment_redacts_authenticated_git_urls(self, mock_client):
+        """Error comments must not include GitHub tokens from git command errors."""
+        token = "gh" + "p_" + "abcdefghijklmnopqrstuvwxyz123456"
+        raw_url = f"https://x-access-token:{token}@github.com/org/repo.git"
+        error_message = f"Command '['git', 'clone', '{raw_url}']' failed"
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "id": "10000",
+            "body": "ok",
+            "author": {"accountId": "bot", "displayName": "Bot"},
+        }
+
+        with patch.object(mock_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.post = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            await mock_client.add_error_comment(
+                issue_key="TEST-123",
+                error_message=error_message,
+                node_name="setup_workspace",
+            )
+
+        body = mock_http.post.await_args.kwargs["json"]["body"]
+        posted_text = str(body)
+        assert "ghp_" not in posted_text
+        assert raw_url not in posted_text
+        assert "https://[REDACTED]@github.com/org/repo.git" in posted_text
+
+
 class TestJiraClientADF:
     """Tests for ADF conversion."""
 
@@ -219,6 +402,65 @@ class TestJiraClientADF:
         # Should have paragraph with inline marks
         assert adf["content"][0]["type"] == "paragraph"
 
+    def test_issue_description_extracts_epic_plan_blocks(self):
+        """Epic plan descriptions survive the markdown to ADF to JiraIssue round trip."""
+        plan = """# Task Takeover Routing
+
+- Keep workflow identity in TaskTakeoverWorkflow.matches().
+- Preserve forge:managed as the user-facing workflow opt-in.
+
+```python
+def matches(issue):
+    return True
+```"""
+        adf = JiraClient._text_to_adf(plan)
+
+        issue = JiraIssue.from_api_response(
+            {
+                "key": "AISOS-1981",
+                "id": "10001",
+                "fields": {
+                    "summary": "Task Takeover Routing",
+                    "description": adf,
+                    "status": {"name": "To Do"},
+                    "issuetype": {"name": "Epic"},
+                },
+            }
+        )
+
+        assert "# Task Takeover Routing" in issue.description
+        assert "- Keep workflow identity" in issue.description
+        assert "- Preserve forge:managed" in issue.description
+        assert "```python" in issue.description
+        assert "def matches(issue):" in issue.description
+
+    def test_issue_description_preserves_unparsed_adf_node(self):
+        """Unknown ADF nodes should not disappear from issue descriptions."""
+        issue = JiraIssue.from_api_response(
+            {
+                "key": "AISOS-1981",
+                "id": "10001",
+                "fields": {
+                    "summary": "Unknown node",
+                    "description": {
+                        "type": "doc",
+                        "version": 1,
+                        "content": [
+                            {
+                                "type": "unsupportedWidget",
+                                "attrs": {"payload": "important raw context"},
+                            }
+                        ],
+                    },
+                    "status": {"name": "To Do"},
+                    "issuetype": {"name": "Epic"},
+                },
+            }
+        )
+
+        assert "unsupportedWidget" in issue.description
+        assert "important raw context" in issue.description
+
 
 @pytest.fixture
 def jira_client():
@@ -237,10 +479,6 @@ class TestGetProjectProperty:
     @pytest.mark.asyncio
     async def test_returns_value_on_success(self, jira_client):
         """Returns the property value when the API responds with 200."""
-        import forge.integrations.jira.client as client_module
-
-        client_module._project_property_cache.clear()
-
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"key": "forge.repos", "value": ["acme/backend"]}
@@ -256,29 +494,8 @@ class TestGetProjectProperty:
         assert result == ["acme/backend"]
 
     @pytest.mark.asyncio
-    async def test_returns_cached_value_on_second_call(self, jira_client):
-        """Returns cached value without hitting the API on second call."""
-        import forge.integrations.jira.client as client_module
-
-        client_module._project_property_cache.clear()
-        client_module._project_property_cache[("MYPROJ", "forge.repos")] = ["cached/repo"]
-
-        with patch.object(jira_client, "_get_client") as mock_get_client:
-            mock_http = AsyncMock()
-            mock_get_client.return_value = mock_http
-
-            result = await jira_client.get_project_property("MYPROJ", "forge.repos")
-
-        mock_http.get.assert_not_called()
-        assert result == ["cached/repo"]
-
-    @pytest.mark.asyncio
     async def test_returns_none_on_404(self, jira_client):
         """Returns None when the property is not set (404)."""
-        import forge.integrations.jira.client as client_module
-
-        client_module._project_property_cache.clear()
-
         mock_response = MagicMock()
         mock_response.status_code = 404
 
@@ -503,42 +720,6 @@ class TestGetSkillsConfig:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_does_not_use_project_property_cache(self, jira_client):
-        """get_skills_config bypasses _project_property_cache for fresh reads."""
-        import forge.integrations.jira.client as client_module
-
-        # Pre-populate the cache with a stale value for this key
-        client_module._project_property_cache[("MYPROJ", "forge.skills")] = [
-            {"source": "https://github.com/stale/skills", "path": "old"}
-        ]
-
-        mock_response = self._make_response(
-            200,
-            {
-                "value": [
-                    {"source": "https://github.com/fresh/skills", "ref": "main", "path": "skill_0"},
-                ]
-            },
-        )
-
-        with patch.object(jira_client, "_get_client") as mock_get_client:
-            mock_http = AsyncMock()
-            mock_http.get = AsyncMock(return_value=mock_response)
-            mock_get_client.return_value = mock_http
-
-            result = await jira_client.get_skills_config("MYPROJ")
-
-        # Should return fresh API data, not the stale cache
-        assert result is not None
-        assert len(result) == 1
-        assert result[0].source == "https://github.com/fresh/skills"
-        # HTTP call must have been made (not served from cache)
-        mock_http.get.assert_called_once_with("/project/MYPROJ/properties/forge.skills")
-
-        # Restore cache state
-        client_module._project_property_cache.clear()
-
-    @pytest.mark.asyncio
     async def test_returns_empty_list_for_empty_list(self, jira_client):
         """Returns empty list when forge.skills is set to an empty array."""
         mock_response = self._make_response(200, {"value": []})
@@ -573,3 +754,131 @@ class TestGetSkillsConfig:
         assert len(result) == 1
         assert isinstance(result[0], SkillEntry)
         assert result[0].source == "https://github.com/acme/skills"
+
+
+class TestJiraClientListProjectProperties:
+    """Tests for list_project_properties method."""
+
+    @pytest.mark.asyncio
+    async def test_success_case(self, jira_client):
+        """Successfully parses valid project properties."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "keys": [{"key": "forge.repos", "self": "https://..."}, {"key": "forge.default_repo"}]
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            result = await jira_client.list_project_properties("MYPROJ")
+
+        assert result == ["forge.repos", "forge.default_repo"]
+        mock_http.get.assert_called_once_with("/project/MYPROJ/properties")
+
+    @pytest.mark.asyncio
+    async def test_empty_properties_list(self, jira_client):
+        """Returns empty list when response keys list is empty or missing."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"keys": []}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            result1 = await jira_client.list_project_properties("MYPROJ")
+
+        assert result1 == []
+
+        # Missing keys key completely
+        mock_response.json.return_value = {}
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            result2 = await jira_client.list_project_properties("MYPROJ")
+
+        assert result2 == []
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_project_404(self, jira_client):
+        """Raises httpx.HTTPStatusError on 404 response."""
+        import httpx
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        request = httpx.Request(
+            "GET", "https://test.atlassian.net/rest/api/3/project/MYPROJ/properties"
+        )
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Not Found", request=request, response=mock_response
+        )
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            with pytest.raises(httpx.HTTPStatusError):
+                await jira_client.list_project_properties("MYPROJ")
+
+    @pytest.mark.asyncio
+    async def test_authorization_failure_403(self, jira_client):
+        """Raises httpx.HTTPStatusError on 403 response."""
+        import httpx
+
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        request = httpx.Request(
+            "GET", "https://test.atlassian.net/rest/api/3/project/MYPROJ/properties"
+        )
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Forbidden", request=request, response=mock_response
+        )
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            with pytest.raises(httpx.HTTPStatusError):
+                await jira_client.list_project_properties("MYPROJ")
+
+    @pytest.mark.asyncio
+    async def test_malformed_response(self, jira_client):
+        """Raises ValueError if the response is malformed."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        import json
+
+        mock_response.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http
+
+            with pytest.raises(ValueError, match="Malformed Jira project properties response"):
+                await jira_client.list_project_properties("MYPROJ")
+
+        # Non-dictionary key in list
+        mock_response2 = MagicMock()
+        mock_response2.status_code = 200
+        mock_response2.json.return_value = {"keys": ["not-a-dict"]}
+        mock_response2.raise_for_status = MagicMock()
+
+        with patch.object(jira_client, "_get_client") as mock_get_client:
+            mock_http2 = AsyncMock()
+            mock_http2.get = AsyncMock(return_value=mock_response2)
+            mock_get_client.return_value = mock_http2
+
+            result = await jira_client.list_project_properties("MYPROJ")
+            assert result == []

@@ -17,6 +17,9 @@ class BaseState(TypedDict, total=False):
     thread_id: str
     ticket_key: str
 
+    # Event origin
+    event_type: str
+
     # Execution control
     current_node: str
     is_paused: bool
@@ -31,6 +34,7 @@ class BaseState(TypedDict, total=False):
     # Feedback (human-in-the-loop)
     feedback_comment: str | None
     revision_requested: bool
+    yolo_mode: bool  # When True, approval gates auto-pass without human input
 
     # Message history
     messages: Annotated[list[Any], add_messages]
@@ -53,6 +57,12 @@ class PRIntegrationState(TypedDict, total=False):
     fork_repo: str | None
     merge_conflicts: list[str]
     local_review_attempts: int
+    local_review_pass_number: int
+    implementation_push_pending: bool
+    implementation_push_pending_task: str | None
+    persistence_retry_count: int
+    review_push_pending: bool
+    review_push_pending_updates: dict[str, Any]
 
 
 class CIIntegrationState(TypedDict, total=False):
@@ -60,8 +70,9 @@ class CIIntegrationState(TypedDict, total=False):
 
     ci_status: str | None
     ci_failed_checks: list[dict[str, Any]]
-    ci_fix_attempts: int
     ci_skipped_checks: list[str]
+    ci_fix_attempt: int
+    ci_fix_max_attempts: int
 
 
 class ReviewIntegrationState(TypedDict, total=False):

@@ -57,6 +57,10 @@ class TestPromptLoading:
             "decompose-epics",
             "analyze-bug",
             "regenerate",
+            "task-takeover-triage",
+            "task-takeover-planning",
+            "task-takeover-qa",
+            "task-takeover-review",
         ]
 
         for expected in expected_prompts:
@@ -112,6 +116,91 @@ class TestVariableSubstitution:
 
         assert "2024-03-20" in result
         assert "ignored" not in result
+
+
+class TestDecomposeEpicsPrompt:
+    """Tests for Epic decomposition prompt guardrails."""
+
+    def test_decompose_epics_requires_repository_grounding(self):
+        """Epic decomposition should require real repo inspection before paths."""
+        result = load_prompt(
+            "decompose-epics",
+            spec_content="Spec content",
+            feature_summary="Feature summary",
+            project_key="AISOS",
+            repo_instruction="AVAILABLE REPOSITORIES:\n  - forge-sdlc/forge",
+        )
+
+        assert "Repository Grounding Requirements" in result
+        assert "inspect every target repository" in result
+        assert "AGENTS.md" in result
+        assert "CLAUDE.md" in result
+        assert "repository standards" in result
+        assert "test runner" in result
+        assert "Prefer targeted codebase exploration" in result
+        assert "relevant guidance, code, and nearby tests" in result
+        assert "nearby code patterns" in result
+        assert "instead of broadening into unrelated repo areas" in result
+        assert "Broaden the search when needed" in result
+        assert "unrelated branches, open issues, pull requests" in result
+        assert "Do not invent generic paths" in result
+        assert "repo grounding failed" in result
+
+
+class TestPlanningPromptGrounding:
+    """Tests for planning prompt repository grounding guardrails."""
+
+    def test_generate_tasks_preserves_bounded_repo_grounding(self):
+        """Task generation should preserve grounded paths without full repo rediscovery."""
+        result = load_prompt(
+            "generate-tasks",
+            spec_content="Spec content",
+            epic_summary="Epic summary",
+            epic_plan="Plan content",
+            sibling_epics_section="None",
+            existing_tasks_section="None",
+        )
+
+        assert (
+            "Prefer additional codebase exploration only for missing implementation details"
+            in result
+        )
+        assert "broaden the search when needed" in result
+        assert "unrelated branches, open issues, pull requests" in result
+        assert "nearby source/test patterns" in result
+        assert "follow nearby source/test patterns" in result
+
+    def test_bug_plan_prompts_bound_repo_reinspection(self):
+        """Bug planning and revision should bound repo inspection to relevant details."""
+        plan_prompt = load_prompt(
+            "plan-bug-fix",
+            ticket_key="BUG-1",
+            bug_summary="Bug summary",
+            rca_content="RCA",
+            fix_approach_title="Fix",
+            fix_approach_description="Description",
+            fix_approach_tradeoffs="Tradeoffs",
+            known_repos="acme/backend",
+        )
+        regenerate_prompt = load_prompt(
+            "regenerate-plan",
+            ticket_key="BUG-1",
+            bug_summary="Bug summary",
+            rca_content="RCA",
+            fix_approach_title="Fix",
+            fix_approach_description="Description",
+            fix_approach_tradeoffs="Tradeoffs",
+            original_plan="Original",
+            feedback_comment="Feedback",
+            known_repos="acme/backend",
+        )
+
+        assert "Prefer codebase exploration focused" in plan_prompt
+        assert "unrelated branches, open issues, pull requests" in plan_prompt
+        assert "guessing from path names alone" in plan_prompt
+        assert "Prefer focused codebase re-inspection" in regenerate_prompt
+        assert "unrelated branches, open issues, pull requests" in regenerate_prompt
+        assert "nearby source and test patterns" in regenerate_prompt
 
 
 class TestVersionManagement:
@@ -173,6 +262,62 @@ class TestPromptContent:
         assert "Test requirements" in result
         assert "Test context" in result
 
+    def test_task_takeover_triage_prompt(self):
+        """task-takeover-triage prompt should allow contained tasks without formal sections."""
+        result = load_prompt(
+            "task-takeover-triage",
+            summary="Test summary",
+            description="Test description",
+            comments="Test comments",
+        )
+
+        assert "Problem Statement" in result
+        assert "Proposed Solution/Approach" in result
+        assert "Acceptance Criteria" in result
+        assert "Do not require formal section headings" in result
+        assert "small and contained" in result
+        assert "Target repository/file" in result
+        assert "Test description" in result
+        assert "Test comments" in result
+
+    def test_task_takeover_planning_prompt(self):
+        """task-takeover-planning prompt should map solutions to repository files and test plans."""
+        result = load_prompt(
+            "task-takeover-planning",
+            ticket_key="AISOS-1234",
+            summary="Test summary",
+            description="Test description",
+            comments="Test comments",
+            known_repos="acme/repo",
+            file_metadata="file1.py\nfile2.py",
+        )
+
+        assert "AISOS-1234" in result
+        assert "acme/repo" in result
+        assert "file1.py" in result
+        assert "Target Files" in result
+        assert "Test Plans" in result
+        assert "Implementation Steps" in result
+        assert "repository-relative paths only" in result
+        assert "/home/..." in result
+        assert "/workspace/..." in result
+
+    def test_task_takeover_qa_prompt(self):
+        """task-takeover-qa prompt should provide guidelines for contextual Q&A during planning."""
+        result = load_prompt(
+            "task-takeover-qa",
+            ticket_key="AISOS-1234",
+            summary="Test summary",
+            description="Test description",
+            plan_content="Test plan content",
+            question="What is the test plan?",
+        )
+
+        assert "AISOS-1234" in result
+        assert "Test plan content" in result
+        assert "What is the test plan?" in result
+        assert "clarifying question" in result
+
     def test_prompts_are_reasonable_length(self):
         """Prompts should not be excessively long (sanity check)."""
         # A rough estimate: 1 token ~ 4 characters
@@ -194,13 +339,13 @@ class TestPromptEdgeCases:
         """Variables with special characters should be handled."""
         result = load_prompt(
             "generate-prd",
-            raw_requirements="Test with $pecial ch@racters & symbols < > \"quotes\"",
+            raw_requirements='Test with $pecial ch@racters & symbols < > "quotes"',
             context="Normal context",
         )
 
         assert "$pecial" in result
         assert "ch@racters" in result
-        assert "\"quotes\"" in result
+        assert '"quotes"' in result
 
     def test_prompt_with_multiline_value(self):
         """Multiline variable values should be preserved."""
@@ -237,7 +382,7 @@ Line 3 with indent
         # This documents current behavior
         result = load_prompt(
             "generate-prd",
-            raw_requirements="JSON: {\"key\": \"value\"}",
+            raw_requirements='JSON: {"key": "value"}',
             context="Normal",
         )
 

@@ -20,6 +20,10 @@ from forge.workflow.gates.task_approval import (
     route_task_approval,
     task_approval_gate,
 )
+from forge.workflow.gates.task_plan_approval import (
+    route_task_plan_approval,
+    task_plan_approval_gate,
+)
 
 __all__ = [
     "prd_approval_gate",
@@ -30,4 +34,6 @@ __all__ = [
     "route_plan_approval",
     "route_task_approval",
     "task_approval_gate",
+    "route_task_plan_approval",
+    "task_plan_approval_gate",
 ]

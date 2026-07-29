@@ -21,17 +21,35 @@ from forge.config import get_settings
 from forge.integrations.github.client import GitHubClient
 from forge.integrations.jira.client import JiraClient
 from forge.models.events import EventSource
-from forge.models.workflow import TicketType
+from forge.models.workflow import ForgeLabel, TicketType
 from forge.orchestrator.checkpointer import get_checkpointer, get_ticket_from_pr_index
 from forge.queue.consumer import QueueConsumer
 from forge.queue.models import QueueMessage
 from forge.skills.orchestrator import ensure_skills
 from forge.skills.utils import extract_project_key
+from forge.utils.redaction import redact_secrets
+from forge.workflow.nodes.error_handler import notify_error
 from forge.workflow.registry import create_default_router
 from forge.workflow.router import WorkflowRouter
+from forge.workflow.utils.automated_review_triage import (
+    is_bot_sender,
+    triage_automated_review,
+)
 from forge.workflow.utils.comment_classifier import CommentType, classify_comment
+from forge.workflow.utils.jira_status import post_status_comment
+from forge.workflow.utils.proposal_review_threads import (
+    reply_to_proposal_decisions,
+    triage_proposal_review_threads,
+)
+from forge.workflow.utils.review_decisions import (
+    decision_matches_comment,
+    flatten_review_threads,
+    merge_review_decisions,
+)
 
 logger = logging.getLogger(__name__)
+
+_CI_STAGES = ("wait_for_ci_gate", "ci_evaluator", "attempt_ci_fix")
 
 
 def _is_workflow_errored(state: dict) -> bool:
@@ -39,9 +57,50 @@ def _is_workflow_errored(state: dict) -> bool:
     return not state.get("is_paused") and state.get("last_error") is not None
 
 
+def _has_new_reportable_error(result: dict, error_before_invoke: str | None) -> bool:
+    """Return whether an invocation produced an error that should be reported."""
+    last_error = result.get("last_error")
+    return bool(last_error and last_error != error_before_invoke)
+
+
+async def _report_new_workflow_error(result: dict, error_before_invoke: str | None) -> None:
+    """Post one notification when an invocation produces a reportable error."""
+    if not _has_new_reportable_error(result, error_before_invoke):
+        return
+
+    await notify_error(
+        result,
+        result["last_error"],
+        result.get("current_node", "unknown"),
+    )
+
+
+_PRD_GATE_NODES = ("prd_approval_gate", "generate_prd", "regenerate_prd")
+_SPEC_GATE_NODES = ("spec_approval_gate", "generate_spec", "regenerate_spec")
+_REVIEW_GATES = ("human_review_gate", "review_response_gate")
+_MAX_AUTOMATED_REVIEW_REVISIONS = 3
+
+_FRESH_INVOKE_NODES = (
+    "ci_evaluator",
+    "attempt_ci_fix",
+    "human_review_gate",
+    "rebase_pr",
+    "setup_workspace",
+)
+
 # Matches >option N anywhere in comment (case-insensitive, first match wins)
 # Supports both start-of-line usage (>option 2) and in-prose usage (let's go with >option 2)
 _OPTION_PATTERN = re.compile(r"(?mi)>option\s+(\d+)")
+
+# Gates where forge:yolo label addition triggers auto-approval and workflow resumption
+_YOLO_GATES = {
+    "prd_approval_gate",
+    "spec_approval_gate",
+    "plan_approval_gate",
+    "task_plan_approval_gate",
+    "task_approval_gate",
+    "rca_option_gate",
+}
 
 
 class OrchestratorWorker:
@@ -65,6 +124,21 @@ class OrchestratorWorker:
         self._shutdown_event = asyncio.Event()
         self._checkpointer = None
         self._compiled_workflows: dict[str, Any] = {}  # Cache compiled workflows by name
+        self._forge_github_login: str | None = None
+
+    async def _get_forge_github_login(self) -> str:
+        """Resolve and cache the authenticated Forge GitHub login."""
+        cached = getattr(self, "_forge_github_login", None)
+        if cached:
+            return cached
+        github = GitHubClient()
+        try:
+            login = (await github.get_authenticated_user()).get("login", "")
+        finally:
+            await github.close()
+        if login:
+            self._forge_github_login = login
+        return login
 
     async def _handle_jira_event(self, message: QueueMessage) -> None:
         """Handle a Jira webhook event.
@@ -150,6 +224,40 @@ class OrchestratorWorker:
 
         return message
 
+    def _is_prd_pr_event(self, message: QueueMessage, current_state: dict[str, Any]) -> bool:
+        """Check if a GitHub event targets the PRD proposals PR."""
+        if message.source != EventSource.GITHUB:
+            return False
+        prd_pr_number = current_state.get("prd_pr_number")
+        prd_pr_repo = current_state.get("prd_pr_repo")
+        if not prd_pr_number or not prd_pr_repo:
+            return False
+
+        payload = message.payload
+        repo_full = payload.get("repository", {}).get("full_name", "")
+        event_pr_number = payload.get("pull_request", {}).get("number") or payload.get(
+            "issue", {}
+        ).get("number")
+
+        return repo_full == prd_pr_repo and event_pr_number == prd_pr_number
+
+    def _is_spec_pr_event(self, message: QueueMessage, current_state: dict[str, Any]) -> bool:
+        """Check if a GitHub event targets the spec proposals PR."""
+        if message.source != EventSource.GITHUB:
+            return False
+        spec_pr_number = current_state.get("spec_pr_number")
+        spec_pr_repo = current_state.get("spec_pr_repo")
+        if not spec_pr_number or not spec_pr_repo:
+            return False
+
+        payload = message.payload
+        repo_full = payload.get("repository", {}).get("full_name", "")
+        event_pr_number = payload.get("pull_request", {}).get("number") or payload.get(
+            "issue", {}
+        ).get("number")
+
+        return repo_full == spec_pr_repo and event_pr_number == spec_pr_number
+
     async def _process_workflow(self, message: QueueMessage) -> None:
         """Process a message through the workflow.
 
@@ -202,9 +310,10 @@ class OrchestratorWorker:
                 )
             else:
                 # Use router to resolve which workflow to use
+                labels = message.payload.get("issue", {}).get("fields", {}).get("labels", []) or []
                 workflow_instance = self.router.resolve(
                     ticket_type=ticket_type,
-                    labels=[],  # TODO: Extract labels from message payload
+                    labels=labels,
                     event=message.payload,
                 )
 
@@ -257,7 +366,7 @@ class OrchestratorWorker:
                 # the workflow is at a terminal state without an explicit retry signal.
                 # In that case just persist the state update and stop.
                 # and stop — don't try to invoke a finished graph.
-                terminal_nodes = ("complete", "complete_tasks", "aggregate_feature_status")
+                terminal_nodes = ("complete",)
                 is_terminal_or_blocked = updated_values.get(
                     "current_node"
                 ) in terminal_nodes or updated_values.get("is_blocked", False)
@@ -285,17 +394,26 @@ class OrchestratorWorker:
                 logger.info(f"Resuming workflow for {ticket_key}")
 
                 was_errored = _is_workflow_errored(existing_state.values)
+                resume_context = updated_values.get("context", {})
+                force_fresh_invoke = bool(resume_context.get("force_fresh_invoke"))
+                if force_fresh_invoke:
+                    updated_values = {
+                        **updated_values,
+                        "context": {
+                            **resume_context,
+                        },
+                    }
+                    updated_values["context"].pop("force_fresh_invoke", None)
 
-                # Nodes that wait for external events (CI webhooks, human review)
+                # Nodes that wait for external events or need their body re-run
                 # must be re-invoked fresh so route_by_ticket_type re-runs them.
                 # ainvoke(None) only replays the routing edge after the node, not
-                # the node itself, so CI status would never be re-checked.
-                needs_fresh_invoke = updated_values.get("current_node") in (
-                    "ci_evaluator",
-                    "attempt_ci_fix",
-                    "human_review_gate",
-                    "rebase_pr",
+                # the node itself, so setup/retry work would never be attempted.
+                needs_fresh_invoke = (
+                    force_fresh_invoke or updated_values.get("current_node") in _FRESH_INVOKE_NODES
                 )
+
+                error_before_invoke = updated_values.get("last_error")
 
                 if was_errored or needs_fresh_invoke:
                     logger.info(
@@ -308,6 +426,8 @@ class OrchestratorWorker:
                     await compiled_workflow.aupdate_state(config, updated_values)
                     result = await compiled_workflow.ainvoke(None, config=config)
             else:
+                error_before_invoke = None
+
                 # New workflow - build initial state
                 state = self._build_initial_state(message)
                 logger.info(f"Starting new workflow for {ticket_key}")
@@ -326,6 +446,10 @@ class OrchestratorWorker:
                 f"final node: {final_node}, "
                 f"paused: {is_paused}"
             )
+
+            # Report errors to Jira — only if the error is new (not carried
+            # over from a previous invocation that already reported it).
+            await _report_new_workflow_error(result, error_before_invoke)
 
             # Record workflow completed metric (only if not paused - paused means waiting for approval)
             if not is_paused:
@@ -369,10 +493,61 @@ class OrchestratorWorker:
         is_retry = False
         is_question = False
         is_ci_webhook = False
+        is_yolo = False
         pr_merged = False
         feedback = None
+        automated_review_revision_pending = None
+        proposal_review_threads: list[dict[str, Any]] = []
+        proposal_review_decisions: list[dict[str, Any]] = []
 
         current_node = current_state.get("current_node", "")
+
+        # An inline reply at the review-response gate applies only to its thread.
+        # Preserve unrelated contested threads and re-run review analysis so any
+        # newly accepted item can proceed without globally clearing objections.
+        if (
+            message.source == EventSource.GITHUB
+            and "pull_request_review_comment" in message.event_type
+            and current_node == "review_response_gate"
+            and current_state.get("is_paused", True)
+        ):
+            reply = payload.get("comment", {})
+            replied_to = reply.get("in_reply_to_id")
+            sender_login = payload.get("sender", {}).get("login", "")
+            forge_login = await self._get_forge_github_login()
+            if sender_login and sender_login == forge_login:
+                logger.debug("Ignoring Forge's own inline review comment")
+                return current_state
+            if replied_to:
+                contested = current_state.get("contested_comments", [])
+                remaining = [
+                    item for item in contested if not decision_matches_comment(item, replied_to)
+                ]
+                return {
+                    **current_state,
+                    "is_paused": False,
+                    "revision_requested": True,
+                    "feedback_comment": reply.get("body", ""),
+                    "contested_comments": remaining,
+                    "context": {
+                        **current_state.get("context", {}),
+                        "resume_event": message.event_type,
+                        "payload": payload,
+                        "review_thread_comment_id": replied_to,
+                    },
+                }
+            return {
+                **current_state,
+                "is_paused": False,
+                "revision_requested": True,
+                "feedback_comment": reply.get("body", ""),
+                "context": {
+                    **current_state.get("context", {}),
+                    "resume_event": message.event_type,
+                    "payload": payload,
+                    "review_thread_comment_id": reply.get("id"),
+                },
+            }
 
         # GitHub check_run/check_suite events are the explicit signal for wait_for_ci_gate.
         # They don't carry Jira labels or comments, so handle them before the label loop.
@@ -405,7 +580,6 @@ class OrchestratorWorker:
 
         # GitHub issue_comment events: detect /forge skip-gate and /forge unskip-gate
         # commands posted as PR comments.
-        _CI_STAGES = ("wait_for_ci_gate", "ci_evaluator", "attempt_ci_fix")
         if message.source == EventSource.GITHUB and "issue_comment" in message.event_type:
             gh_comment_body = payload.get("comment", {}).get("body", "").strip()
             repo_full = payload.get("repository", {}).get("full_name", "")
@@ -491,6 +665,18 @@ class OrchestratorWorker:
             to_labels = change.get("toString", "")
             from_labels = change.get("fromString", "")
 
+            # Check for yolo label addition — activate yolo mode if at a gate
+            if (
+                "forge:yolo" in to_labels
+                and "forge:yolo" not in from_labels
+                and current_node in _YOLO_GATES
+            ):
+                logger.info(
+                    f"forge:yolo label added for {message.ticket_key} at {current_node} "
+                    "— activating yolo mode"
+                )
+                is_yolo = True
+
             # Check for retry label - triggers retry of current stage
             if "forge:retry" in to_labels.lower() and "forge:retry" not in from_labels.lower():
                 is_retry = True
@@ -521,11 +707,11 @@ class OrchestratorWorker:
                     "decompose_epics": "plan",
                     "regenerate_all_epics": "plan",
                     "update_single_epic": "plan",
+                    "task_plan_approval_gate": "plan",
                     "task_approval_gate": "task",
                     "generate_tasks": "task",
                 }
                 expected_stage = node_to_stage.get(current_node)
-
                 if approval_stage and expected_stage and approval_stage == expected_stage:
                     is_approved = True
                     logger.info(
@@ -538,11 +724,42 @@ class OrchestratorWorker:
                         f"(expects {expected_stage})"
                     )
 
+        # Fallback: check current labels on the ticket when changelog-based
+        # detection missed the approval (e.g. user changed labels in two steps).
+        if not is_approved and not is_rejected and not is_retry:
+            current_labels = payload.get("issue", {}).get("fields", {}).get("labels", [])
+            current_labels_lower = [lbl.lower() for lbl in current_labels]
+            gate_to_approved_label = {
+                "prd_approval_gate": "forge:prd-approved",
+                "spec_approval_gate": "forge:spec-approved",
+                "plan_approval_gate": "forge:plan-approved",
+                "task_plan_approval_gate": "forge:plan-approved",
+                "task_approval_gate": "forge:task-approved",
+            }
+            expected_label = gate_to_approved_label.get(current_node)
+            if expected_label and expected_label in current_labels_lower:
+                is_approved = True
+                stage = current_node.replace("_approval_gate", "")
+                logger.info(f"Detected {stage} approval via current label: {expected_label}")
+
         # Check for rejection comment (contains feedback)
         # Determine if comment is on Epic/Task (child) vs Feature (parent)
         # based on current workflow phase
+        #
+        # Skip Jira comment feedback when PRD review happens on a GitHub PR —
+        # feedback should come from the PR, not Jira.
         comment_ticket_key = None
         comment_ticket_type = None  # "epic" or "task"
+        if comment and current_state.get("prd_pr_number") and current_node in _PRD_GATE_NODES:
+            logger.info(
+                f"Ignoring Jira comment for {message.ticket_key} — PRD review is on GitHub PR"
+            )
+            comment = {}
+        if comment and current_state.get("spec_pr_number") and current_node in _SPEC_GATE_NODES:
+            logger.info(
+                f"Ignoring Jira comment for {message.ticket_key} — spec review is on GitHub PR"
+            )
+            comment = {}
         if comment:
             comment_body = comment.get("body", "")
             # Extract text from ADF if needed
@@ -579,7 +796,8 @@ class OrchestratorWorker:
                             )
                             jira = JiraClient()
                             try:
-                                await jira.add_comment(
+                                await post_status_comment(
+                                    jira,
                                     message.ticket_key,
                                     f"Please reply with >option N where N is between 1 and {max_n}.",
                                 )
@@ -593,10 +811,15 @@ class OrchestratorWorker:
                     is_question = True
                     feedback = comment_body
                     logger.info(f"Detected question comment: {feedback[:100]}...")
-                else:
-                    # Treat as feedback for rejection
+                elif comment_type == CommentType.FEEDBACK:
                     is_rejected = True
-                    feedback = comment_body
+                    feedback = re.sub(r"^\s*!\s*", "", comment_body)
+                    logger.info(f"Detected revision comment: {feedback[:100]}...")
+                else:
+                    logger.info(
+                        f"Informational comment on {message.ticket_key}, "
+                        f"ignoring: {comment_body[:100]}..."
+                    )
 
                 # Determine workflow phase from current_node for feedback/questions
                 # (skip for approvals since they don't have feedback)
@@ -631,6 +854,7 @@ class OrchestratorWorker:
                         "task_approval_gate",
                         "generate_tasks",
                         "regenerate_all_tasks",
+                        "regenerate_epic_tasks",
                         "update_single_task",
                     )
 
@@ -651,12 +875,19 @@ class OrchestratorWorker:
                                     f"(not in epic_keys): {feedback[:100]}..."
                                 )
                         elif current_node in task_phase_nodes:
-                            # In task phase - check if it's a Task
+                            # In task phase - comments may target a Task or its Epic.
                             if child_ticket_key in task_keys:
                                 comment_ticket_key = child_ticket_key
                                 comment_ticket_type = "task"
                                 logger.info(
                                     f"Detected Task-level comment on {comment_ticket_key}: "
+                                    f"{feedback[:100]}..."
+                                )
+                            elif child_ticket_key in epic_keys:
+                                comment_ticket_key = child_ticket_key
+                                comment_ticket_type = "epic"
+                                logger.info(
+                                    f"Detected Epic-level task comment on {comment_ticket_key}: "
                                     f"{feedback[:100]}..."
                                 )
                             else:
@@ -673,12 +904,424 @@ class OrchestratorWorker:
                     else:
                         logger.info(f"Detected Feature-level comment: {feedback[:100]}...")
 
-        # GitHub pull_request_review events — handled when at human_review_gate.
+        # A human reply to a proposal review thread resumes only that thread's
+        # feedback. Forge-authored replies are informational and must not loop.
+        if (
+            message.source == EventSource.GITHUB
+            and "pull_request_review_comment" in message.event_type
+        ):
+            is_proposal_reply = (
+                self._is_prd_pr_event(message, current_state) and current_node in _PRD_GATE_NODES
+            ) or (
+                self._is_spec_pr_event(message, current_state) and current_node in _SPEC_GATE_NODES
+            )
+            reply = payload.get("comment", {})
+            replied_to = reply.get("in_reply_to_id")
+            if is_proposal_reply:
+                forge_login = await self._get_forge_github_login()
+                sender_login = payload.get("sender", {}).get("login", "")
+                if sender_login and sender_login == forge_login:
+                    return current_state
+            if is_proposal_reply and replied_to:
+                previous = current_state.get("proposal_review_decisions", [])
+                matching = next(
+                    (item for item in previous if decision_matches_comment(item, replied_to)),
+                    None,
+                )
+                if matching:
+                    reply_body = reply.get("body", "").strip()
+                    decisions = [
+                        {
+                            **item,
+                            "comment_id": reply.get("id", item.get("comment_id")),
+                            "disposition": "accept",
+                            "feedback": reply_body,
+                            "status": "pending",
+                        }
+                        if item.get("thread_id") == matching.get("thread_id")
+                        else item
+                        for item in previous
+                    ]
+                    return {
+                        **current_state,
+                        "is_paused": False,
+                        "revision_requested": True,
+                        "feedback_comment": reply_body,
+                        "proposal_review_decisions": decisions,
+                        "automated_review_revision_count": 0,
+                        "automated_review_revision_pending": False,
+                    }
+                logger.debug(
+                    "Proposal reply target %s did not match a stored review decision",
+                    replied_to,
+                )
+            elif is_proposal_reply:
+                body = reply.get("body", "").strip()
+                comment_id = reply.get("id")
+                if body and isinstance(comment_id, int):
+                    proposal_review_threads = [
+                        {
+                            "thread_id": f"comment-{comment_id}",
+                            "path": reply.get("path", ""),
+                            "line": reply.get("line") or reply.get("original_line"),
+                            "comments": [
+                                {
+                                    "comment_id": comment_id,
+                                    "body": body,
+                                    "author": sender_login,
+                                    "commit_sha": reply.get("commit_id", ""),
+                                }
+                            ],
+                        }
+                    ]
+                    is_rejected = True
+                    feedback = body
+
+        # GitHub events targeting the PRD proposals PR — handled at prd_approval_gate.
+        # Merge = approval. Review with feedback = revision. Comment = feedback/question.
+        if self._is_prd_pr_event(message, current_state) and current_node in _PRD_GATE_NODES:
+            event = message.event_type
+
+            if "pull_request_review" in event:
+                review = payload.get("review", {})
+                review_state = review.get("state", "").lower()
+                review_body = review.get("body", "") or ""
+
+                # Merge-only approval: review approval is intentionally ignored
+                if review_state in ("changes_requested", "commented"):
+                    repo_full = payload.get("repository", {}).get("full_name", "")
+                    pr_number = payload.get("pull_request", {}).get("number")
+                    review_id = review.get("id")
+                    inline_comments: list[dict[str, Any]] = []
+                    if repo_full and pr_number and review_id:
+                        _owner, _repo = repo_full.split("/", 1)
+                        gh = GitHubClient()
+                        try:
+                            proposal_review_threads = await gh.get_pull_request_review_threads(
+                                _owner, _repo, pr_number
+                            )
+                            inline_comments = flatten_review_threads(proposal_review_threads)
+                        finally:
+                            await gh.close()
+
+                    parts = []
+                    if review_body.strip():
+                        parts.append(review_body.strip())
+                    if inline_comments:
+                        inline_text = "\n\n".join(
+                            f"**{c['path']}** (line {c.get('line') or c.get('original_line', '?')}):\n{c['body']}"
+                            for c in inline_comments
+                        )
+                        parts.append(f"Inline comments:\n{inline_text}")
+
+                    if parts:
+                        feedback = "\n\n".join(parts)
+                        is_rejected = True
+                        logger.info(
+                            f"PRD PR review ({review_state}) for {message.ticket_key}: "
+                            f"body={'yes' if review_body.strip() else 'no'}, "
+                            f"inline={len(inline_comments)}"
+                        )
+                    else:
+                        logger.info(
+                            f"PRD PR review ({review_state}) for {message.ticket_key} "
+                            "with no content — ignoring"
+                        )
+                        return current_state
+
+            elif "pull_request" in event and payload.get("pull_request", {}).get("merged") is True:
+                is_approved = True
+                pr_merged = True
+                logger.info(f"PRD PR merged for {message.ticket_key}")
+                jira = JiraClient()
+                try:
+                    await jira.set_workflow_label(message.ticket_key, ForgeLabel.PRD_APPROVED)
+                    prd_content = current_state.get("prd_content", "")
+                    if prd_content:
+                        await jira.update_description(message.ticket_key, prd_content)
+                        logger.info(
+                            f"Copied approved PRD to Jira description for {message.ticket_key}"
+                        )
+                finally:
+                    await jira.close()
+
+            elif "issue_comment" in event:
+                gh_comment = payload.get("comment", {})
+                comment_body = gh_comment.get("body", "").strip()
+                sender_login = payload.get("sender", {}).get("login", "")
+
+                if comment_body and sender_login:
+                    # Skip self-comments
+                    gh = GitHubClient()
+                    try:
+                        forge_user = await gh.get_authenticated_user()
+                        forge_login = forge_user.get("login", "")
+                    finally:
+                        await gh.close()
+
+                    if sender_login == forge_login:
+                        logger.debug(f"Ignoring self-comment on PRD PR for {message.ticket_key}")
+                        return current_state
+
+                    comment_type = classify_comment(comment_body)
+                    if comment_type == CommentType.QUESTION:
+                        is_question = True
+                        feedback = comment_body
+                        logger.info(
+                            f"PRD PR question for {message.ticket_key}: {comment_body[:100]}..."
+                        )
+                    else:
+                        is_rejected = True
+                        feedback = comment_body
+                        logger.info(
+                            f"PRD PR feedback for {message.ticket_key}: {comment_body[:100]}..."
+                        )
+
+        # GitHub events targeting the spec proposals PR — same pattern as PRD PR.
+        if self._is_spec_pr_event(message, current_state) and current_node in _SPEC_GATE_NODES:
+            event = message.event_type
+
+            if "pull_request_review" in event:
+                review = payload.get("review", {})
+                review_state = review.get("state", "").lower()
+                review_body = review.get("body", "") or ""
+
+                if review_state in ("changes_requested", "commented"):
+                    repo_full = payload.get("repository", {}).get("full_name", "")
+                    pr_number = payload.get("pull_request", {}).get("number")
+                    review_id = review.get("id")
+                    inline_comments: list[dict[str, Any]] = []
+                    if repo_full and pr_number and review_id:
+                        _owner, _repo = repo_full.split("/", 1)
+                        gh = GitHubClient()
+                        try:
+                            proposal_review_threads = await gh.get_pull_request_review_threads(
+                                _owner, _repo, pr_number
+                            )
+                            inline_comments = flatten_review_threads(proposal_review_threads)
+                        finally:
+                            await gh.close()
+
+                    parts = []
+                    if review_body.strip():
+                        parts.append(review_body.strip())
+                    if inline_comments:
+                        inline_text = "\n\n".join(
+                            f"**{c['path']}** (line {c.get('line') or c.get('original_line', '?')}):\n{c['body']}"
+                            for c in inline_comments
+                        )
+                        parts.append(f"Inline comments:\n{inline_text}")
+
+                    if parts:
+                        feedback = "\n\n".join(parts)
+                        is_rejected = True
+                        logger.info(
+                            f"Spec PR review ({review_state}) for {message.ticket_key}: "
+                            f"body={'yes' if review_body.strip() else 'no'}, "
+                            f"inline={len(inline_comments)}"
+                        )
+                    else:
+                        logger.info(
+                            f"Spec PR review ({review_state}) for {message.ticket_key} "
+                            "with no content — ignoring"
+                        )
+                        return current_state
+
+            elif "pull_request" in event and payload.get("pull_request", {}).get("merged") is True:
+                is_approved = True
+                pr_merged = True
+                logger.info(f"Spec PR merged for {message.ticket_key}")
+                jira = JiraClient()
+                try:
+                    await jira.set_workflow_label(message.ticket_key, ForgeLabel.SPEC_APPROVED)
+                    spec_content = current_state.get("spec_content", "")
+                    if spec_content:
+                        settings = get_settings()
+                        if settings.jira_store_in_comments:
+                            await jira.add_structured_comment(
+                                message.ticket_key,
+                                "Technical Specification (Approved)",
+                                spec_content,
+                                comment_type="spec",
+                            )
+                        elif settings.jira_spec_custom_field:
+                            await jira.update_custom_field(
+                                message.ticket_key,
+                                settings.jira_spec_custom_field,
+                                spec_content,
+                            )
+                        else:
+                            old_filename = f"{message.ticket_key}-spec.md"
+                            deleted = await jira.delete_attachments_by_name(
+                                message.ticket_key, old_filename
+                            )
+                            if deleted:
+                                logger.info(
+                                    f"Deleted {deleted} old spec attachment(s) for "
+                                    f"{message.ticket_key}"
+                                )
+                            await jira.add_attachment(
+                                message.ticket_key,
+                                filename=old_filename,
+                                content=spec_content,
+                                content_type="text/markdown",
+                            )
+                        logger.info(
+                            f"Copied approved spec to configured Jira storage for "
+                            f"{message.ticket_key}"
+                        )
+                finally:
+                    await jira.close()
+
+            elif "issue_comment" in event:
+                gh_comment = payload.get("comment", {})
+                comment_body = gh_comment.get("body", "").strip()
+                sender_login = payload.get("sender", {}).get("login", "")
+
+                if comment_body and sender_login:
+                    gh = GitHubClient()
+                    try:
+                        forge_user = await gh.get_authenticated_user()
+                        forge_login = forge_user.get("login", "")
+                    finally:
+                        await gh.close()
+
+                    if sender_login == forge_login:
+                        logger.debug(f"Ignoring self-comment on spec PR for {message.ticket_key}")
+                        return current_state
+
+                    comment_type = classify_comment(comment_body)
+                    if comment_type == CommentType.QUESTION:
+                        is_question = True
+                        feedback = comment_body
+                        logger.info(
+                            f"Spec PR question for {message.ticket_key}: {comment_body[:100]}..."
+                        )
+                    else:
+                        is_rejected = True
+                        feedback = comment_body
+                        logger.info(
+                            f"Spec PR feedback for {message.ticket_key}: {comment_body[:100]}..."
+                        )
+
+        # Automated proposal reviewers often publish detailed suggestions even when
+        # their overall verdict is satisfied. Semantically triage the complete review
+        # before treating it as a revision request. Only a satisfied verdict stops;
+        # ambiguous results retain the original feedback and revise within the cap.
+        is_prd_review = self._is_prd_pr_event(message, current_state) and current_node in (
+            _PRD_GATE_NODES
+        )
+        is_spec_review = self._is_spec_pr_event(message, current_state) and current_node in (
+            _SPEC_GATE_NODES
+        )
+        if is_rejected and proposal_review_threads and (is_prd_review or is_spec_review):
+            previous_decisions = {
+                item.get("thread_id"): item
+                for item in current_state.get("proposal_review_decisions", [])
+                if item.get("thread_id")
+            }
+            proposal_review_threads = [
+                thread
+                for thread in proposal_review_threads
+                if previous_decisions.get(thread["thread_id"], {}).get("comment_id")
+                != thread["comments"][-1].get("comment_id")
+            ]
+            if proposal_review_threads:
+                artifact_type = "PRD" if is_prd_review else "specification"
+                artifact_content = current_state.get(
+                    "prd_content" if is_prd_review else "spec_content", ""
+                )
+                proposal_review_decisions = await triage_proposal_review_threads(
+                    artifact_type=artifact_type,
+                    artifact_content=artifact_content,
+                    threads=proposal_review_threads,
+                    ticket_key=message.ticket_key,
+                )
+                repo_full = payload.get("repository", {}).get("full_name", "")
+                pr_number = payload.get("pull_request", {}).get("number")
+                if repo_full and pr_number:
+                    await reply_to_proposal_decisions(
+                        repo_full_name=repo_full,
+                        pr_number=pr_number,
+                        decisions=proposal_review_decisions,
+                        dispositions={"reply", "ignore"},
+                    )
+                actionable_feedback = [
+                    decision.get("feedback")
+                    or next(
+                        (
+                            thread["comments"][-1].get("body", "")
+                            for thread in proposal_review_threads
+                            if thread["thread_id"] == decision["thread_id"]
+                        ),
+                        "",
+                    )
+                    for decision in proposal_review_decisions
+                    if decision["disposition"] in ("accept", "uncertain")
+                ]
+                feedback = "\n\n".join(item for item in actionable_feedback if item)
+                if not feedback:
+                    return {
+                        **current_state,
+                        "proposal_review_decisions": merge_review_decisions(
+                            current_state.get("proposal_review_decisions", []),
+                            proposal_review_decisions,
+                        ),
+                    }
+
+        if (
+            is_rejected
+            and feedback
+            and (is_prd_review or is_spec_review)
+            and is_bot_sender(payload)
+            and not proposal_review_decisions
+        ):
+            review = payload.get("review", {})
+            review_state = review.get("state", "comment")
+            review_author = payload.get("sender", {}).get("login") or review.get("user", {}).get(
+                "login", "unknown bot"
+            )
+            artifact_type = "PRD" if is_prd_review else "specification"
+            artifact_content = current_state.get(
+                "prd_content" if is_prd_review else "spec_content", ""
+            )
+            decision = await triage_automated_review(
+                artifact_type=artifact_type,
+                artifact_content=artifact_content,
+                review_state=review_state,
+                review_author=review_author,
+                review_content=feedback,
+                ticket_key=message.ticket_key,
+            )
+            logger.info(
+                "Automated %s review triage for %s: %s (%s)",
+                artifact_type,
+                message.ticket_key,
+                decision.verdict,
+                decision.reason,
+            )
+            if decision.verdict == "satisfied":
+                return current_state
+
+            previous_count = current_state.get("automated_review_revision_count", 0)
+            if previous_count >= _MAX_AUTOMATED_REVIEW_REVISIONS:
+                logger.warning(
+                    "Automated review revision cap (%d) reached for %s; awaiting human review",
+                    _MAX_AUTOMATED_REVIEW_REVISIONS,
+                    message.ticket_key,
+                )
+                return current_state
+            automated_review_revision_pending = True
+            if decision.verdict == "blocking":
+                feedback = decision.blocking_feedback
+
+        # GitHub pull_request_review events — handled when paused at human_review_gate or review_response_gate.
         # A review submission is the primary signal for the human review stage.
         if (
             message.source == EventSource.GITHUB
             and "pull_request_review" in message.event_type
-            and current_node == "human_review_gate"
+            and current_node in _REVIEW_GATES
+            and current_state.get("is_paused", True)
         ):
             review = payload.get("review", {})
             review_state = review.get("state", "").lower()
@@ -698,9 +1341,15 @@ class OrchestratorWorker:
                     owner, repo_name = repo_full.split("/", 1)
                     gh = GitHubClient()
                     try:
-                        inline_comments = await gh.get_pull_request_review_comments(
-                            owner, repo_name, pr_number
-                        )
+                        review_id = review.get("id")
+                        if review_id:
+                            inline_comments = await gh.get_review_comments(
+                                owner, repo_name, pr_number, review_id
+                            )
+                        else:
+                            inline_comments = await gh.get_pull_request_review_comments(
+                                owner, repo_name, pr_number
+                            )
                     finally:
                         await gh.close()
 
@@ -709,7 +1358,7 @@ class OrchestratorWorker:
                     parts.append(review_body.strip())
                 if inline_comments:
                     inline_text = "\n\n".join(
-                        f"**{c['path']}** (line {c['position']}):\n{c['body']}"
+                        f"**{c['path']}** (line {c.get('line') or c.get('original_line') or c.get('position') or '?'}):\n{c['body']}"
                         for c in inline_comments
                     )
                     parts.append(f"Inline comments:\n{inline_text}")
@@ -734,7 +1383,7 @@ class OrchestratorWorker:
             message.source == EventSource.GITHUB
             and "pull_request" in message.event_type
             and payload.get("pull_request", {}).get("merged") is True
-            and current_node == "human_review_gate"
+            and current_node in _REVIEW_GATES
         ):
             is_approved = True
             pr_merged = True
@@ -756,14 +1405,11 @@ class OrchestratorWorker:
         was_errored = _is_workflow_errored(current_state)
 
         # Check if workflow is at a terminal state (complete)
-        terminal_states = ("complete", "complete_tasks", "aggregate_feature_status")
+        terminal_states = ("complete",)
         is_terminal = current_node in terminal_states
 
         if is_retry:
-            # Explicit retry signal - but only if there's an error/blocked state to retry from
-            prev_error = current_state.get("last_error")
-            is_blocked = current_state.get("is_blocked", False)
-            if not prev_error and not was_errored and not is_blocked:
+            if is_terminal:
                 logger.info(
                     f"Ignoring forge:retry for {message.ticket_key} - workflow already complete"
                 )
@@ -773,21 +1419,92 @@ class OrchestratorWorker:
                 )
                 return current_state
 
-            logger.info(
-                f"Retry requested for {message.ticket_key} at {current_node} "
-                f"(clearing error: {prev_error[:100] if prev_error else 'none'})"
-            )
-            updated_state["is_paused"] = False
-            updated_state["is_blocked"] = False
-            updated_state["last_error"] = None
-            updated_state["revision_requested"] = False
-            updated_state["feedback_comment"] = None
-            updated_state["retry_count"] = 0
-            updated_state["ci_fix_attempts"] = 0
-            # Keep current_node — workflow resumes from the node that failed
+            # At approval gates with no error, retry means "regenerate" not "advance".
+            # Set revision_requested=True so route_*_approval routes to regeneration,
+            # not to the approved path (which fires when is_paused=False and no revision).
+            approval_gates = {
+                "prd_approval_gate",
+                "spec_approval_gate",
+                "plan_approval_gate",
+                "task_approval_gate",
+                "plan_approval_gate_bug",
+                "task_plan_approval_gate",
+            }
+            prev_error = current_state.get("last_error")
+            is_paused_at_gate = current_state.get("is_paused") and current_node in approval_gates
+            if current_node == "triage_gate":
+                logger.info("Retry at triage_gate — re-running triage_check")
+                updated_state["is_paused"] = False
+                updated_state["is_blocked"] = False
+                updated_state["last_error"] = None
+                updated_state["auto_retry_cap_notified"] = False
+                updated_state["retry_count"] = 0
+                updated_state["current_node"] = "triage_check"
+                updated_state["context"] = {
+                    **updated_state.get("context", {}),
+                    "force_fresh_invoke": True,
+                }
+            elif current_node == "review_response_gate":
+                logger.info(
+                    f"Retry at review_response_gate — transitioning back to human_review_gate "
+                    f"and clearing review state for {message.ticket_key}"
+                )
+                updated_state["is_paused"] = False
+                updated_state["is_blocked"] = False
+                updated_state["last_error"] = None
+                updated_state["auto_retry_cap_notified"] = False
+                updated_state["revision_requested"] = False
+                updated_state["feedback_comment"] = None
+                updated_state["contested_comments"] = []
+                updated_state["retry_count"] = 0
+                updated_state["current_node"] = "human_review_gate"
+                updated_state["context"] = {
+                    **updated_state.get("context", {}),
+                    "force_fresh_invoke": True,
+                }
+            elif is_paused_at_gate:
+                logger.info(
+                    f"Retry at approval gate {current_node} — triggering regeneration "
+                    f"via revision request"
+                )
+                updated_state["is_paused"] = False
+                updated_state["is_blocked"] = False
+                updated_state["last_error"] = None
+                updated_state["auto_retry_cap_notified"] = False
+                updated_state["revision_requested"] = True
+                updated_state["feedback_comment"] = "Regeneration requested via retry."
+                updated_state["retry_count"] = 0
+                updated_state["current_epic_key"] = None
+                updated_state["current_task_key"] = None
+                # current_node remains the gate so the graph can correctly route out of it
+            else:
+                safe_prev_error = redact_secrets(prev_error) if prev_error else None
+                logger.info(
+                    f"Retry requested for {message.ticket_key} at {current_node} "
+                    f"(clearing error: {safe_prev_error[:100] if safe_prev_error else 'none'})"
+                )
+                updated_state["is_paused"] = False
+                updated_state["is_blocked"] = False
+                updated_state["last_error"] = None
+                updated_state["auto_retry_cap_notified"] = False
+                updated_state["revision_requested"] = False
+                updated_state["feedback_comment"] = None
+                updated_state["retry_count"] = 0
+                updated_state["ci_fix_attempt"] = 0
+                updated_state["context"] = {
+                    **updated_state.get("context", {}),
+                    "force_fresh_invoke": True,
+                }
+                # Keep current_node — workflow resumes from the node that failed
         elif is_ci_webhook:
             # GitHub CI event — unpause the gate and let ci_evaluator check the results
             updated_state["is_paused"] = False
+        elif is_yolo:
+            updated_state["yolo_mode"] = True
+            updated_state["is_paused"] = False
+            updated_state["revision_requested"] = False
+            updated_state["feedback_comment"] = None
+            updated_state["last_error"] = None
         elif is_approved:
             updated_state["is_paused"] = False
             updated_state["revision_requested"] = False
@@ -795,16 +1512,42 @@ class OrchestratorWorker:
             updated_state["last_error"] = None
             if pr_merged:
                 updated_state["pr_merged"] = True
+                if is_prd_review:
+                    # Specification review is a separate artifact cycle and must
+                    # receive its own automated revision budget.
+                    updated_state["automated_review_revision_count"] = 0
+                    updated_state["automated_review_revision_pending"] = False
+                    updated_state["proposal_review_decisions"] = []
         elif is_question:
             # Unpause so answer_question node runs, it will re-pause after answering
             updated_state["is_paused"] = False
             updated_state["is_question"] = True
             updated_state["feedback_comment"] = feedback
             updated_state["revision_requested"] = False
+            await self._post_resume_ack_comment(
+                message.ticket_key,
+                signal_type="question",
+                current_node=current_node,
+                source_ticket_key=comment_ticket_key,
+            )
         elif is_rejected and feedback:
             updated_state["is_paused"] = False
             updated_state["revision_requested"] = True
             updated_state["feedback_comment"] = feedback
+            if proposal_review_decisions:
+                updated_state["proposal_review_decisions"] = merge_review_decisions(
+                    current_state.get("proposal_review_decisions", []),
+                    proposal_review_decisions,
+                )
+            if automated_review_revision_pending is not None:
+                updated_state["automated_review_revision_pending"] = True
+            elif is_prd_review or is_spec_review:
+                # A human-requested proposal revision starts a fresh automated
+                # review cycle after that revision is published.
+                updated_state["automated_review_revision_count"] = 0
+                updated_state["automated_review_revision_pending"] = False
+            if current_node == "review_response_gate":
+                updated_state["contested_comments"] = []
             if comment_ticket_key and comment_ticket_type == "epic":
                 updated_state["current_epic_key"] = comment_ticket_key
                 updated_state["current_task_key"] = None
@@ -814,6 +1557,12 @@ class OrchestratorWorker:
             else:
                 updated_state["current_task_key"] = None
                 updated_state["current_epic_key"] = None
+            await self._post_resume_ack_comment(
+                message.ticket_key,
+                signal_type="revision",
+                current_node=current_node,
+                source_ticket_key=comment_ticket_key,
+            )
         elif was_errored:
             # Workflow has an error — auto-resume up to MAX_AUTO_RETRIES times,
             # then require an explicit forge:retry label.
@@ -827,32 +1576,132 @@ class OrchestratorWorker:
                 reason = (
                     "terminal state" if is_terminal else f"retry cap ({MAX_AUTO_RETRIES}) reached"
                 )
+                if cap_reached and current_state.get("auto_retry_cap_notified"):
+                    logger.info(
+                        f"Workflow for {message.ticket_key} is already blocked after "
+                        f"auto-retry cap at '{current_node}'"
+                    )
+                    return current_state
+
                 logger.warning(
                     f"Workflow for {message.ticket_key} at '{current_node}' requires "
                     f"forge:retry ({reason})"
                 )
                 await self._post_terminal_error_comment(message.ticket_key, last_error)
+                if cap_reached:
+                    updated_state["is_paused"] = True
+                    updated_state["is_blocked"] = True
+                    updated_state["auto_retry_cap_notified"] = True
+                    return updated_state
                 return current_state
             else:
                 # Transient failure — auto-resume and let the node retry
                 prev_error = current_state.get("last_error", "")
+                safe_prev_error = redact_secrets(prev_error) if prev_error else None
                 logger.info(
                     f"Auto-resuming {message.ticket_key} after error at '{current_node}' "
                     f"(attempt {retry_count + 1}/{MAX_AUTO_RETRIES}): "
-                    f"{prev_error[:100] if prev_error else 'unknown'}"
+                    f"{safe_prev_error[:100] if safe_prev_error else 'unknown'}"
                 )
                 updated_state["is_paused"] = False
                 updated_state["last_error"] = None
         else:
-            # No recognized signal — do not unpause or modify the workflow.
-            # This covers wrong-stage approvals, unrelated label changes, etc.
-            logger.info(
-                f"No valid signal detected for {message.ticket_key} "
-                f"at {current_node} — ignoring event, workflow state unchanged"
+            # Nodes that wait for specific external events should not auto-proceed.
+            _signal_required_nodes = (
+                "ci_evaluator",
+                "attempt_ci_fix",
+                "human_review_gate",
+                "wait_for_ci_gate",
+                "review_response_gate",
             )
-            return current_state
+            if (
+                not current_state.get("is_paused", True)
+                and current_node not in _signal_required_nodes
+            ):
+                # Workflow is unpaused at an execution node — let it run.
+                # Covers checkpoint patches and nodes that don't need a signal.
+                logger.info(
+                    f"Workflow for {message.ticket_key} is unpaused at {current_node} "
+                    f"— proceeding without explicit signal"
+                )
+                updated_state["is_paused"] = False
+            else:
+                # Paused gate with no recognized signal — do not unpause.
+                # Covers wrong-stage approvals, unrelated label changes, etc.
+                logger.info(
+                    f"No valid signal detected for {message.ticket_key} "
+                    f"at {current_node} — ignoring event, workflow state unchanged"
+                )
+                return current_state
 
         return updated_state
+
+    async def _post_resume_ack_comment(
+        self,
+        ticket_key: str,
+        signal_type: str,
+        current_node: str,
+        source_ticket_key: str | None = None,
+    ) -> None:
+        """Post a best-effort Jira acknowledgement for user-visible resume signals."""
+        stage = self._stage_label_for_node(current_node)
+        source_suffix = (
+            f" from {source_ticket_key}"
+            if source_ticket_key and source_ticket_key != ticket_key
+            else ""
+        )
+        comment_target_key = (
+            source_ticket_key
+            if source_ticket_key and source_ticket_key != ticket_key
+            else ticket_key
+        )
+
+        if signal_type == "question":
+            message = (
+                f"❓ Forge received your question about {stage}{source_suffix} "
+                "and is preparing an answer."
+            )
+        else:
+            message = (
+                f"♻️ Forge received your revision request for {stage}{source_suffix} "
+                "and is regenerating the artifact."
+            )
+
+        try:
+            jira = JiraClient()
+            try:
+                await post_status_comment(jira, comment_target_key, message)
+            finally:
+                await jira.close()
+        except Exception as e:
+            logger.warning(f"Failed to post resume acknowledgement to {comment_target_key}: {e}")
+
+    @staticmethod
+    def _stage_label_for_node(current_node: str) -> str:
+        """Return a human-readable workflow stage for an approval/review node."""
+        node_to_stage = {
+            "prd_approval_gate": "the PRD",
+            "generate_prd": "the PRD",
+            "regenerate_prd": "the PRD",
+            "spec_approval_gate": "the spec",
+            "generate_spec": "the spec",
+            "regenerate_spec": "the spec",
+            "plan_approval_gate": "the plan",
+            "decompose_epics": "the plan",
+            "regenerate_all_epics": "the plan",
+            "update_single_epic": "the plan",
+            "rca_option_gate": "the RCA",
+            "plan_approval_gate_bug": "the plan",
+            "task_plan_approval_gate": "the task plan",
+            "task_approval_gate": "the tasks",
+            "generate_tasks": "the tasks",
+            "regenerate_all_tasks": "the tasks",
+            "regenerate_epic_tasks": "the tasks",
+            "update_single_task": "the task",
+            "human_review_gate": "the implementation review",
+            "review_response_gate": "the implementation review",
+        }
+        return node_to_stage.get(current_node, "the current workflow stage")
 
     @staticmethod
     def _extract_text_from_adf(adf: dict) -> str:
@@ -925,7 +1774,7 @@ class OrchestratorWorker:
 
                 if pr_number:
                     await github.create_issue_comment(owner, repo, pr_number, gh_comment)
-                await jira.add_comment(ticket_key, jira_comment)
+                await post_status_comment(jira, ticket_key, jira_comment)
             finally:
                 await github.close()
                 await jira.close()
@@ -955,7 +1804,7 @@ class OrchestratorWorker:
                 )
                 if pr_number:
                     await github.create_issue_comment(owner, repo, pr_number, gh_comment)
-                await jira.add_comment(ticket_key, jira_comment)
+                await post_status_comment(jira, ticket_key, jira_comment)
             finally:
                 await github.close()
                 await jira.close()
@@ -973,13 +1822,14 @@ class OrchestratorWorker:
 
         try:
             jira = JiraClient()
-            error_preview = error[:200] if error else "Unknown error"
+            safe_error = redact_secrets(error) if error else "Unknown error"
+            error_preview = safe_error[:200]
             comment = (
                 f"*Forge workflow stopped with error:*\n\n"
                 f"{{code}}{error_preview}{{code}}\n\n"
                 f"To retry the workflow, add the label `forge:retry` to this ticket."
             )
-            await jira.add_comment(ticket_key, comment)
+            await post_status_comment(jira, ticket_key, comment)
             await jira.close()
             logger.info(f"Posted terminal error comment to {ticket_key}")
         except Exception as e:
@@ -1061,12 +1911,11 @@ class OrchestratorWorker:
             issue_type = fields.get("issuetype", {})
             ticket_type_str = issue_type.get("name", "Unknown")
 
-            # Child ticket events (Epic, Task) are re-routed to the parent Feature
-            # by the Jira webhook handler. The payload still carries the child's
-            # issue type, which won't match any workflow. Fall through to UNKNOWN
-            # so _find_workflow_by_state resolves it from checkpoint.
+            # Child ticket events are re-routed to the parent Feature by the Jira
+            # webhook handler. The payload still carries the child's issue type,
+            # so fall through to UNKNOWN only when this message is from a child.
             child_types = {"Epic", "Task", "Sub-task"}
-            if ticket_type_str in child_types:
+            if ticket_type_str in child_types and message.payload.get("source_ticket_key"):
                 return TicketType.UNKNOWN
 
             # Map string to TicketType enum
@@ -1112,13 +1961,15 @@ class OrchestratorWorker:
         Returns:
             Initial state dictionary.
         """
-        # Extract ticket type from payload
+        # Extract ticket type and labels from payload
         ticket_type = "Unknown"  # Require explicit type, don't default to Feature
+        labels: list[str] = []
         if message.source == EventSource.JIRA:
             issue_data = message.payload.get("issue", {})
             fields = issue_data.get("fields", {})
             issue_type = fields.get("issuetype", {})
             ticket_type = issue_type.get("name", "Unknown")
+            labels = fields.get("labels", [])
 
         # Validate ticket type - only Features and Bugs can start workflows directly
         valid_top_level_types = ("Feature", "Bug", "Story")
@@ -1127,6 +1978,8 @@ class OrchestratorWorker:
                 f"Ticket {message.ticket_key} has type '{ticket_type}' which cannot "
                 f"start a workflow directly. Valid types: {valid_top_level_types}"
             )
+
+        yolo_mode = ForgeLabel.YOLO in labels
 
         return {
             "ticket_key": message.ticket_key,
@@ -1140,6 +1993,7 @@ class OrchestratorWorker:
             "current_node": "entry",
             "is_paused": False,
             "retry_count": message.retry_count,
+            "yolo_mode": yolo_mode,
         }
 
     async def start(self) -> None:
@@ -1232,6 +2086,7 @@ async def run_single_ticket(ticket_key: str) -> dict[str, Any]:
         "current_node": "entry",
         "is_paused": False,
         "retry_count": 0,
+        "yolo_mode": False,
     }
 
     # Use ticket_key as thread_id for checkpointing

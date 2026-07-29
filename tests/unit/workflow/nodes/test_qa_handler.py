@@ -432,6 +432,97 @@ class TestAnswerQuestion:
         mock_jira.close.assert_called_once()
         mock_agent.close.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_posts_answer_to_github_pr_in_pr_mode(self):
+        """When prd_pr_number exists, Q&A answer goes to GitHub PR."""
+        mock_jira = create_mock_jira_client()
+        mock_agent = create_mock_forge_agent()
+        mock_gh = MagicMock()
+        mock_gh.create_issue_comment = AsyncMock()
+        mock_gh.close = AsyncMock()
+
+        state = create_initial_feature_state(
+            ticket_key="TEST-123",
+            ticket_type=TicketType.FEATURE,
+        )
+        state["feedback_comment"] = "?What does this feature do?"
+        state["current_node"] = "prd_approval_gate"
+        state["prd_content"] = "# PRD Content"
+        state["is_question"] = True
+        state["prd_pr_number"] = 7
+        state["prd_pr_repo"] = "org/proposals"
+
+        with (
+            patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent),
+            patch("forge.workflow.nodes.qa_handler.GitHubClient", return_value=mock_gh),
+        ):
+            await answer_question(state)
+
+        mock_gh.create_issue_comment.assert_called_once()
+        call_args = mock_gh.create_issue_comment.call_args[0]
+        assert call_args[0] == "org"
+        assert call_args[1] == "proposals"
+        assert call_args[2] == 7
+        mock_jira.add_comment.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_posts_spec_answer_to_github_pr_in_pr_mode(self):
+        """When spec_pr_number exists, spec Q&A answer goes to GitHub PR."""
+        mock_jira = create_mock_jira_client()
+        mock_agent = create_mock_forge_agent()
+        mock_gh = MagicMock()
+        mock_gh.create_issue_comment = AsyncMock()
+        mock_gh.close = AsyncMock()
+
+        state = create_initial_feature_state(
+            ticket_key="TEST-123",
+            ticket_type=TicketType.FEATURE,
+        )
+        state["feedback_comment"] = "?Why use this design?"
+        state["current_node"] = "spec_approval_gate"
+        state["spec_content"] = "# Spec Content"
+        state["is_question"] = True
+        state["spec_pr_number"] = 12
+        state["spec_pr_repo"] = "org/proposals"
+
+        with (
+            patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent),
+            patch("forge.workflow.nodes.qa_handler.GitHubClient", return_value=mock_gh),
+        ):
+            await answer_question(state)
+
+        mock_gh.create_issue_comment.assert_called_once()
+        call_args = mock_gh.create_issue_comment.call_args[0]
+        assert call_args[0] == "org"
+        assert call_args[1] == "proposals"
+        assert call_args[2] == 12
+        mock_jira.add_comment.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_posts_answer_to_jira_when_no_prd_pr(self):
+        """Without prd_pr_number, Q&A answer goes to Jira as before."""
+        mock_jira = create_mock_jira_client()
+        mock_agent = create_mock_forge_agent()
+
+        state = create_initial_feature_state(
+            ticket_key="TEST-123",
+            ticket_type=TicketType.FEATURE,
+        )
+        state["feedback_comment"] = "?What does this feature do?"
+        state["current_node"] = "prd_approval_gate"
+        state["prd_content"] = "# PRD Content"
+        state["is_question"] = True
+
+        with (
+            patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent),
+        ):
+            await answer_question(state)
+
+        mock_jira.add_comment.assert_called_once()
+
 
 class TestDetermineArtifactTypeBugGates:
     """Bug workflow gate artifact type detection."""
@@ -483,6 +574,30 @@ class TestGetArtifactContentBugGates:
         state = {"ticket_key": "BUG-1", "rca_content": "## Root Cause"}
         assert _get_artifact_content(state, "rca") == "## Root Cause"
 
+    def test_rca_includes_fix_options(self):
+        state = {
+            "ticket_key": "BUG-1",
+            "rca_content": "## Root Cause\nA stale cache causes the failure.",
+            "rca_options": [
+                {
+                    "title": "Invalidate eagerly",
+                    "description": "Clear the cache after every update.",
+                    "tradeoffs": "Simple, with additional cache churn.",
+                },
+                {
+                    "title": "Version cache entries",
+                    "description": "Reject entries created for an older version.",
+                    "tradeoffs": "More robust, but more complex.",
+                },
+            ],
+        }
+
+        content = _get_artifact_content(state, "rca")
+
+        assert "A stale cache causes the failure." in content
+        assert "Option 1: Invalidate eagerly" in content
+        assert "Option 2: Version cache entries" in content
+
 
 
 class TestAnswerQuestionBugGates:
@@ -529,6 +644,18 @@ class TestAnswerQuestionBugGates:
         """answer_question at rca_option_gate returns is_paused=True, node unchanged."""
         state = self._make_bug_state("rca_option_gate")
         state["feedback_comment"] = "?Why is Option 1 lower risk than Option 2?"
+        state["rca_options"] = [
+            {
+                "title": "Targeted fix",
+                "description": "Change only the failing path.",
+                "tradeoffs": "Lower risk but narrower coverage.",
+            },
+            {
+                "title": "Refactor",
+                "description": "Replace the shared abstraction.",
+                "tradeoffs": "Broader fix with greater regression risk.",
+            },
+        ]
 
         mock_jira = create_mock_jira_client()
         mock_agent = create_mock_forge_agent()
@@ -543,6 +670,10 @@ class TestAnswerQuestionBugGates:
         assert result["current_node"] == "rca_option_gate"
         assert result["is_question"] is False
         assert result["feedback_comment"] is None
+        artifact_content = mock_agent.answer_question.call_args.kwargs["artifact_content"]
+        assert "## Root Cause" in artifact_content
+        assert "Option 1: Targeted fix" in artifact_content
+        assert "Option 2: Refactor" in artifact_content
 
     @pytest.mark.asyncio
     async def test_answer_question_at_plan_approval_gate_stays_paused(self):
@@ -563,3 +694,37 @@ class TestAnswerQuestionBugGates:
         assert result["current_node"] == "plan_approval_gate"
         assert result["is_question"] is False
         assert result["feedback_comment"] is None
+
+    @pytest.mark.asyncio
+    async def test_answer_question_at_task_plan_approval_gate(self):
+        """answer_question at task_plan_approval_gate passes context and returns is_paused=True."""
+        state = {
+            "ticket_key": "TASK-123",
+            "ticket_type": TicketType.TASK,
+            "current_node": "task_plan_approval_gate",
+            "is_paused": True,
+            "is_question": True,
+            "feedback_comment": "?What is the approach?",
+            "plan_content": "## Task Plan",
+            "qa_history": [],
+            "generation_context": {},
+            "revision_requested": False,
+        }
+
+        mock_jira = create_mock_jira_client()
+        mock_agent = create_mock_forge_agent()
+
+        with (
+            patch("forge.workflow.nodes.qa_handler.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.qa_handler.ForgeAgent", return_value=mock_agent),
+        ):
+            result = await answer_question(state)
+
+        assert result["is_paused"] is True
+        assert result["current_node"] == "task_plan_approval_gate"
+        assert result["is_question"] is False
+        assert result["feedback_comment"] is None
+        mock_agent.answer_question.assert_called_once()
+        call_kwargs = mock_agent.answer_question.call_args.kwargs
+        assert call_kwargs["context"]["ticket_type"] == TicketType.TASK
+        assert call_kwargs["context"]["current_node"] == "task_plan_approval_gate"

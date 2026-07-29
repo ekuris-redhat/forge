@@ -8,6 +8,7 @@ from forge.integrations.jira.client import JiraClient
 from forge.models.workflow import ForgeLabel, JiraStatus
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.utils import set_paused, update_state_timestamp
+from forge.workflow.utils.jira_status import post_status_comment
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +20,16 @@ def human_review_gate(state: WorkflowState) -> WorkflowState:
         state: Current workflow state.
 
     Returns:
-        State with is_paused=True.
+        State with is_paused=True, unless PR is already merged.
     """
     ticket_key = state["ticket_key"]
     pr_urls = state.get("pr_urls", [])
+
+    if state.get("pr_merged"):
+        logger.info(f"Human review gate: PR already merged for {ticket_key}, skipping pause")
+        return update_state_timestamp(
+            {**state, "current_node": "human_review_gate", "is_paused": False}
+        )
 
     logger.info(f"Human review gate: pausing for {ticket_key} ({len(pr_urls)} PRs)")
 
@@ -91,6 +98,7 @@ async def complete_tasks(state: WorkflowState) -> WorkflowState:
                 **state,
                 "tasks_completed": True,
                 "current_node": "aggregate_epic_status",
+                "ci_fix_attempt": 0,
             }
         )
 
@@ -117,12 +125,16 @@ async def aggregate_epic_status(state: WorkflowState) -> WorkflowState:
     """
     ticket_key = state["ticket_key"]
     epic_keys = state.get("epic_keys", [])
+    implemented_tasks = state.get("implemented_tasks", [])
 
     logger.info(f"Aggregating Epic status for {ticket_key}")
 
     jira = JiraClient()
 
     try:
+        if not epic_keys:
+            epic_keys = await _derive_epic_keys_from_tasks(jira, implemented_tasks)
+
         all_epics_done = True
 
         for epic_key in epic_keys:
@@ -141,6 +153,7 @@ async def aggregate_epic_status(state: WorkflowState) -> WorkflowState:
             return update_state_timestamp(
                 {
                     **state,
+                    "epic_keys": epic_keys,
                     "epics_completed": True,
                     "current_node": "aggregate_feature_status",
                 }
@@ -186,8 +199,8 @@ async def aggregate_feature_status(state: WorkflowState) -> WorkflowState:
         logger.info(f"Feature {ticket_key} marked as Done")
 
         # Add completion comment
-        await jira.add_comment(
-            ticket_key, "All Epics and Tasks completed. Feature implementation done."
+        await post_status_comment(
+            jira, ticket_key, "All Epics and Tasks completed. Feature implementation done."
         )
 
         return update_state_timestamp(
@@ -247,3 +260,32 @@ async def _check_epic_completion(jira: JiraClient, epic_key: str) -> bool:
         logger.error(f"Failed to check Epic completion for {epic_key}: {e}")
         # On error, don't falsely report completion
         return False
+
+
+async def _derive_epic_keys_from_tasks(
+    jira: JiraClient,
+    task_keys: list[str],
+) -> list[str]:
+    """Derive Epic keys from implemented Task parents when state lost them."""
+    epic_keys: list[str] = []
+    seen: set[str] = set()
+
+    for task_key in task_keys:
+        try:
+            issue = await jira.get_issue(task_key)
+        except Exception as e:
+            logger.warning(f"Failed to fetch Task {task_key} while deriving Epics: {e}")
+            continue
+
+        if not issue.parent_key or issue.parent_key in seen:
+            continue
+
+        seen.add(issue.parent_key)
+        epic_keys.append(issue.parent_key)
+
+    if epic_keys:
+        logger.info(f"Derived Epic keys from implemented Tasks: {epic_keys}")
+    else:
+        logger.warning("No Epic keys available or derivable from implemented Tasks")
+
+    return epic_keys

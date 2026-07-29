@@ -9,6 +9,7 @@ from forge.integrations.jira.client import JiraClient, MissingProjectConfig
 from forge.models.workflow import ForgeLabel
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.utils import update_state_timestamp
+from forge.workflow.utils.jira_status import post_status_comment
 from forge.workflow.utils.qa_summary import post_qa_summary_if_needed
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,12 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
     jira_error = None
 
     try:
+        await post_status_comment(
+            jira,
+            ticket_key,
+            "🗺️ Forge is decomposing your spec into an implementation plan — this may take a few minutes.",
+        )
+
         # If spec not in state, this is an error
         if not spec_content.strip():
             logger.error(f"No spec content found for {ticket_key}")
@@ -95,7 +102,9 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
                 logger.error(
                     f"Project {project_key}: {e} — posting config instructions and blocking"
                 )
-                await jira.add_comment(ticket_key, _missing_repo_config_comment(project_key))
+                await post_status_comment(
+                    jira, ticket_key, _missing_repo_config_comment(project_key)
+                )
                 await jira.set_workflow_label(ticket_key, ForgeLabel.BLOCKED)
                 return {**state, "last_error": str(e), "current_node": "decompose_epics"}
             logger.warning(f"Project {project_key}: {e} — falling back to GITHUB_KNOWN_REPOS")
@@ -107,9 +116,15 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
         # Build context for Epic generation
         context: dict[str, Any] = {
             "ticket_key": ticket_key,
+            "ticket_type": state.get("ticket_type", ""),
+            "current_node": state.get("current_node", ""),
+            "event_type": state.get("event_type", ""),
+            "event_source": state.get("context", {}).get("source", ""),
+            "retry_count": state.get("retry_count", 0),
             "project_key": project_key,
             "feature_summary": parent_issue.summary,
             "available_repos": available_repos,
+            "feedback": state.get("feedback_comment", ""),
         }
 
         # Generate Epic breakdown using Claude - primary operation
@@ -175,6 +190,15 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
                 jira_error = str(e)
                 logger.warning(f"Failed to set workflow label for {ticket_key}: {e}")
 
+            await jira.add_comment(
+                ticket_key,
+                "## 🤖 Forge interaction options\n\n"
+                f"- ✅ **Approve:** add `{ForgeLabel.PLAN_APPROVED.value}` to continue.\n"
+                "- ♻️ **Revise all epics:** add a comment starting with `!` on this ticket.\n"
+                "- 🔧 **Revise a single epic:** add a comment starting with `!` on the Epic.\n"
+                "- ❓ **Ask a question:** add a Jira comment starting with `?`.",
+            )
+
             # Store plan summary in generation_context so Q&A can reference it
             generation_context = state.get("generation_context", {})
             plan_summary_parts = []
@@ -192,6 +216,9 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
                     **state,
                     "epic_keys": epic_keys,
                     "generation_context": generation_context,
+                    "feedback_comment": None,
+                    "revision_requested": False,
+                    "current_epic_key": None,
                     "current_node": "plan_approval_gate",
                     "last_error": f"Partial Jira failure: {jira_error}" if jira_error else None,
                 }
@@ -207,10 +234,6 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
 
     except Exception as e:
         logger.error(f"Epic decomposition failed for {ticket_key}: {e}")
-        # Post error notification to Jira
-        from forge.workflow.nodes.error_handler import notify_error
-
-        await notify_error(state, str(e), "decompose_epics")
         # Save any Epics we managed to create
         result_state = {
             **state,
@@ -312,13 +335,21 @@ async def update_single_epic(state: WorkflowState) -> WorkflowState:
             feedback=feedback,
             content_type="epic",
             ticket_key=ticket_key,
+            context={
+                "ticket_type": state.get("ticket_type", ""),
+                "current_node": state.get("current_node", ""),
+                "event_type": state.get("event_type", ""),
+                "event_source": state.get("context", {}).get("source", ""),
+                "retry_count": state.get("retry_count", 0),
+            },
         )
 
         # Update Epic description
         await jira.update_description(epic_key, new_plan)
 
         # Add comment to Epic acknowledging revision
-        await jira.add_comment(
+        await post_status_comment(
+            jira,
             epic_key,
             "Implementation plan has been revised based on feedback.",
         )

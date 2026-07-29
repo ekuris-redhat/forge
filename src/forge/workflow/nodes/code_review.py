@@ -16,6 +16,7 @@ from forge.integrations.github.client import GitHubClient
 from forge.integrations.jira.client import JiraClient
 from forge.prompts import load_prompt
 from forge.sandbox import ContainerRunner
+from forge.workflow.utils.jira_status import post_status_comment
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.manager import Workspace
 
@@ -146,6 +147,15 @@ async def sync_pr_description(
                     task="sync-pr-description",
                     prompt=prompt,
                     context={"owner": owner, "repo": repo, "pr_number": pr_number},
+                    trace_context={
+                        "ticket_key": state.get("ticket_key", ""),
+                        "ticket_type": state.get("ticket_type", ""),
+                        "current_node": state.get("current_node", ""),
+                        "ci_status": state.get("ci_status", ""),
+                        "event_type": state.get("event_type", ""),
+                        "event_source": state.get("context", {}).get("source", ""),
+                        "retry_count": state.get("retry_count", 0),
+                    },
                     include_tools=False,
                 )
             finally:
@@ -157,7 +167,8 @@ async def sync_pr_description(
                 await github.update_pull_request(owner, repo, pr_number, body=updated_body)
                 ticket_key = state.get("ticket_key", "")
                 label = f"CI fix attempt {attempt}" if attempt > 0 else "PR creation"
-                await jira.add_comment(
+                await post_status_comment(
+                    jira,
                     ticket_key,
                     f"PR description updated to reflect changes ({label}).",
                 )

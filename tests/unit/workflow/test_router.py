@@ -16,9 +16,7 @@ class MockWorkflow(BaseWorkflow):
     def state_schema(self) -> type:
         return BaseState
 
-    def matches(
-        self, ticket_type: TicketType, _labels: list[str], _event: dict
-    ) -> bool:
+    def matches(self, ticket_type: TicketType, _labels: list[str], _event: dict) -> bool:
         return ticket_type == TicketType.FEATURE
 
     def build_graph(self) -> StateGraph:
@@ -38,9 +36,7 @@ class MockBugWorkflow(BaseWorkflow):
     def state_schema(self) -> type:
         return BaseState
 
-    def matches(
-        self, ticket_type: TicketType, _labels: list[str], _event: dict
-    ) -> bool:
+    def matches(self, ticket_type: TicketType, _labels: list[str], _event: dict) -> bool:
         return ticket_type == TicketType.BUG
 
     def build_graph(self) -> StateGraph:
@@ -126,3 +122,29 @@ class TestWorkflowRouter:
         assert len(workflows) == 2
         assert workflows[0]["name"] == "mock"
         assert workflows[1]["name"] == "mock_bug"
+
+    def test_task_takeover_resolves_by_ticket_type_and_managed_label(self):
+        """TaskTakeoverWorkflow resolves managed Task/Epic tickets only."""
+        from forge.workflow.router import WorkflowRouter
+        from forge.workflow.task_takeover import TaskTakeoverWorkflow
+
+        router = WorkflowRouter()
+        router.register(TaskTakeoverWorkflow)
+
+        workflow = router.resolve(
+            ticket_type=TicketType.TASK,
+            labels=["forge:managed"],
+            event={},
+        )
+        assert workflow is not None
+        assert workflow.name == "task_takeover"
+
+        workflow = router.resolve(
+            ticket_type=TicketType.EPIC,
+            labels=["forge:managed"],
+            event={},
+        )
+        assert workflow is not None
+        assert workflow.name == "task_takeover"
+
+        assert router.resolve(TicketType.BUG, ["forge:managed", "forge:managed:task"], {}) is None

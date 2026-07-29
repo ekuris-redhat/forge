@@ -80,6 +80,7 @@ class GitHubClient:
         body: str,
         head: str,
         base: str = "main",
+        draft: bool = False,
     ) -> dict[str, Any]:
         """Create a new pull request.
 
@@ -90,24 +91,58 @@ class GitHubClient:
             body: PR description.
             head: Source branch name.
             base: Target branch name.
+            draft: Whether the PR should be created as a draft.
 
         Returns:
             API response with PR details.
         """
         client = await self._get_client()
+        payload = {
+            "title": title,
+            "body": body,
+            "head": head,
+            "base": base,
+        }
+        if draft:
+            payload["draft"] = True
+
         response = await client.post(
             f"/repos/{owner}/{repo}/pulls",
-            json={
-                "title": title,
-                "body": body,
-                "head": head,
-                "base": base,
-            },
+            json=payload,
         )
+
+        if response.status_code == 422:
+            existing = await self._find_existing_pr(client, owner, repo, head, base)
+            if existing:
+                logger.info(
+                    f"PR already exists for {head} -> {base}: #{existing['number']} in {owner}/{repo}"
+                )
+                return existing
+            response.raise_for_status()
+
         response.raise_for_status()
         data = response.json()
         logger.info(f"Created PR #{data['number']} in {owner}/{repo}")
         return data
+
+    async def _find_existing_pr(
+        self,
+        client: Any,
+        owner: str,
+        repo: str,
+        head: str,
+        base: str,
+    ) -> dict[str, Any] | None:
+        """Find an existing open PR for the given head and base branches."""
+        response = await client.get(
+            f"/repos/{owner}/{repo}/pulls",
+            params={"head": head, "base": base, "state": "open"},
+        )
+        if response.status_code == 200:
+            pulls = response.json()
+            if pulls:
+                return pulls[0]
+        return None
 
     async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> dict[str, Any]:
         """Get pull request details.
@@ -163,6 +198,149 @@ class GitHubClient:
         logger.info(f"Created review comment on PR #{pr_number}")
         return response.json()
 
+    async def reply_to_review_comment(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        comment_id: int,
+        body: str,
+    ) -> dict[str, Any]:
+        """Reply in the review thread containing ``comment_id``."""
+        client = await self._get_client()
+        response = await client.post(
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies",
+            json={"body": body},
+        )
+        response.raise_for_status()
+        logger.info("Replied to review comment %s on PR #%s", comment_id, pr_number)
+        return response.json()
+
+    async def get_pull_request_review_threads(
+        self, owner: str, repo: str, pr_number: int
+    ) -> list[dict[str, Any]]:
+        """Return unresolved review threads while preserving thread identity."""
+        query = """
+        query($owner: String!, $repo: String!, $prNumber: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $prNumber) {
+              reviewThreads(first: 100) {
+                nodes {
+                  id
+                  isResolved
+                  isOutdated
+                  path
+                  line
+                  originalLine
+                  comments(first: 50) {
+                    nodes {
+                      id
+                      databaseId
+                      path
+                      line
+                      originalLine
+                      body
+                      createdAt
+                      author { login }
+                      commit { oid }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        client = await self._get_client()
+        try:
+            response = await client.post(
+                "/graphql",
+                json={
+                    "query": query,
+                    "variables": {"owner": owner, "repo": repo, "prNumber": pr_number},
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("errors"):
+                raise RuntimeError(f"GitHub GraphQL errors: {payload['errors']}")
+
+            nodes = (
+                payload.get("data", {})
+                .get("repository", {})
+                .get("pullRequest", {})
+                .get("reviewThreads", {})
+                .get("nodes", [])
+            )
+        except Exception as exc:
+            logger.warning("GraphQL review thread fetch failed, falling back to REST: %s", exc)
+            response = await client.get(
+                f"/repos/{owner}/{repo}/pulls/{pr_number}/comments",
+                params={"per_page": 100},
+            )
+            response.raise_for_status()
+            grouped: dict[int, list[dict[str, Any]]] = {}
+            for comment in response.json():
+                root_id = comment.get("in_reply_to_id") or comment.get("id")
+                if isinstance(root_id, int):
+                    grouped.setdefault(root_id, []).append(comment)
+            return [
+                {
+                    "thread_id": f"rest-{root_id}",
+                    "path": comments[0].get("path", ""),
+                    "line": comments[0].get("line")
+                    or comments[0].get("original_line")
+                    or comments[0].get("position"),
+                    "is_resolved": False,
+                    "is_outdated": False,
+                    "comments": [
+                        {
+                            "node_id": comment.get("node_id", ""),
+                            "comment_id": comment.get("id"),
+                            "body": comment.get("body", ""),
+                            "author": (comment.get("user") or {}).get("login", ""),
+                            "created_at": comment.get("created_at", ""),
+                            "commit_sha": comment.get("commit_id", ""),
+                        }
+                        for comment in comments
+                    ],
+                }
+                for root_id, comments in grouped.items()
+            ]
+        threads = []
+        for thread in nodes:
+            if thread.get("isResolved") or thread.get("isOutdated"):
+                continue
+            comments = thread.get("comments", {}).get("nodes", [])
+            if not comments:
+                continue
+            threads.append(
+                {
+                    "thread_id": thread.get("id", ""),
+                    "path": thread.get("path") or comments[0].get("path", ""),
+                    # Prefer the current thread line, then original locations retained
+                    # by GitHub when the diff has moved since the review was submitted.
+                    "line": thread.get("line")
+                    or thread.get("originalLine")
+                    or comments[0].get("line")
+                    or comments[0].get("originalLine"),
+                    "is_resolved": False,
+                    "is_outdated": False,
+                    "comments": [
+                        {
+                            "node_id": comment.get("id", ""),
+                            "comment_id": comment.get("databaseId"),
+                            "body": comment.get("body", ""),
+                            "author": (comment.get("author") or {}).get("login", ""),
+                            "created_at": comment.get("createdAt", ""),
+                            "commit_sha": (comment.get("commit") or {}).get("oid", ""),
+                        }
+                        for comment in comments
+                    ],
+                }
+            )
+        return threads
+
     async def get_pull_request_review_comments(
         self, owner: str, repo: str, pr_number: int
     ) -> list[dict[str, Any]]:
@@ -182,63 +360,19 @@ class GitHubClient:
             List of comment dicts with path, position, and body, from
             unresolved threads only.
         """
-        query = """
-        query($owner: String!, $repo: String!, $prNumber: Int!) {
-          repository(owner: $owner, name: $repo) {
-            pullRequest(number: $prNumber) {
-              reviewThreads(first: 100) {
-                nodes {
-                  isResolved
-                  isOutdated
-                  comments(first: 50) {
-                    nodes {
-                      path
-                      line
-                      originalLine
-                      body
-                      author { login }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        """
         try:
-            client = await self._get_client()
-            response = await client.post(
-                "/graphql",
-                json={
-                    "query": query,
-                    "variables": {
-                        "owner": owner,
-                        "repo": repo,
-                        "prNumber": pr_number,
-                    },
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            threads = (
-                data.get("data", {})
-                .get("repository", {})
-                .get("pullRequest", {})
-                .get("reviewThreads", {})
-                .get("nodes", [])
-            )
-
-            comments = []
+            threads = await self.get_pull_request_review_threads(owner, repo, pr_number)
+            comments: list[dict[str, Any]] = []
             for thread in threads:
-                if thread.get("isResolved") or thread.get("isOutdated"):
-                    continue
-                for comment in thread.get("comments", {}).get("nodes", []):
+                for comment in thread["comments"]:
                     comments.append(
                         {
-                            "path": comment.get("path", ""),
-                            "position": comment.get("line") or comment.get("originalLine"),
+                            "thread_id": thread["thread_id"],
+                            "comment_id": comment["comment_id"],
+                            "path": thread["path"],
+                            "position": thread["line"],
                             "body": comment.get("body", ""),
+                            "author": comment.get("author", ""),
                         }
                     )
             return comments
@@ -253,6 +387,31 @@ class GitHubClient:
             )
             response.raise_for_status()
             return response.json()
+
+    async def get_review_comments(
+        self, owner: str, repo: str, pr_number: int, review_id: int
+    ) -> list[dict[str, Any]]:
+        """Get inline comments from a specific PR review.
+
+        Scoped to a single review submission, avoiding stale comments
+        from prior review rounds.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            pr_number: Pull request number.
+            review_id: The review ID from the webhook payload.
+
+        Returns:
+            List of comment dicts with path, line, and body.
+        """
+        client = await self._get_client()
+        response = await client.get(
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews/{review_id}/comments",
+            params={"per_page": 100},
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def create_issue_comment(
         self, owner: str, repo: str, issue_number: int, body: str
@@ -695,3 +854,114 @@ class GitHubClient:
             return self.settings.github_fork_owner
         user = await self.get_authenticated_user()
         return user["login"]
+
+    async def create_branch(
+        self,
+        owner: str,
+        repo: str,
+        branch_name: str,
+        base: str = "main",
+    ) -> dict[str, Any]:
+        """Create a new branch from a base ref.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            branch_name: New branch name.
+            base: Base branch to branch from.
+
+        Returns:
+            API response with ref details.
+        """
+        client = await self._get_client()
+
+        ref_response = await client.get(f"/repos/{owner}/{repo}/git/ref/heads/{base}")
+        ref_response.raise_for_status()
+        sha = ref_response.json()["object"]["sha"]
+
+        try:
+            response = await client.post(
+                f"/repos/{owner}/{repo}/git/refs",
+                json={"ref": f"refs/heads/{branch_name}", "sha": sha},
+            )
+            response.raise_for_status()
+            data = response.json()
+            logger.info(f"Created branch {branch_name} in {owner}/{repo}")
+            return data
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 422:
+                logger.info(f"Branch {branch_name} already exists in {owner}/{repo}")
+                return {"ref": f"refs/heads/{branch_name}", "object": {"sha": sha}}
+            raise
+
+    async def create_or_update_file(
+        self,
+        owner: str,
+        repo: str,
+        path: str,
+        content: str,
+        message: str,
+        branch: str,
+        sha: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or update a file via the Contents API.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            path: File path in the repository.
+            content: File content (plain text, will be base64-encoded).
+            message: Commit message.
+            branch: Target branch.
+            sha: Existing file SHA (required for updates, omit for creates).
+
+        Returns:
+            API response with content details.
+        """
+        import base64 as b64
+
+        client = await self._get_client()
+        body: dict[str, Any] = {
+            "message": message,
+            "content": b64.b64encode(content.encode()).decode(),
+            "branch": branch,
+        }
+        if sha:
+            body["sha"] = sha
+
+        response = await client.put(f"/repos/{owner}/{repo}/contents/{path}", json=body)
+        response.raise_for_status()
+        data = response.json()
+        logger.info(f"{'Updated' if sha else 'Created'} file {path} on {branch} in {owner}/{repo}")
+        return data
+
+    async def get_file_contents(
+        self,
+        owner: str,
+        repo: str,
+        path: str,
+        ref: str,
+    ) -> dict[str, Any] | None:
+        """Get file contents and metadata from a repository.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            path: File path in the repository.
+            ref: Git ref (branch, tag, or SHA).
+
+        Returns:
+            File metadata including sha, or None if not found.
+        """
+        client = await self._get_client()
+        try:
+            response = await client.get(
+                f"/repos/{owner}/{repo}/contents/{path}",
+                params={"ref": ref},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise

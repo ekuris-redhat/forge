@@ -32,6 +32,7 @@ except ImportError:
 
 from forge.config import Settings, get_settings
 from forge.integrations.langfuse import get_langfuse_config, get_langfuse_context
+from forge.integrations.langfuse.fields import resolve_trace_fields
 from forge.prompts import load_prompt, set_default_version
 from forge.skills.resolver import resolve_skill_paths
 
@@ -56,6 +57,59 @@ MCP_CONFIG_PATHS = [
 ]
 
 logger = logging.getLogger(__name__)
+
+_TRACE_FIELD_KEYS = frozenset(
+    {
+        "ticket_key",
+        "ticket_type",
+        "current_node",
+        "current_repo",
+        "current_pr_number",
+        "ci_status",
+        "event_type",
+        "event_source",
+        "retry_count",
+        "repo",
+        "pr_number",
+        "is_question",
+        "is_revision",
+        "revision_requested",
+        "task",
+    }
+)
+
+
+def _forward_trace_fields(context: dict[str, Any] | None) -> dict[str, Any]:
+    """Extract trace-relevant fields from an incoming context dict."""
+    extracted = {k: v for k, v in context.items() if k in _TRACE_FIELD_KEYS} if context else {}
+
+    # Resolve executing node name from LangGraph config if available
+    try:
+        from langchain_core.runnables.config import ensure_config
+
+        config = ensure_config()
+        langgraph_node = config.get("metadata", {}).get("langgraph_node")
+        if langgraph_node:
+            extracted["current_node"] = langgraph_node
+    except Exception:
+        pass
+
+    return extracted
+
+
+def _prompt_context_fields(
+    context: dict[str, Any] | None, allowed_keys: tuple[str, ...]
+) -> dict[str, Any] | str:
+    """Extract task-relevant fields for rendered prompts, excluding trace-only data."""
+    if not context:
+        return "None provided"
+
+    prompt_context = {
+        key: context[key]
+        for key in allowed_keys
+        if key in context and context[key] not in (None, "")
+    }
+    return prompt_context or "None provided"
 
 
 def get_weather(city: str) -> str:
@@ -480,6 +534,7 @@ class ForgeAgent:
             "gateway timeout",
             "server error",
             "internal server error",
+            "internal_failure",
             "500",
             "overloaded",
             "try again",
@@ -531,6 +586,8 @@ class ForgeAgent:
         session_id: str | None = None,
         trace_name: str | None = None,
         ticket_key: str | None = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Run the agent with the given prompt.
 
@@ -543,6 +600,8 @@ class ForgeAgent:
             session_id: Optional session ID for Langfuse (e.g., ticket key).
             trace_name: Optional trace name for Langfuse.
             ticket_key: Optional ticket key for per-project skill resolution.
+            tags: Optional list of trace tags for Langfuse.
+            metadata: Optional metadata dict for Langfuse.
 
         Returns:
             Agent response text.
@@ -564,7 +623,8 @@ class ForgeAgent:
         langfuse_config = get_langfuse_config(
             trace_name=trace_name or "deep_agent_invocation",
             session_id=session_id,
-            metadata={"system_prompt_length": str(len(system_prompt))},
+            tags=tags,
+            metadata=metadata,
         )
         if langfuse_config:
             # Extract context params and remove from config
@@ -579,6 +639,7 @@ class ForgeAgent:
             session_id=langfuse_ctx_params.get("session_id"),
             user_id=langfuse_ctx_params.get("user_id"),
             tags=langfuse_ctx_params.get("tags"),
+            metadata=langfuse_ctx_params.get("metadata"),
         ):
             last_error: Exception | None = None
             for attempt in range(self.MAX_RETRIES):
@@ -635,12 +696,27 @@ class ForgeAgent:
 
     @staticmethod
     def _strip_preamble(text: str) -> str:
-        """Strip agent narration before the first markdown heading."""
-        idx = text.find("\n#")
-        if idx != -1:
-            return text[idx + 1 :]
-        if text.startswith("#"):
-            return text
+        """Strip agent narration before the first markdown heading.
+
+        Finds the first proper heading (# / ## / ### followed by a space)
+        and returns from there. This strips research narration that the
+        agent emits before writing the actual document.
+
+        The space requirement prevents false matches like "#1 item" or
+        "#2 finding" in numbered lists.
+        """
+        if not text or text.lstrip().startswith("#"):
+            return text.lstrip()
+
+        lines = text.split("\n")
+        for i, line in enumerate(lines):
+            stripped = line.lstrip()
+            if (
+                stripped.startswith("# ")
+                or stripped.startswith("## ")
+                or stripped.startswith("### ")
+            ):
+                return "\n".join(lines[i:])
         return text
 
     async def run_task(
@@ -648,6 +724,7 @@ class ForgeAgent:
         task: str,
         prompt: str,
         context: dict[str, Any] | None = None,
+        trace_context: dict[str, Any] | None = None,
         include_tools: bool = True,
     ) -> str:
         """Run a task, letting the agent choose the best approach.
@@ -658,7 +735,9 @@ class ForgeAgent:
         Args:
             task: Short task name for logging (e.g., 'generate-prd').
             prompt: The task description and content to process.
-            context: Optional context variables for the prompt.
+            context: Optional context variables injected into the system prompt.
+            trace_context: Optional workflow fields forwarded to Langfuse only —
+                not written to the system prompt.
             include_tools: Whether to include MCP tools. Default True.
 
         Returns:
@@ -678,8 +757,11 @@ class ForgeAgent:
             for key, value in context.items():
                 system_prompt += f"- {key}: {value}\n"
 
-        # Extract ticket key for session tracking
+        # Extract ticket key for session tracking. Prefer prompt context for
+        # backward compatibility, but allow trace-only context to carry it.
         ticket_key = context.get("ticket_key") if context else None
+        if ticket_key is None and trace_context:
+            ticket_key = trace_context.get("ticket_key")
 
         import time
 
@@ -688,6 +770,30 @@ class ForgeAgent:
         logger.info(f"Running task '{task}' using Deep Agents")
         record_agent_invocation(task_type=task)
         _start = time.monotonic()
+        # Resolve executing node name from LangGraph config if available
+        langgraph_node = None
+        try:
+            from langchain_core.runnables.config import ensure_config
+
+            config = ensure_config()
+            langgraph_node = config.get("metadata", {}).get("langgraph_node")
+        except Exception:
+            pass
+
+        # Merge prompt context + trace-only fields for Langfuse resolution.
+        # trace_context fields are intentionally excluded from system_prompt above.
+        trace_state: dict[str, Any] = {
+            **(context or {}),
+            **(trace_context or {}),
+            "system_prompt_length": len(system_prompt),
+            "llm_model": self.settings.claude_model,
+        }
+
+        if langgraph_node:
+            trace_state["current_node"] = langgraph_node
+
+        trace_tags, trace_metadata = resolve_trace_fields(trace_state)
+
         result = await self._run_agent(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -695,6 +801,8 @@ class ForgeAgent:
             session_id=ticket_key,
             trace_name=f"task:{task}",
             ticket_key=ticket_key,
+            tags=trace_tags or None,
+            metadata=trace_metadata or None,
         )
         observe_agent_duration(task_type=task, duration=time.monotonic() - _start)
 
@@ -845,7 +953,7 @@ class ForgeAgent:
         prompt = load_prompt(
             "generate-prd",
             raw_requirements=raw_requirements,
-            context=context or "None provided",
+            context=_prompt_context_fields(context, ("project_key", "summary")),
         )
 
         logger.info("Generating PRD using Deep Agents with skill")
@@ -856,6 +964,7 @@ class ForgeAgent:
                 "ticket_key": context.get("ticket_key", "") if context else "",
                 "project_key": context.get("project_key", "") if context else "",
             },
+            trace_context=_forward_trace_fields(context),
         )
 
         result = self._strip_preamble(result)
@@ -881,7 +990,7 @@ class ForgeAgent:
         prompt = load_prompt(
             "generate-spec",
             prd_content=prd_content,
-            context=context or "None provided",
+            context=_prompt_context_fields(context, ("project_key", "summary")),
         )
 
         logger.info("Generating Spec using Deep Agents with skill")
@@ -892,6 +1001,7 @@ class ForgeAgent:
                 "ticket_key": context.get("ticket_key", "") if context else "",
                 "project_key": context.get("project_key", "") if context else "",
             },
+            trace_context=_forward_trace_fields(context),
         )
 
         result = self._strip_preamble(result)
@@ -937,6 +1047,14 @@ NOTE: No repositories configured. Use REPO: unknown for now."""
             repo_instruction=repo_instruction,
         )
 
+        feedback = context.get("feedback", "") if context else ""
+        if feedback:
+            prompt += (
+                f"\n\n## Revision Feedback\n\n"
+                f"The user has requested the following changes to the Epic breakdown:\n{feedback}\n\n"
+                f"Please incorporate this feedback when creating the Epics."
+            )
+
         logger.info("Generating Epics using Deep Agents with skill")
         result = await self.run_task(
             task="decompose-epics",
@@ -947,6 +1065,7 @@ NOTE: No repositories configured. Use REPO: unknown for now."""
                 "feature_summary": context.get("feature_summary", "") if context else "",
                 "available_repos": available_repos,
             },
+            trace_context=_forward_trace_fields(context),
         )
 
         epics = self._parse_epics_response(result)
@@ -959,6 +1078,7 @@ NOTE: No repositories configured. Use REPO: unknown for now."""
         feedback: str,
         content_type: str,
         ticket_key: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> str:
         """Regenerate content incorporating feedback.
 
@@ -966,6 +1086,8 @@ NOTE: No repositories configured. Use REPO: unknown for now."""
             original_content: The original generated content.
             feedback: User feedback/revision request.
             content_type: Type of content (prd, spec, epic).
+            ticket_key: Optional ticket key for session tracking.
+            context: Optional context with trace fields from workflow state.
 
         Returns:
             Regenerated content.
@@ -990,6 +1112,7 @@ NOTE: No repositories configured. Use REPO: unknown for now."""
             task=skill_name,
             prompt=prompt,
             context={"is_revision": True, "ticket_key": ticket_key or ""},
+            trace_context=_forward_trace_fields(context),
         )
 
         result = self._strip_preamble(result)
@@ -1063,24 +1186,54 @@ NOTE: No repositories configured. Use REPO: unknown for now."""
         """
         artifact_type = context.get("artifact_type", "document")
         generation_context = context.get("generation_context", {})
-        raw_requirements = generation_context.get("raw_requirements", "Not available")
-
-        prompt = load_prompt(
-            "answer-question",
-            artifact_type=artifact_type,
-            artifact_content=artifact_content,
-            raw_requirements=raw_requirements,
-            question=question,
+        raw_requirements = (
+            generation_context.get("raw_requirements")
+            or context.get("description")
+            or "Not available"
         )
 
-        logger.info(f"Answering question about {artifact_type}")
+        ticket_type = context.get("ticket_type")
+        ticket_type_str = ""
+        if ticket_type is not None:
+            ticket_type_str = (
+                ticket_type.value if hasattr(ticket_type, "value") else str(ticket_type)
+            )
+
+        if (
+            artifact_type == "plan"
+            and context.get("current_node") == "task_plan_approval_gate"
+            and ticket_type_str == "task"
+        ):
+            prompt = load_prompt(
+                "task-takeover-qa",
+                ticket_key=context.get("ticket_key", ""),
+                summary=context.get("summary", ""),
+                description=context.get("description", ""),
+                plan_content=artifact_content,
+                question=question,
+            )
+            task_name = "task-takeover-qa"
+        else:
+            prompt = load_prompt(
+                "answer-question",
+                artifact_type=artifact_type,
+                artifact_content=artifact_content,
+                summary=context.get("summary", ""),
+                description=context.get("description", ""),
+                raw_requirements=raw_requirements,
+                question=question,
+            )
+            task_name = "answer-question"
+
+        logger.info(f"Answering question about {artifact_type} using task={task_name}")
         result = await self.run_task(
-            task="answer-question",
+            task=task_name,
             prompt=prompt,
             context={
                 "artifact_type": artifact_type,
                 "ticket_key": context.get("ticket_key", ""),
             },
+            trace_context=_forward_trace_fields(context),
             # Q&A gets read-only MCP tools for lookups (filtered by agent_mcp_read_only)
         )
 

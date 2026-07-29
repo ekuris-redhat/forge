@@ -163,6 +163,13 @@ async def receive_jira_webhook(
                     f"Routing {issue_type} {source_ticket_key} webhook "
                     f"to parent Feature {routing_ticket_key}"
                 )
+            elif issue_type in ("Epic", "Task"):
+                # Bypass parent validation for standalone managed Epic/Task issues.
+                # routing_ticket_key remains webhook_data.ticket_key, source_ticket_key remains None.
+                logger.info(
+                    f"Bypassing parent checks for standalone {issue_type} "
+                    f"{webhook_data.ticket_key}."
+                )
             else:
                 # Epics/Tasks without forge:parent are invalid - reject
                 span.set_attribute("forge.skipped", True)
@@ -190,13 +197,22 @@ async def receive_jira_webhook(
 
         # Queue for async processing
         producer = QueueProducer()
-        await producer.publish(
+        message_id = await producer.publish_once(
             event_id=webhook_event.event_id,
             source=EventSource.JIRA,
             event_type=webhook_event.event_type,
             ticket_key=routing_ticket_key,  # Route to parent Feature if child
             payload=event_payload,
         )
+
+        if message_id is None:
+            span.set_attribute("forge.skipped", True)
+            span.set_attribute("forge.skip_reason", "duplicate event")
+            return {
+                "status": "duplicate",
+                "event_id": event_id,
+                "ticket_key": webhook_data.ticket_key,
+            }
 
         span.set_attribute("forge.queued", True)
         logger.info(f"Queued Jira event {event_id} for {webhook_data.ticket_key}")
@@ -219,7 +235,7 @@ async def receive_jira_webhook(
         record_webhook_failed(source="jira", event_type="unknown", error_type="validation_error")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            detail="Invalid webhook payload",
         )
     except Exception as e:
         span.set_attribute("error", True)

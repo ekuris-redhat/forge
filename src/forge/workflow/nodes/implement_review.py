@@ -1,5 +1,6 @@
 """implement_review node — addresses PR review feedback on an existing branch."""
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -15,17 +16,33 @@ from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.nodes.code_review import run_post_change_review, sync_pr_description
 from forge.workflow.nodes.workspace_setup import prepare_workspace
 from forge.workflow.utils import set_paused, update_state_timestamp
+from forge.workflow.utils.jira_status import post_status_comment
+from forge.workflow.utils.review_decisions import (
+    merge_review_decisions,
+    reply_to_review_decisions,
+)
 
 logger = logging.getLogger(__name__)
 
 _REVIEW_COMMENTS_FILE = ".forge/review-comments.md"
 _REVIEW_PLAN_FILE = ".forge/review-plan.md"
 _REVIEW_OBJECTIONS_FILE = ".forge/review-objections.md"
+_REVIEW_DECISIONS_FILE = ".forge/review-decisions.json"
+_REVIEW_ADDRESSING_COMMENT = (
+    "Forge is addressing PR review feedback now. This status update is informational."
+)
 
 
 def review_response_gate(state: WorkflowState) -> WorkflowState:
     """Pause workflow awaiting human confirmation of contested review comments."""
     ticket_key = state["ticket_key"]
+
+    if state.get("pr_merged"):
+        logger.info(f"Review response gate: PR already merged for {ticket_key}, skipping pause")
+        return update_state_timestamp(
+            {**state, "current_node": "review_response_gate", "is_paused": False}
+        )
+
     logger.info(f"Review response gate: pausing for {ticket_key}")
     return set_paused(state, "review_response_gate")
 
@@ -36,16 +53,22 @@ def route_review_response(state: WorkflowState) -> str:
         return END
 
     revision_requested = state.get("revision_requested", False)
-    contested_comments = state.get("contested_comments", [])
 
-    # Confirmed: revision still requested but contested_comments cleared by worker
-    if revision_requested and not contested_comments:
+    # A response may confirm one thread while other contested threads remain.
+    # Re-run analysis so accepted work proceeds independently of those threads.
+    if revision_requested:
         return "implement_review"
 
     return "human_review_gate"
 
 
-async def _fetch_pr_review_comments(owner: str, repo: str, pr_number: int, review_body: str) -> str:
+async def _fetch_pr_review_comments(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    review_body: str,
+    processed_thread_ids: set[str] | None = None,
+) -> str:
     """Fetch all PR review comments and format them for the analysis container.
 
     Combines the review summary body with all inline review comments so the
@@ -62,10 +85,31 @@ async def _fetch_pr_review_comments(owner: str, repo: str, pr_number: int, revie
     """
     github = GitHubClient()
     try:
-        inline_comments = await github.get_pull_request_review_comments(owner, repo, pr_number)
+        threads = await github.get_pull_request_review_threads(owner, repo, pr_number)
     except Exception as e:
         logger.warning(f"Could not fetch inline review comments: {e}")
-        inline_comments = []
+        try:
+            comments = await github.get_pull_request_review_comments(owner, repo, pr_number)
+            threads = [
+                {
+                    "thread_id": comment.get("thread_id") or f"comment-{comment.get('id')}",
+                    "path": comment.get("path", ""),
+                    "line": comment.get("line")
+                    or comment.get("original_line")
+                    or comment.get("position"),
+                    "comments": [
+                        {
+                            "comment_id": comment.get("comment_id") or comment.get("id"),
+                            "body": comment.get("body", ""),
+                            "author": (comment.get("user") or {}).get("login", ""),
+                        }
+                    ],
+                }
+                for comment in comments
+            ]
+        except Exception as fallback_error:
+            logger.warning("REST review comment fallback failed: %s", fallback_error)
+            threads = []
     finally:
         await github.close()
 
@@ -76,17 +120,56 @@ async def _fetch_pr_review_comments(owner: str, repo: str, pr_number: int, revie
         lines.append(review_body.strip())
         lines.append("\n")
 
-    if inline_comments:
-        lines.append("## Inline Comments\n")
-        for comment in inline_comments:
-            path = comment.get("path", "")
-            position = comment.get("original_position") or comment.get("position", "")
-            body = comment.get("body", "")
-            lines.append(f"### `{path}` (line {position})\n")
-            lines.append(body.strip())
-            lines.append("\n")
+    processed_thread_ids = processed_thread_ids or set()
+    threads = [thread for thread in threads if thread["thread_id"] not in processed_thread_ids]
+    if threads:
+        lines.append("## Unresolved Review Threads\n")
+        for thread in threads:
+            lines.append(
+                f"### Thread `{thread['thread_id']}` — `{thread['path']}` "
+                f"(line {thread.get('line', '?')})\n"
+            )
+            for comment in thread["comments"]:
+                lines.append(
+                    f"#### Comment `{comment['comment_id']}` by @{comment.get('author', 'unknown')}\n"
+                )
+                lines.append(comment.get("body", "").strip())
+                lines.append("\n")
 
     return "\n".join(lines)
+
+
+def _load_review_decisions(workspace_path: str) -> list[dict[str, Any]]:
+    """Load and validate per-thread decisions produced by review analysis."""
+    path = Path(workspace_path) / _REVIEW_DECISIONS_FILE
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Invalid review decisions file: %s", exc)
+        return []
+    if not isinstance(data, list):
+        return []
+    allowed = {"accept", "contest", "clarify", "ignore"}
+    return [
+        item
+        for item in data
+        if isinstance(item, dict)
+        and item.get("disposition") in allowed
+        and isinstance(item.get("thread_id"), str)
+    ]
+
+
+async def _reply_to_review_threads(
+    *, owner: str, repo: str, pr_number: int | None, decisions: list[dict[str, Any]]
+) -> None:
+    """Post decision responses in their originating GitHub review threads."""
+    await reply_to_review_decisions(
+        repo_full_name=f"{owner}/{repo}",
+        pr_number=pr_number,
+        decisions=decisions,
+    )
 
 
 async def implement_review(state: WorkflowState) -> WorkflowState:
@@ -130,16 +213,29 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
                     **state,
                     "last_error": str(e),
                     "current_node": "implement_review",
+                    "retry_count": state.get("retry_count", 0) + 1,
                 }
             )
 
         # ── Phase 0: Fetch all PR review comments from GitHub ─────────────────
         _owner, _, _repo = current_repo.partition("/")
+        await _post_review_addressing_comment(
+            ticket_key=ticket_key,
+            owner=_owner,
+            repo=_repo,
+            pr_number=pr_number,
+        )
+
         review_comments_text = await _fetch_pr_review_comments(
             owner=_owner,
             repo=_repo,
             pr_number=pr_number or 0,
             review_body=feedback_comment,
+            processed_thread_ids={
+                item["thread_id"]
+                for item in state.get("review_comments", [])
+                if item.get("disposition") in ("accept", "ignore") and item.get("thread_id")
+            },
         )
 
         # Write all review comments to a file so the container can read them
@@ -148,7 +244,7 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
         (forge_dir / "review-comments.md").write_text(review_comments_text)
 
         # Clear previous analysis files
-        for fname in (_REVIEW_PLAN_FILE, _REVIEW_OBJECTIONS_FILE):
+        for fname in (_REVIEW_PLAN_FILE, _REVIEW_OBJECTIONS_FILE, _REVIEW_DECISIONS_FILE):
             fpath = Path(workspace_path) / fname
             if fpath.exists():
                 fpath.unlink()
@@ -169,9 +265,25 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
             repo_name=current_repo,
         )
 
-        # ── Check for objections ──────────────────────────────────────────────
+        # ── Process per-thread dispositions ──────────────────────────────────
+        decisions = _load_review_decisions(workspace_path)
+        response_decisions = [
+            item for item in decisions if item["disposition"] in ("contest", "clarify", "ignore")
+        ]
+        contested_comments = [
+            item for item in decisions if item["disposition"] in ("contest", "clarify")
+        ]
+        await _reply_to_review_threads(
+            owner=_owner,
+            repo=_repo,
+            pr_number=pr_number,
+            decisions=response_decisions,
+        )
+
+        # Backward-compatible fallback if an older analysis prompt writes only
+        # the legacy objections file. New analysis never blocks accepted work.
         objections_path = Path(workspace_path) / _REVIEW_OBJECTIONS_FILE
-        if objections_path.exists():
+        if not decisions and objections_path.exists():
             objections_text = objections_path.read_text().strip()
             if objections_text:
                 logger.info(f"Agent contested review comments for {ticket_key}")
@@ -182,14 +294,7 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
                     repo=_repo,
                     pr_number=pr_number,
                 )
-                return update_state_timestamp(
-                    {
-                        **state,
-                        "review_response_posted": True,
-                        "contested_comments": [{"text": objections_text}],
-                        "current_node": "review_response_gate",
-                    }
-                )
+                contested_comments = [{"text": objections_text}]
 
         # ── Phase 2: Implementation container ────────────────────────────────
         # Only runs if the analysis produced actionable items.
@@ -253,37 +358,76 @@ async def implement_review(state: WorkflowState) -> WorkflowState:
                 pr_number=pr_number,
                 attempt=0,
             )
+            accepted_response = "Forge implemented this feedback in the latest pushed revision."
         else:
             logger.info(f"No new commits after review implementation for {ticket_key}")
+            accepted_response = (
+                "Forge verified this feedback; no additional code change was needed."
+            )
+
+        accepted_decisions = [item for item in decisions if item["disposition"] == "accept"]
+        for decision in accepted_decisions:
+            if not decision.get("response"):
+                decision["response"] = accepted_response
+        await _reply_to_review_threads(
+            owner=_owner,
+            repo=_repo,
+            pr_number=pr_number,
+            decisions=accepted_decisions,
+        )
 
         # Only re-enter the CI gate if we actually pushed new commits; otherwise
         # CI won't re-trigger and wait_for_ci_gate would block forever.
-        next_node = "wait_for_ci_gate" if unpushed else "human_review_gate"
+        if contested_comments:
+            next_node = "review_response_gate"
+        else:
+            next_node = "wait_for_ci_gate" if unpushed else "human_review_gate"
 
         return update_state_timestamp(
             {
                 **state,
                 "revision_requested": False,
                 "feedback_comment": None,
-                "review_response_posted": False,
-                "contested_comments": [],
+                "review_comments": merge_review_decisions(
+                    state.get("review_comments", []), decisions
+                ),
+                "review_response_posted": bool(contested_comments),
+                "contested_comments": contested_comments,
                 "current_node": next_node,
-                "is_paused": next_node == "human_review_gate",
+                "is_paused": next_node in ("human_review_gate", "review_response_gate"),
                 "last_error": None,
             }
         )
 
     except Exception as e:
         logger.error(f"implement_review failed for {ticket_key}: {e}")
-        from forge.workflow.nodes.error_handler import notify_error
-
-        await notify_error(state, str(e), "implement_review")
         return {
             **state,
             "last_error": str(e),
             "current_node": "implement_review",
             "retry_count": state.get("retry_count", 0) + 1,
         }
+
+
+async def _post_review_addressing_comment(
+    ticket_key: str,
+    owner: str,
+    repo: str,
+    pr_number: int | None,
+) -> None:
+    """Post a non-triggering PR status update when review work starts."""
+    if not pr_number:
+        logger.debug(f"Skipping review addressing PR comment for {ticket_key}: no PR number")
+        return
+
+    try:
+        github = GitHubClient()
+        try:
+            await github.create_issue_comment(owner, repo, pr_number, _REVIEW_ADDRESSING_COMMENT)
+        finally:
+            await github.close()
+    except Exception as e:
+        logger.warning(f"Failed to post review addressing PR status for {ticket_key}: {e}")
 
 
 async def _post_review_objection(
@@ -306,7 +450,8 @@ async def _post_review_objection(
             )
             if pr_number:
                 await github.create_issue_comment(owner, repo, pr_number, comment)
-            await jira.add_comment(
+            await post_status_comment(
+                jira,
                 ticket_key,
                 f"Forge has concerns about the PR review feedback. "
                 f"Objection posted on PR #{pr_number}. Awaiting confirmation.",

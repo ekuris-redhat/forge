@@ -13,6 +13,7 @@ from forge.workflow.nodes.ci_evaluator import (
     attempt_ci_fix,
     escalate_to_blocked,
     evaluate_ci_status,
+    wait_for_ci_gate,
 )
 from forge.workflow.nodes.docs_updater import update_documentation
 from forge.workflow.nodes.human_review import (
@@ -27,6 +28,7 @@ from forge.workflow.nodes.implement_review import (
 from forge.workflow.nodes.implementation import implement_task
 from forge.workflow.nodes.local_reviewer import local_review_changes
 from forge.workflow.nodes.plan_bug_fix import (
+    _MAX_PLAN_RETRIES,
     decompose_plan,
     plan_approval_gate,
     plan_bug_fix,
@@ -51,6 +53,24 @@ from forge.workflow.utils import resolve_shared_resume_node
 logger = logging.getLogger(__name__)
 
 _MAX_REFLECTION_COUNT = 3
+
+# LangGraph filters state channels based on each node function's type annotation.
+# implement_task and local_review_changes are typed as FeatureState, which lacks
+# bug-specific fields like qualitative_retry_count. These wrappers are typed as
+# BugState so LangGraph passes and records the full bug state for these nodes.
+
+
+async def _implement_task_bug(state: BugState) -> BugState:
+    return await implement_task(state)  # type: ignore[return-value]
+
+
+async def _local_review_bug(state: BugState) -> BugState:
+    return await local_review_changes(state)  # type: ignore[return-value]
+
+
+async def _answer_question_bug(state: BugState) -> BugState:
+    """Run shared Q&A without filtering bug-specific artifact fields."""
+    return await answer_question(state)  # type: ignore[arg-type, return-value]
 
 
 def route_entry(state: BugState) -> str:
@@ -83,8 +103,10 @@ def route_entry(state: BugState) -> str:
             return "triage_check"
         elif current_node == "triage_gate":
             return "triage_gate"
-        elif current_node in ("analyze_bug", "regenerate_rca"):
+        elif current_node == "analyze_bug":
             return "analyze_bug"
+        elif current_node == "regenerate_rca":
+            return "regenerate_rca"
         elif current_node == "reflect_rca":
             return "reflect_rca"
         elif current_node in ("rca_option_gate", "rca_approval_gate"):
@@ -101,6 +123,12 @@ def route_entry(state: BugState) -> str:
             return "post_merge_summary"
         elif current_node == "update_docs_repo":
             return "update_docs_repo"
+        elif current_node in (
+            "complete_tasks",
+            "aggregate_epic_status",
+            "aggregate_feature_status",
+        ):
+            return END
         elif current_node == "setup_workspace":
             return "setup_workspace"
         elif current_node == "implement_bug_fix":
@@ -109,8 +137,10 @@ def route_entry(state: BugState) -> str:
             return "create_pr"
         elif current_node == "teardown_workspace":
             return "teardown_workspace"
-        elif current_node in ("wait_for_ci_gate", "ai_review"):
-            return "ci_evaluator" if current_node == "wait_for_ci_gate" else "human_review_gate"
+        elif current_node == "wait_for_ci_gate":
+            return "wait_for_ci_gate"
+        elif current_node == "ai_review":
+            return "human_review_gate"
         elif current_node == "escalate_blocked":
             return "escalate_blocked"
         else:
@@ -123,7 +153,7 @@ def route_entry(state: BugState) -> str:
 def _route_after_triage_check(state: BugState) -> str:
     """Route after triage_check based on what triage_check set as current_node."""
     node = state.get("current_node", "triage_gate")
-    if node in ("analyze_bug", "triage_gate", "escalate_blocked"):
+    if node in ("triage_check", "analyze_bug", "triage_gate", "escalate_blocked"):
         return node
     return "triage_gate"
 
@@ -230,12 +260,55 @@ def _route_after_answer_bug(state: BugState) -> str:
     return "rca_option_gate"
 
 
+def _route_after_plan_bug_fix(state: BugState) -> str:
+    """Route after initial bug-fix planning without approving failed plans."""
+    current_node = state.get("current_node", "plan_approval_gate")
+    if current_node == "plan_bug_fix" and state.get("last_error"):
+        if state.get("retry_count", 0) >= _MAX_PLAN_RETRIES:
+            return "escalate_blocked"
+        return "plan_bug_fix"
+    if current_node in ("plan_approval_gate", "escalate_blocked"):
+        return current_node
+    logger.error(f"Bug plan generation returned unexpected node {current_node!r}")
+    return END
+
+
+def _route_after_regenerate_plan(state: BugState) -> str:
+    """Route after plan regeneration without approving failed revisions."""
+    current_node = state.get("current_node", "plan_approval_gate")
+    if current_node == "regenerate_plan" and state.get("last_error"):
+        if state.get("retry_count", 0) >= _MAX_PLAN_RETRIES:
+            return "escalate_blocked"
+        return "regenerate_plan"
+    if current_node in ("plan_approval_gate", "escalate_blocked"):
+        return current_node
+    logger.error(f"Bug plan regeneration returned unexpected node {current_node!r}")
+    return END
+
+
+def _route_after_decompose_plan(state: BugState) -> str:
+    """Route after decomposition while preserving the failed node for retry."""
+    current_node = state.get("current_node", "setup_workspace")
+    if current_node in ("setup_workspace", "escalate_blocked"):
+        return current_node
+    if current_node == "decompose_plan" and state.get("last_error"):
+        return "escalate_blocked"
+    logger.error(f"Bug plan decomposition returned unexpected node {current_node!r}")
+    return END
+
+
 def _route_after_local_review(state: BugState) -> str:
     """Route after local_review considering qualitative verdict and retry count."""
     from forge.workflow.nodes.local_reviewer import _QUALITATIVE_CAP, MAX_REVIEW_ATTEMPTS
 
     verdict = state.get("local_review_verdict")
     retry_count = state.get("qualitative_retry_count", 0)
+    current_node = state.get("current_node", "update_documentation")
+
+    if current_node == "escalate_blocked":
+        return "escalate_blocked"
+    if state.get("last_error"):
+        return current_node
 
     if verdict == "adequate" or retry_count >= _QUALITATIVE_CAP:
         return "update_documentation"
@@ -245,7 +318,7 @@ def _route_after_local_review(state: BugState) -> str:
     # to prevent infinite loops if current_node is "local_review".
     if state.get("local_review_attempts", 0) >= MAX_REVIEW_ATTEMPTS:
         return "update_documentation"
-    return state.get("current_node", "update_documentation")
+    return current_node
 
 
 def _route_after_workspace_setup(
@@ -273,6 +346,10 @@ def _route_after_implementation(
     retry_count = state.get("retry_count", 0)
     max_retries = 3
     last_error = state.get("last_error")
+
+    if last_error and state.get("persistence_retry_count", 0) >= 3:
+        logger.error(f"Git persistence retry limit exceeded: {last_error}")
+        return "escalate_blocked"
 
     if last_error:
         if retry_count >= max_retries:
@@ -302,14 +379,15 @@ def _route_after_teardown(state: BugState) -> str:
     """Route after workspace teardown.
 
     If more repos remain in repos_to_process, loop back to setup_workspace.
-    Otherwise proceed to CI evaluation (matching feature workflow pattern).
+    Otherwise proceed to wait_for_ci_gate (matching feature workflow pattern)
+    so that Jira labels are updated and the workflow pauses until CI fires.
     """
     repos_to_process = state.get("repos_to_process", [])
     repos_completed = state.get("repos_completed", [])
     remaining = [r for r in repos_to_process if r not in repos_completed]
     if remaining:
         return "setup_workspace"
-    return "ci_evaluator"
+    return "wait_for_ci_gate"
 
 
 def _route_ci_evaluation(
@@ -368,20 +446,21 @@ def build_bug_graph() -> StateGraph:
     graph.add_node("update_docs_repo", update_docs_repo)
 
     # ── Q&A ──
-    graph.add_node("answer_question", answer_question)
+    graph.add_node("answer_question", _answer_question_bug)
 
     # ── Implementation stage ──
     graph.add_node("setup_workspace", setup_workspace)
     # Use the container-based implement_task (same as feature workflow) so the
     # fix runs inside an isolated Podman container with full tool access.
     # implement_bug_fix (ForgeAgent-based) is kept only for route_entry backward compat.
-    graph.add_node("implement_bug_fix", implement_task)
-    graph.add_node("local_review", local_review_changes)
+    graph.add_node("implement_bug_fix", _implement_task_bug)
+    graph.add_node("local_review", _local_review_bug)
     graph.add_node("update_documentation", update_documentation)
     graph.add_node("create_pr", create_pull_request)
     graph.add_node("teardown_workspace", teardown_and_route)
 
     # ── CI/CD ──
+    graph.add_node("wait_for_ci_gate", wait_for_ci_gate)
     graph.add_node("ci_evaluator", evaluate_ci_status)
     graph.add_node("attempt_ci_fix", attempt_ci_fix)
     graph.add_node("escalate_blocked", escalate_to_blocked)
@@ -416,6 +495,7 @@ def build_bug_graph() -> StateGraph:
             "update_documentation": "update_documentation",
             "create_pr": "create_pr",
             "teardown_workspace": "teardown_workspace",
+            "wait_for_ci_gate": "wait_for_ci_gate",
             "ci_evaluator": "ci_evaluator",
             "human_review_gate": "human_review_gate",
             "implement_review": "implement_review",
@@ -431,6 +511,7 @@ def build_bug_graph() -> StateGraph:
         "triage_check",
         _route_after_triage_check,
         {
+            "triage_check": "triage_check",
             "triage_gate": "triage_gate",
             "analyze_bug": "analyze_bug",
             "escalate_blocked": "escalate_blocked",
@@ -484,7 +565,16 @@ def build_bug_graph() -> StateGraph:
     graph.add_edge("regenerate_rca", "analyze_bug")
 
     # ── Planning ──
-    graph.add_edge("plan_bug_fix", "plan_approval_gate")
+    graph.add_conditional_edges(
+        "plan_bug_fix",
+        _route_after_plan_bug_fix,
+        {
+            "plan_approval_gate": "plan_approval_gate",
+            "plan_bug_fix": "plan_bug_fix",
+            "escalate_blocked": "escalate_blocked",
+            END: END,
+        },
+    )
     graph.add_conditional_edges(
         "plan_approval_gate",
         route_plan_approval,
@@ -495,14 +585,24 @@ def build_bug_graph() -> StateGraph:
             END: END,
         },
     )
-    graph.add_edge("regenerate_plan", "plan_bug_fix")
+    graph.add_conditional_edges(
+        "regenerate_plan",
+        _route_after_regenerate_plan,
+        {
+            "plan_approval_gate": "plan_approval_gate",
+            "regenerate_plan": "regenerate_plan",
+            "escalate_blocked": "escalate_blocked",
+            END: END,
+        },
+    )
     # decompose_plan sets current_node in state; route accordingly
     graph.add_conditional_edges(
         "decompose_plan",
-        lambda s: s.get("current_node", "setup_workspace"),
+        _route_after_decompose_plan,
         {
             "setup_workspace": "setup_workspace",
             "escalate_blocked": "escalate_blocked",
+            END: END,
         },
     )
 
@@ -543,6 +643,7 @@ def build_bug_graph() -> StateGraph:
             "update_documentation": "update_documentation",
             "create_pr": "create_pr",
             "implement_bug_fix": "implement_bug_fix",
+            "escalate_blocked": "escalate_blocked",
         },
     )
     graph.add_edge("update_documentation", "create_pr")
@@ -559,11 +660,16 @@ def build_bug_graph() -> StateGraph:
         _route_after_teardown,
         {
             "setup_workspace": "setup_workspace",  # multi-repo loop-back
-            "ci_evaluator": "ci_evaluator",
+            "wait_for_ci_gate": "wait_for_ci_gate",
         },
     )
 
     # ── CI/CD flow ──
+    graph.add_conditional_edges(
+        "wait_for_ci_gate",
+        lambda s: END if s.get("is_paused") else "ci_evaluator",
+        {END: END, "ci_evaluator": "ci_evaluator"},
+    )
     graph.add_conditional_edges(
         "ci_evaluator",
         _route_ci_evaluation,
@@ -574,7 +680,16 @@ def build_bug_graph() -> StateGraph:
             END: END,
         },
     )
-    graph.add_edge("attempt_ci_fix", "ci_evaluator")
+    graph.add_conditional_edges(
+        "attempt_ci_fix",
+        lambda s: s.get("current_node", "wait_for_ci_gate"),
+        {
+            "wait_for_ci_gate": "wait_for_ci_gate",
+            "escalate_blocked": "escalate_blocked",
+            "ci_evaluator": "ci_evaluator",
+            "attempt_ci_fix": "escalate_blocked",
+        },
+    )
     graph.add_edge("escalate_blocked", END)
 
     # ── Review flow (merge path → post_merge_summary) ──
@@ -595,7 +710,7 @@ def build_bug_graph() -> StateGraph:
         "implement_review",
         lambda s: s.get("current_node", "wait_for_ci_gate"),
         {
-            "wait_for_ci_gate": "ci_evaluator",
+            "wait_for_ci_gate": "wait_for_ci_gate",
             "review_response_gate": "review_response_gate",
             "implement_review": "implement_review",
             "human_review_gate": "human_review_gate",
@@ -623,8 +738,17 @@ def build_bug_graph() -> StateGraph:
             "plan_approval_gate": "plan_approval_gate",
             "setup_workspace": "setup_workspace",
             "implement_bug_fix": "implement_bug_fix",
+            "local_review": "local_review",
+            "update_documentation": "update_documentation",
+            "create_pr": "create_pr",
+            "teardown_workspace": "teardown_workspace",
+            "wait_for_ci_gate": "wait_for_ci_gate",
             "ci_evaluator": "ci_evaluator",
+            "attempt_ci_fix": "ci_evaluator",
             "human_review_gate": "human_review_gate",
+            "implement_review": "implement_review",
+            "review_response_gate": "review_response_gate",
+            "post_merge_summary": "post_merge_summary",
             "escalate_blocked": "escalate_blocked",
             END: END,
         },

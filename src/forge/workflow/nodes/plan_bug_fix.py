@@ -10,12 +10,13 @@ from pathlib import Path
 from langgraph.graph import END
 
 from forge.config import get_settings
-from forge.integrations.jira.client import JiraClient
+from forge.integrations.jira.client import JiraClient, artifact_interaction_options
 from forge.models.workflow import ForgeLabel
 from forge.prompts import load_prompt
 from forge.sandbox import ContainerRunner
 from forge.workflow.bug.state import BugState
 from forge.workflow.utils import set_paused, update_state_timestamp
+from forge.workflow.utils.jira_status import post_status_comment
 
 logger = logging.getLogger(__name__)
 
@@ -100,13 +101,15 @@ async def _run_plan_container(
         # Let the user know planning is starting before the container runs
         if prompt_name == "plan-bug-fix":
             approach_title = selected_fix_approach.get("title", "selected approach")
-            await jira.add_comment(
+            await post_status_comment(
+                jira,
                 ticket_key,
                 f"Got it — working on a concrete plan for *{approach_title}*. "
                 "This will take a few minutes.",
             )
         elif prompt_name == "regenerate-plan":
-            await jira.add_comment(
+            await post_status_comment(
+                jira,
                 ticket_key,
                 "Revising the plan based on your feedback — this will take a few minutes.",
             )
@@ -148,6 +151,7 @@ async def _run_plan_container(
             new_plan = _harvest_plan(workspace_path)
 
         comment = _truncate_plan_comment(new_plan)
+        comment = f"{comment}\n\n{artifact_interaction_options('plan')}"
         await jira.add_comment(ticket_key, comment)
         await jira.set_workflow_label(ticket_key, ForgeLabel.PLAN_PENDING)
 
@@ -164,11 +168,10 @@ async def _run_plan_container(
     except Exception as e:
         logger.error(f"_run_plan_container ({prompt_name}) failed for {ticket_key}: {e}")
         new_retry = retry_count + 1
-        next_node = "escalate_blocked" if new_retry >= _MAX_PLAN_RETRIES else retry_node
         return {
             **state,
             "last_error": str(e),
-            "current_node": next_node,
+            "current_node": retry_node,
             "retry_count": new_retry,
         }
 
@@ -285,10 +288,17 @@ async def decompose_plan(state: BugState) -> BugState:
             if not repos:
                 logger.warning(
                     f"No repo: tags in plan and no project repos configured for "
-                    f"{ticket_key} — skipping task creation"
+                    f"{ticket_key} — cannot start implementation"
                 )
                 return update_state_timestamp(
-                    {**state, "current_node": "setup_workspace", "last_error": None}
+                    {
+                        **state,
+                        "current_node": "decompose_plan",
+                        "last_error": (
+                            "No repositories found for bug fix implementation. "
+                            "Add repo:owner/repo tags to the plan or configure forge.repos."
+                        ),
+                    }
                 )
 
         # Idempotency: check existing Relates links for tasks already created.
@@ -364,7 +374,8 @@ async def decompose_plan(state: BugState) -> BugState:
         return {
             **state,
             "last_error": str(e),
-            "current_node": "escalate_blocked",
+            "current_node": "decompose_plan",
+            "retry_count": state.get("retry_count", 0) + 1,
         }
 
     finally:

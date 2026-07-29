@@ -5,7 +5,7 @@ The spec approval workflow uses labels:
 - forge:spec-approved - Spec approved (triggers epic decomposition)
 
 To approve: Change label from forge:spec-pending to forge:spec-approved
-To request revision: Add a comment with feedback (keep forge:spec-pending)
+To request revision: Add a comment starting with ! (keep forge:spec-pending)
 """
 
 import logging
@@ -25,7 +25,7 @@ def spec_approval_gate(state: WorkflowState) -> WorkflowState:
     This gate pauses the workflow until a human approves or rejects
     the generated specification. The workflow resumes when:
     - Label changes to forge:spec-approved -> continue to epic decomposition
-    - Comment added with feedback -> regenerate spec with feedback
+    - Comment starting with ! -> regenerate spec with feedback
 
     Args:
         state: Current workflow state.
@@ -52,6 +52,12 @@ def route_spec_approval(state: WorkflowState) -> str:
     if state.get("is_question") and state.get("feedback_comment"):
         logger.info(f"Q&A mode: routing to answer_question for {state['ticket_key']}")
         return "answer_question"
+
+    # YOLO mode: auto-approve without human input
+    if state.get("yolo_mode"):
+        logger.info(f"YOLO mode: auto-approving spec for {state['ticket_key']}")
+        record_approval("spec")
+        return "decompose_epics"
 
     # Check if revision was requested
     if state.get("revision_requested") and state.get("feedback_comment"):

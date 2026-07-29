@@ -8,6 +8,7 @@ from forge.integrations.jira.client import JiraClient
 from forge.models.workflow import ForgeLabel
 from forge.workflow.bug.state import BugState
 from forge.workflow.utils import set_paused, update_state_timestamp
+from forge.workflow.utils.jira_status import post_status_comment
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,20 @@ async def rca_option_gate(state: BugState) -> BugState:
     finally:
         await jira.close()
 
+    # YOLO mode: auto-select option 1 without pausing
+    if state.get("yolo_mode") and rca_options:
+        logger.info(f"YOLO mode: auto-selecting RCA option 1 for {ticket_key}")
+        return update_state_timestamp(
+            {
+                **state,
+                "rca_comment_posted": True,
+                "selected_fix_option": 1,
+                "selected_fix_approach": rca_options[0],
+                "is_paused": False,
+                "current_node": "rca_option_gate",
+            }
+        )
+
     paused = set_paused(state, "rca_option_gate")
     return {**paused, "rca_comment_posted": True}
 
@@ -76,7 +91,12 @@ def _format_rca_comment(
         for i, opt in enumerate(rca_options)
     )
 
-    footer = "\n\nReply with `>option N` to select an approach, or comment with feedback to revise the RCA."
+    footer = (
+        "\n\n## 🤖 Forge interaction options\n\n"
+        "- ✅ **Select an approach:** reply with `>option N`.\n"
+        "- ♻️ **Request changes:** add a comment starting with `!` to revise the RCA.\n"
+        "- ❓ **Ask a question:** add a comment starting with `?`."
+    )
     header = "## Root Cause Analysis\n\n"
     options_header = "\n\n## Fix Options\n\n"
 
@@ -158,7 +178,8 @@ async def regenerate_rca(state: BugState) -> BugState:
 
     jira = JiraClient()
     try:
-        await jira.add_comment(
+        await post_status_comment(
+            jira,
             ticket_key,
             "Revisiting the analysis based on your feedback — this will take a few minutes.",
         )

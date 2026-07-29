@@ -12,6 +12,7 @@ from forge.config import Settings, get_settings
 from forge.integrations.jira.models import JiraComment, JiraIssue
 from forge.models.workflow import ForgeLabel
 from forge.skills.models import SkillEntry
+from forge.utils.redaction import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +21,36 @@ MAX_RETRIES = 5
 INITIAL_BACKOFF_SECONDS = 1.0
 MAX_BACKOFF_SECONDS = 60.0
 
-# Module-level cache for project properties (persists per worker lifetime)
-_project_property_cache: dict[tuple[str, str], Any] = {}
+
+_ARTIFACT_APPROVAL_LABELS = {
+    "prd": ForgeLabel.PRD_APPROVED.value,
+    "spec": ForgeLabel.SPEC_APPROVED.value,
+    "plan": ForgeLabel.PLAN_APPROVED.value,
+    "task": ForgeLabel.TASK_APPROVED.value,
+}
 
 
 class MissingProjectConfig(Exception):
     """Raised when a required Jira project property is absent or malformed."""
+
+
+def artifact_interaction_options(comment_type: str) -> str:
+    approval_label = _ARTIFACT_APPROVAL_LABELS[comment_type.lower()]
+    return (
+        "## 🤖 Forge interaction options\n\n"
+        f"- ✅ **Approve:** add `{approval_label}` to continue.\n"
+        "- ♻️ **Request changes:** add a Jira comment starting with `!`, followed by the requested revision.\n"
+        "- ❓ **Ask a question:** add a Jira comment starting with `?`."
+    )
+
+
+def pr_interaction_options(pr_url: str) -> str:
+    return (
+        "## 🤖 Forge interaction options\n\n"
+        f"- ✅ **Approve:** merge the [GitHub PR]({pr_url}) to continue.\n"
+        "- ♻️ **Request changes:** add a Jira comment starting with `!`, followed by the requested revision.\n"
+        "- ❓ **Ask a question:** add a Jira comment starting with `?`."
+    )
 
 
 class JiraClient:
@@ -302,13 +327,12 @@ class JiraClient:
         logger.info(f"Deleted issue {issue_key}")
 
     async def archive_issue(self, issue_key: str, archive_subtasks: bool = True) -> None:
-        """Archive a Jira issue by unlinking from parent and adding archive label.
+        """Archive a Jira issue natively and clean up its forge labels.
 
-        Use this instead of delete_issue when deletion is not permitted.
         The issue will be:
-        1. Unlinked from its parent (Epic/Feature)
-        2. Marked with 'forge:archived' label
-        3. Have all forge workflow labels removed
+        1. Natively archived via the Jira archive endpoint (hidden from boards/backlogs)
+        2. Marked with 'forge:archived' label and all other forge labels removed
+        3. Unlinked from its parent (Epic/Feature)
 
         Args:
             issue_key: The Jira issue key.
@@ -335,9 +359,7 @@ class JiraClient:
         label_update = {
             "update": {
                 "labels": [
-                    # Remove all forge workflow labels
                     *[{"remove": label} for label in forge_labels],
-                    # Add archived label
                     {"add": "forge:archived"},
                 ]
             }
@@ -350,7 +372,7 @@ class JiraClient:
         except Exception as e:
             logger.warning(f"Failed to update labels for {issue_key}: {e}")
 
-        # Step 2: Try to unlink from parent (separate request, may fail in some configs)
+        # Step 2: Try to unlink from parent (may fail in some configs)
         try:
             parent_update = {"fields": {"parent": None}}
             response = await client.put(f"/issue/{issue_key}", json=parent_update)
@@ -358,6 +380,26 @@ class JiraClient:
             logger.info(f"Unlinked {issue_key} from parent")
         except Exception as e:
             logger.debug(f"Could not unlink parent for {issue_key} (may not be supported): {e}")
+
+        # Step 3: Natively archive the issue so it's hidden from boards and backlogs
+        try:
+            response = await client.put("/issue/archive", json={"issueIdsOrKeys": [issue_key]})
+            response.raise_for_status()
+            archive_result = response.json()
+            archive_errors = archive_result.get("errors", {}) if archive_result else {}
+            failed_error = next(
+                (
+                    error
+                    for error in archive_errors.values()
+                    if issue_key in error.get("issueIdsOrKeys", [])
+                ),
+                None,
+            )
+            if failed_error:
+                raise RuntimeError(failed_error.get("message", "Unknown Jira archive error"))
+            logger.info(f"Natively archived {issue_key}")
+        except Exception as e:
+            logger.warning(f"Failed to natively archive {issue_key}: {e}")
 
         logger.info(f"Archived issue {issue_key}")
 
@@ -594,6 +636,8 @@ class JiraClient:
                     )
                     mention_nodes.append({"type": "text", "text": " "})
 
+        safe_error_message = redact_secrets(error_message)
+
         # Build the error message content
         error_paragraph: list[dict[str, Any]] = [
             {"type": "text", "text": "Workflow failed at ", "marks": []},
@@ -602,7 +646,7 @@ class JiraClient:
                 "text": node_name,
                 "marks": [{"type": "strong"}],
             },
-            {"type": "text", "text": f": {error_message}"},
+            {"type": "text", "text": f": {safe_error_message}"},
         ]
 
         adf_content: dict[str, Any] = {
@@ -722,13 +766,15 @@ class JiraClient:
         # Get current labels
         current_labels = await self.get_labels(issue_key)
 
-        # Find forge: labels to remove (except the new one and forge:managed)
+        # Find forge: labels to remove (except the new one, forge:managed, and identity preservation labels)
         labels_to_remove = [
             label
             for label in current_labels
             if label.startswith(remove_prefix)
             and label != new_label.value
             and label != ForgeLabel.FORGE_MANAGED.value
+            and label != "forge:managed:task"
+            and label != "forge:managed:task-takeover"
         ]
 
         # Build update operations
@@ -777,7 +823,8 @@ class JiraClient:
             f"[FORGE:{comment_type.upper()}]\n"
             f"# {title}\n\n"
             f"{content}\n\n"
-            f"[/FORGE:{comment_type.upper()}]"
+            f"[/FORGE:{comment_type.upper()}]\n\n"
+            f"{artifact_interaction_options(comment_type)}"
         )
         return await self.add_comment(issue_key, formatted_body)
 
@@ -856,6 +903,30 @@ class JiraClient:
             fields=["summary", "status", "issuetype"],
         )
 
+    async def list_project_properties(self, project_key: str) -> list[str]:
+        """List all property keys for a Jira project.
+
+        Args:
+            project_key: The Jira project key (e.g., "MYPROJ").
+
+        Returns:
+            A list of project property keys.
+
+        Raises:
+            httpx.HTTPStatusError: For non-200 responses (such as 403 or 404).
+            ValueError: If the response JSON structure is malformed.
+        """
+        client = await self._get_client()
+        response = await client.get(f"/project/{project_key}/properties")
+        response.raise_for_status()
+
+        try:
+            data = response.json()
+            keys = data.get("keys", [])
+            return [item["key"] for item in keys if isinstance(item, dict) and "key" in item]
+        except (json.JSONDecodeError, TypeError, KeyError) as e:
+            raise ValueError(f"Malformed Jira project properties response: {e}")
+
     async def get_project_property(self, project_key: str, property_key: str) -> Any | None:
         """Fetch a Jira project property value.
 
@@ -866,10 +937,6 @@ class JiraClient:
         Returns:
             The property value, or None if the property is not set (404).
         """
-        cache_key = (project_key, property_key)
-        if cache_key in _project_property_cache:
-            return _project_property_cache[cache_key]
-
         client = await self._get_client()
         response = await client.get(f"/project/{project_key}/properties/{property_key}")
 
@@ -877,9 +944,7 @@ class JiraClient:
             return None
 
         response.raise_for_status()
-        value = response.json()["value"]
-        _project_property_cache[cache_key] = value
-        return value
+        return response.json()["value"]
 
     async def set_project_property(self, project_key: str, property_key: str, value: Any) -> None:
         """Set a Jira project property value.
@@ -895,7 +960,20 @@ class JiraClient:
             json=value,
         )
         response.raise_for_status()
-        _project_property_cache.pop((project_key, property_key), None)
+
+    async def delete_project_property(self, project_key: str, property_key: str) -> None:
+        """Delete a Jira project property.
+
+        Args:
+            project_key: The Jira project key (e.g., "MYPROJ").
+            property_key: The property key (e.g., "forge.prd_proposals_repo").
+        """
+        client = await self._get_client()
+        response = await client.delete(
+            f"/project/{project_key}/properties/{property_key}",
+        )
+        if response.status_code != 404:
+            response.raise_for_status()
 
     async def get_project_repos(self, project_key: str) -> list[str]:
         """Fetch the forge.repos project property.
@@ -912,14 +990,63 @@ class JiraClient:
         value = await self.get_project_property(project_key, "forge.repos")
         if value is None:
             raise MissingProjectConfig(f"forge.repos not set for project {project_key}")
-        if not isinstance(value, list) or any(
-            not isinstance(r, str) or "/" not in r for r in value
-        ):
+        if not isinstance(value, list):
             raise MissingProjectConfig(
                 f"forge.repos for project {project_key} is malformed: {value!r}"
             )
-        logger.info(f"Project {project_key}: repos from Jira property: {value}")
-        return value
+
+        repos = []
+        for r in value:
+            if isinstance(r, str):
+                if "/" not in r:
+                    raise MissingProjectConfig(
+                        f"forge.repos for project {project_key} is malformed: {value!r}"
+                    )
+                repos.append(r)
+            elif isinstance(r, dict):
+                name = r.get("name")
+                if not isinstance(name, str) or "/" not in name:
+                    raise MissingProjectConfig(
+                        f"forge.repos for project {project_key} is malformed: {value!r}"
+                    )
+                repos.append(name)
+            else:
+                raise MissingProjectConfig(
+                    f"forge.repos for project {project_key} is malformed: {value!r}"
+                )
+
+        logger.info(f"Project {project_key}: repos from Jira property: {repos}")
+        return repos
+
+    async def is_repo_draft(self, project_key: str, repo_name: str) -> bool:
+        """Check if draft PRs are enabled for a given repository.
+
+        Args:
+            project_key: The Jira project key.
+            repo_name: Name of the repository (e.g. "owner/repo").
+
+        Returns:
+            True if draft is enabled, False otherwise.
+        """
+        try:
+            value = await self.get_project_property(project_key, "forge.repos")
+        except Exception:
+            return False
+
+        if not isinstance(value, list):
+            return False
+
+        for r in value:
+            if isinstance(r, dict):
+                name = r.get("name")
+                if isinstance(name, str) and name.lower() == repo_name.lower():
+                    # Check "draft" or "draft_pr"
+                    draft = r.get("draft")
+                    if draft is None:
+                        draft = r.get("draft_pr")
+                    return draft is True
+
+        return False
 
     async def get_project_default_repo(self, project_key: str) -> str:
         """Fetch the forge.default_repo project property.
@@ -961,6 +1088,53 @@ class JiraClient:
             )
             return None
         logger.info(f"Project {project_key}: docs repo: {value}")
+        return value
+
+    async def get_prd_proposals_repo(self, project_key: str) -> str | None:
+        """Fetch the forge.prd_proposals_repo project property.
+
+        When set, enables PRD approval via GitHub PR for this project.
+        The value is a GitHub repo in "owner/repo" format.
+
+        Args:
+            project_key: The Jira project key.
+
+        Returns:
+            Repo string in "owner/repo" format, or None if not configured.
+        """
+        value = await self.get_project_property(project_key, "forge.prd_proposals_repo")
+        if value is None:
+            return None
+        if not isinstance(value, str) or "/" not in value:
+            logger.warning(
+                f"forge.prd_proposals_repo for project {project_key} is malformed: {value!r}"
+            )
+            return None
+        logger.info(f"Project {project_key}: PRD proposals repo: {value}")
+        return value
+
+    async def get_proposals_path(self, project_key: str) -> str | None:
+        """Fetch the forge.prd_proposals_path project property.
+
+        When set, overrides the global default base directory for enhancement
+        folders in the proposals repo.
+
+        Args:
+            project_key: The Jira project key.
+
+        Returns:
+            Path string (may be empty for repo root), or None if not configured.
+        """
+        value = await self.get_project_property(project_key, "forge.prd_proposals_path")
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            logger.warning(
+                f"forge.prd_proposals_path for project {project_key} is malformed: {value!r}"
+            )
+            return None
+        value = value.strip("/")
+        logger.info(f"Project {project_key}: proposals path: {value!r}")
         return value
 
     async def get_skills_config(self, project_key: str) -> list[SkillEntry] | None:

@@ -5,6 +5,7 @@ import logging
 from datetime import UTC, datetime
 
 from forge.integrations.agents import ForgeAgent
+from forge.integrations.github.client import GitHubClient
 from forge.integrations.jira.client import JiraClient
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.utils import update_state_timestamp
@@ -12,10 +13,39 @@ from forge.workflow.utils import update_state_timestamp
 logger = logging.getLogger(__name__)
 
 
+def _artifact_pr_target(state: WorkflowState, artifact_type: str) -> tuple[str, int] | None:
+    """Return the proposals PR target for an artifact, if review is on GitHub."""
+    if artifact_type == "prd" and state.get("prd_pr_number") and state.get("prd_pr_repo"):
+        return state["prd_pr_repo"], state["prd_pr_number"]
+    if artifact_type == "spec" and state.get("spec_pr_number") and state.get("spec_pr_repo"):
+        return state["spec_pr_repo"], state["spec_pr_number"]
+    return None
+
+
+async def _post_qa_response(
+    jira: JiraClient,
+    ticket_key: str,
+    state: WorkflowState,
+    artifact_type: str,
+    body: str,
+) -> None:
+    pr_target = _artifact_pr_target(state, artifact_type)
+    if pr_target:
+        repo_full, pr_number = pr_target
+        owner, repo_name = repo_full.split("/", 1)
+        gh = GitHubClient()
+        try:
+            await gh.create_issue_comment(owner, repo_name, pr_number, body)
+        finally:
+            await gh.close()
+    else:
+        await jira.add_comment(ticket_key, body)
+
+
 def extract_question_text(comment: str) -> str:
     """Extract the actual question from a comment with Q&A prefix.
 
-    Removes ? or @forge ask prefix.
+    Removes the leading ? prefix.
 
     Args:
         comment: Raw comment text with Q&A prefix.
@@ -69,20 +99,38 @@ async def answer_question(state: WorkflowState) -> WorkflowState:
         artifact_content = _get_artifact_content(state, artifact_type)
         generation_context = state.get("generation_context", {}).get(artifact_type, {})
 
+        # Fetch issue details for Q&A if not already present in state
+        summary = state.get("summary") or ""
+        description = state.get("description") or ""
+        if not summary or not description:
+            try:
+                issue = await jira.get_issue(ticket_key)
+                summary = summary or issue.summary or ""
+                description = description or issue.description or ""
+            except Exception as ex:
+                logger.warning(f"Could not fetch issue for Q&A: {ex}")
+
         # Generate answer using agent
         answer = await agent.answer_question(
             question=question,
             artifact_content=artifact_content,
             context={
+                "ticket_key": ticket_key,
+                "ticket_type": state.get("ticket_type", ""),
+                "current_node": state.get("current_node", ""),
+                "event_type": state.get("event_type", ""),
+                "event_source": state.get("context", {}).get("source", ""),
+                "retry_count": state.get("retry_count", 0),
                 "artifact_type": artifact_type,
                 "generation_context": generation_context,
-                "ticket_key": ticket_key,
+                "summary": summary,
+                "description": description,
             },
         )
 
-        # Post to Jira
+        # Post answer to the right channel
         formatted_answer = f"*Q: {question}*\n\n{answer}"
-        await jira.add_comment(ticket_key, formatted_answer)
+        await _post_qa_response(jira, ticket_key, state, artifact_type, formatted_answer)
 
         # Record in Q&A history
         qa_history = list(state.get("qa_history", []))
@@ -113,11 +161,11 @@ async def answer_question(state: WorkflowState) -> WorkflowState:
     except Exception as e:
         logger.error(f"Failed to answer question for {ticket_key}: {e}")
         with contextlib.suppress(Exception):
-            await jira.add_comment(
-                ticket_key,
+            error_msg = (
                 f"I wasn't able to answer that question. Error: {e}\n\n"
-                "Please try rephrasing or ask a different question.",
+                "Please try rephrasing or ask a different question."
             )
+            await _post_qa_response(jira, ticket_key, state, artifact_type, error_msg)
 
         return update_state_timestamp(
             {
@@ -187,11 +235,27 @@ def _get_artifact_content(state: WorkflowState, artifact_type: str) -> str:
     mapping = {
         "prd": "prd_content",
         "spec": "spec_content",
-        "rca": "rca_content",
     }
     field = mapping.get(artifact_type)
     if field:
         return state.get(field, "")
+
+    # The RCA reviewed at rca_option_gate consists of both the analysis and the
+    # proposed fix options. Passing only rca_content leaves the Q&A agent unable
+    # to answer the option-comparison questions invited by the gate comment.
+    if artifact_type == "rca":
+        rca_content = state.get("rca_content") or ""
+        rca_options = state.get("rca_options") or []
+        if not rca_options:
+            return rca_content
+
+        options = "\n\n".join(
+            f"### Option {index}: {option.get('title', '')}\n"
+            f"{option.get('description', '')}\n"
+            f"Tradeoffs: {option.get('tradeoffs', '')}"
+            for index, option in enumerate(rca_options, start=1)
+        )
+        return f"{rca_content}\n\n## Fix Options\n\n{options}".strip()
 
     # Plan: check plan_content first (bug workflow), fall back to generation_context (feature workflow)
     if artifact_type == "plan":

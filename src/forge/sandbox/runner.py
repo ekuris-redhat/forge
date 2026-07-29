@@ -19,6 +19,7 @@ import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from forge.config import Settings, get_settings
 from forge.prompts import load_prompt
@@ -59,7 +60,7 @@ class ContainerConfig:
     """Configuration for container execution."""
 
     image: str = DEFAULT_IMAGE
-    timeout_seconds: int = 7200  # 2 hours default
+    timeout_seconds: int = 1800  # 30 minutes default
     memory_limit: str = "4g"
     cpu_limit: str = "2"
     network_mode: str = "slirp4netns"  # Rootless networking
@@ -149,6 +150,8 @@ class ContainerRunner:
             env["LANGFUSE_PUBLIC_KEY"] = self.settings.langfuse_public_key
             env["LANGFUSE_SECRET_KEY"] = self.settings.langfuse_secret_key.get_secret_value()
             env["LANGFUSE_HOST"] = self.settings.langfuse_host
+            env["LANGFUSE_TRACE_TAGS"] = self.settings.langfuse_trace_tags
+            env["LANGFUSE_TRACE_METADATA"] = self.settings.langfuse_trace_metadata
             logger.debug("Container Langfuse tracing enabled")
 
         # Pass system prompt template (unformatted - entrypoint will interpolate)
@@ -218,20 +221,20 @@ class ContainerRunner:
     def _build_container_name(
         self,
         ticket_key: str | None = None,
-        repo_name: str | None = None,
+        _repo_name: str | None = None,
     ) -> str:
         """Build container name for identification.
 
-        Format: forge-{ticket}-{repo}-{pid} e.g., forge-AISOS-189-installer-12345
+        Format: forge-{ticket}-{uid} e.g., forge-AISOS-189-a1b2c3
+        Uses a unique suffix to avoid name collisions when multiple
+        containers run for the same ticket (e.g., RCA → reflection → RCA).
         """
+        import uuid
+
         name_parts = ["forge"]
         if ticket_key:
             name_parts.append(ticket_key)
-        if repo_name:
-            # Extract just the repo name from "owner/repo" format
-            short_repo = repo_name.split("/")[-1] if "/" in repo_name else repo_name
-            name_parts.append(short_repo)
-        name_parts.append(str(os.getpid()))
+        name_parts.append(uuid.uuid4().hex[:6])
         return "-".join(name_parts)
 
     def _build_podman_command(
@@ -320,6 +323,55 @@ class ContainerRunner:
 
         return cmd
 
+    async def _stop_timed_out_container(
+        self,
+        container_name: str,
+        process: asyncio.subprocess.Process,
+    ) -> None:
+        """Stop a running container and ensure the podman run process exits."""
+        stop_process = await asyncio.create_subprocess_exec(
+            "podman",
+            "stop",
+            "-t",
+            "10",
+            container_name,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+
+        should_kill = False
+        try:
+            await asyncio.wait_for(stop_process.wait(), timeout=15.0)
+            if stop_process.returncode != 0:
+                logger.warning(
+                    f"podman stop failed for {container_name} "
+                    f"(exit {stop_process.returncode}), killing"
+                )
+                should_kill = True
+        except TimeoutError:
+            logger.warning(f"Container {container_name} didn't stop, killing")
+            should_kill = True
+
+        if should_kill:
+            kill_process = await asyncio.create_subprocess_exec(
+                "podman",
+                "kill",
+                container_name,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            try:
+                await asyncio.wait_for(kill_process.wait(), timeout=15.0)
+            except TimeoutError:
+                logger.warning(f"podman kill for {container_name} did not finish")
+
+        try:
+            await asyncio.wait_for(process.wait(), timeout=15.0)
+        except TimeoutError:
+            logger.warning(f"podman run process for {container_name} did not exit, killing")
+            process.kill()
+            await process.wait()
+
     async def run(
         self,
         workspace_path: Path,
@@ -331,6 +383,7 @@ class ContainerRunner:
         repo_name: str | None = None,
         previous_task_keys: list[str] | None = None,
         extra_mounts: list[tuple[Path, str]] | None = None,
+        trace_context: dict[str, Any] | None = None,
     ) -> ContainerResult:
         """Run a task in a container sandbox.
 
@@ -344,6 +397,7 @@ class ContainerRunner:
             repo_name: Repository name (e.g., "owner/repo") for container naming.
             previous_task_keys: List of previously implemented task keys for handoff context.
             extra_mounts: Additional read-only volume mounts as (host_path, container_path) tuples.
+            trace_context: Workflow fields forwarded to Langfuse only.
 
         Returns:
             ContainerResult with execution status and logs.
@@ -359,6 +413,7 @@ class ContainerRunner:
             "summary": task_summary,
             "description": task_description,
             "previous_task_keys": previous_task_keys or [],
+            "trace_context": trace_context or {},
         }
         task_file.write_text(json.dumps(task_data, indent=2))
 
@@ -390,9 +445,8 @@ class ContainerRunner:
                     timeout=config.timeout_seconds + 60,  # Extra buffer
                 )
             except TimeoutError:
-                logger.error("Container execution timed out")
-                process.kill()
-                await process.wait()
+                logger.error(f"Container execution timed out, stopping {container_name}")
+                await self._stop_timed_out_container(container_name, process)
                 return ContainerResult(
                     success=False,
                     exit_code=-1,
@@ -402,30 +456,7 @@ class ContainerRunner:
                 )
             except asyncio.CancelledError:
                 logger.warning(f"Container execution cancelled, stopping {container_name}")
-                # Stop the container via podman (more reliable than killing process)
-                stop_process = await asyncio.create_subprocess_exec(
-                    "podman",
-                    "stop",
-                    "-t",
-                    "10",
-                    container_name,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-                try:
-                    await asyncio.wait_for(stop_process.wait(), timeout=15.0)
-                except TimeoutError:
-                    logger.warning(f"Container {container_name} didn't stop, killing")
-                    kill_process = await asyncio.create_subprocess_exec(
-                        "podman",
-                        "kill",
-                        container_name,
-                        stdout=asyncio.subprocess.DEVNULL,
-                        stderr=asyncio.subprocess.DEVNULL,
-                    )
-                    await kill_process.wait()
-                # Wait for the original process to finish
-                await process.wait()
+                await self._stop_timed_out_container(container_name, process)
                 raise  # Re-raise CancelledError
 
             exit_code = process.returncode or 0

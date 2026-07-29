@@ -1,17 +1,100 @@
 """Workspace setup node for LangGraph workflow."""
 
 import logging
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from forge.config import get_settings
-from forge.workflow.feature.state import FeatureState as WorkflowState
+from forge.integrations.github.client import GitHubClient
+from forge.integrations.jira.client import JiraClient
+from forge.workflow.nodes.git_persistence import push_to_fork_with_retry
 from forge.workflow.utils import update_state_timestamp
+from forge.workflow.utils.jira_status import (
+    post_status_comment,
+    set_implementing_label,
+    transition_tasks_to_in_progress,
+)
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.guardrails import GuardrailsLoader
 from forge.workspace.manager import Workspace, WorkspaceManager
 
+WorkflowState = dict[str, Any]
+
 logger = logging.getLogger(__name__)
+
+
+def _recreate_workspace_from_fork(
+    *,
+    ticket_key: str,
+    current_repo: str,
+    branch_name: str,
+    fork_owner: str,
+    fork_repo: str,
+    stale_workspace_path: str | None = None,
+) -> tuple[str, GitOperations]:
+    if not branch_name or not current_repo or not fork_owner or not fork_repo:
+        raise ValueError(
+            f"Cannot recreate workspace for {ticket_key}: "
+            "missing branch_name, current_repo, fork_owner, or fork_repo in state"
+        )
+
+    manager = WorkspaceManager(base_dir=get_settings().workspace_base_dir)
+    workspace_obj = manager.create_workspace(repo_name=current_repo, ticket_key=ticket_key)
+    target_path = workspace_obj.path
+    stale_path = Path(stale_workspace_path) if stale_workspace_path else None
+
+    # Build and validate the replacement beside the target.  The existing
+    # workspace may contain the only copy of an unpushed commit, so it must not
+    # be removed merely because fetch/rebase failed.
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    replacement_path = Path(
+        tempfile.mkdtemp(prefix=f".{target_path.name}-replacement-", dir=target_path.parent)
+    )
+    replacement_workspace = Workspace(
+        path=replacement_path,
+        repo_name=current_repo,
+        branch_name=branch_name,
+        ticket_key=ticket_key,
+    )
+    git = GitOperations(replacement_workspace)
+    try:
+        git.clone()
+        git.add_fork_remote(fork_owner, fork_repo)
+        git.checkout_branch(branch_name, remote="fork")
+    except Exception:
+        shutil.rmtree(replacement_path, ignore_errors=True)
+        raise
+
+    old_path = stale_path if stale_path and stale_path.exists() else None
+    backup_path: Path | None = None
+    try:
+        if old_path:
+            backup_path = Path(
+                tempfile.mkdtemp(prefix=f".{target_path.name}-old-", dir=target_path.parent)
+            )
+            backup_path.rmdir()
+            old_path.rename(backup_path)
+        elif target_path.exists() and target_path != replacement_path:
+            # create_workspace creates the deterministic target directory when
+            # recovery starts without a stale workspace.
+            target_path.rmdir()
+
+        replacement_path.rename(target_path)
+    except Exception:
+        if backup_path and backup_path.exists() and not target_path.exists():
+            backup_path.rename(target_path)
+        shutil.rmtree(replacement_path, ignore_errors=True)
+        raise
+
+    if backup_path and backup_path.exists():
+        shutil.rmtree(backup_path)
+
+    git.workspace.path = target_path
+    git.workspace_recreated = True
+    logger.info(f"Workspace recreated at {target_path} for {ticket_key}")
+    return str(target_path), git
 
 
 def prepare_workspace(
@@ -55,24 +138,32 @@ def prepare_workspace(
             ticket_key=ticket_key,
         )
         git = GitOperations(workspace)
-        git.pull_rebase(remote=remote)
+        try:
+            git.pull_rebase(remote=remote)
+        except Exception as e:
+            logger.warning(
+                "Workspace sync failed for %s; recreating workspace from fork: %s",
+                ticket_key,
+                e,
+            )
+            return _recreate_workspace_from_fork(
+                ticket_key=ticket_key,
+                current_repo=current_repo,
+                branch_name=branch_name,
+                fork_owner=fork_owner,
+                fork_repo=fork_repo,
+                stale_workspace_path=workspace_path,
+            )
         return workspace_path, git
 
     # Workspace is missing — recreate from fork branch.
-    if not branch_name or not current_repo or not fork_owner or not fork_repo:
-        raise ValueError(
-            f"Cannot recreate workspace for {ticket_key}: "
-            "missing branch_name, current_repo, fork_owner, or fork_repo in state"
-        )
-
-    manager = WorkspaceManager(base_dir=get_settings().workspace_base_dir)
-    workspace_obj = manager.create_workspace(repo_name=current_repo, ticket_key=ticket_key)
-    git = GitOperations(workspace_obj)
-    git.clone()
-    git.add_fork_remote(fork_owner, fork_repo)
-    git.checkout_branch(branch_name, remote="fork")
-    logger.info(f"Workspace recreated at {workspace_obj.path} for {ticket_key}")
-    return str(workspace_obj.path), git
+    return _recreate_workspace_from_fork(
+        ticket_key=ticket_key,
+        current_repo=current_repo,
+        branch_name=branch_name,
+        fork_owner=fork_owner,
+        fork_repo=fork_repo,
+    )
 
 
 # Global workspace manager instance
@@ -134,6 +225,30 @@ async def setup_workspace(state: WorkflowState) -> WorkflowState:
 
     logger.info(f"Setting up workspace for {current_repo} ({ticket_key})")
 
+    # Extract repo name for display (handle "owner/repo" format)
+    repo_display = (
+        current_repo.split("/")[-1]
+        if current_repo and "/" in current_repo
+        else "unknown repository"
+    )
+
+    # Post initial status comment and update Jira labels/transitions
+    jira_client = JiraClient()
+    try:
+        await post_status_comment(
+            jira_client,
+            ticket_key,
+            f"⚙️ Implementation starting for {repo_display}. Setting up workspace...",
+        )
+        await set_implementing_label(jira_client, ticket_key)
+
+        # Transition task tickets to In Progress if present
+        task_keys = state.get("task_keys", [])
+        if task_keys:
+            await transition_tasks_to_in_progress(jira_client, task_keys)
+    finally:
+        await jira_client.close()
+
     manager = get_workspace_manager()
 
     try:
@@ -156,43 +271,68 @@ async def setup_workspace(state: WorkflowState) -> WorkflowState:
         git.clone()
         logger.info(f"Clone completed successfully for {current_repo}")
 
-        # Set up feature branch.
-        # If the workflow already created a PR (fork_owner/fork_repo in state),
-        # the branch lives on the fork. Add the fork remote, check whether the
-        # branch exists there, and check it out so we don't lose history.
+        # Detect the upstream default branch and establish the durable fork
+        # before implementation starts.  Every implementation/review handoff
+        # pushes to this fork, so continuing without it would guarantee a
+        # later persistence failure.
+        default_branch = "main"
         fork_owner = state.get("fork_owner", "")
         fork_repo_name = state.get("fork_repo", "")
+        if current_repo and "/" in current_repo:
+            owner, repo_name = current_repo.split("/", 1)
+            github = GitHubClient()
+            try:
+                try:
+                    repo_data = await github.get_repository(owner, repo_name)
+                    default_branch = repo_data.get("default_branch", "main")
+                    logger.info(f"Detected default branch for {current_repo}: {default_branch}")
+                except Exception as exc:
+                    logger.warning(f"Could not detect default branch for {current_repo}: {exc}")
 
-        if fork_owner and fork_repo_name:
-            git.add_fork_remote(fork_owner, fork_repo_name)
-            branch_exists_on_fork = git.remote_branch_exists(workspace.branch_name, remote="fork")
-            if branch_exists_on_fork:
-                logger.info(
-                    f"Branch '{workspace.branch_name}' exists on fork "
-                    f"{fork_owner}/{fork_repo_name} — checking it out"
+                if not fork_owner or not fork_repo_name:
+                    fork_data = await github.get_or_create_fork(owner, repo_name)
+                    fork_owner = fork_data["owner"]["login"]
+                    fork_repo_name = fork_data["name"]
+
+                await github.sync_fork_with_upstream(
+                    fork_owner,
+                    fork_repo_name,
+                    branch=default_branch,
                 )
-                git.checkout_branch(workspace.branch_name, remote="fork")
-            else:
-                git.create_branch()
+            finally:
+                await github.close()
+
+        # Set up feature branch.
+        git.add_fork_remote(fork_owner, fork_repo_name)
+        branch_exists_on_fork = git.remote_branch_exists(workspace.branch_name, remote="fork")
+        if branch_exists_on_fork:
+            logger.info(
+                f"Branch '{workspace.branch_name}' exists on fork "
+                f"{fork_owner}/{fork_repo_name} — checking it out"
+            )
+            git.checkout_branch(workspace.branch_name, remote="fork")
         else:
-            git.create_branch()
+            git.create_branch(default_branch)
+            # The next graph node may run on a worker that cannot see this
+            # local workspace.  Publish the new branch before checkpointing so
+            # that worker can recreate it from the fork on the first attempt.
+            await push_to_fork_with_retry(git)
 
         # Create .forge directory for task handoff
         forge_dir = workspace.path / ".forge"
         forge_dir.mkdir(exist_ok=True)
         (forge_dir / "history").mkdir(exist_ok=True)
 
-        # Ensure .forge/ is in .gitignore to prevent accidental commits
-        gitignore_path = workspace.path / ".gitignore"
-        if gitignore_path.exists():
-            content = gitignore_path.read_text()
-            if ".forge" not in content:
-                if not content.endswith("\n"):
-                    content += "\n"
-                content += "\n# Forge workflow state (do not commit)\n.forge/\n"
-                gitignore_path.write_text(content)
-        else:
-            gitignore_path.write_text("# Forge workflow state (do not commit)\n.forge/\n")
+        # Keep Forge handoff files local to this clone without modifying the
+        # target repository's tracked .gitignore.
+        exclude_path = workspace.path / ".git" / "info" / "exclude"
+        exclude_path.parent.mkdir(parents=True, exist_ok=True)
+        exclude_content = exclude_path.read_text() if exclude_path.exists() else ""
+        if ".forge/" not in exclude_content:
+            if exclude_content and not exclude_content.endswith("\n"):
+                exclude_content += "\n"
+            exclude_content += "\n# Forge workflow state (do not commit)\n.forge/\n"
+            exclude_path.write_text(exclude_content)
 
         logger.info("Created .forge directory for task handoff")
 
@@ -205,6 +345,7 @@ async def setup_workspace(state: WorkflowState) -> WorkflowState:
         context["guardrails"] = guardrails.get_system_context()
         context["current_repo"] = current_repo
         context["branch_name"] = workspace.branch_name
+        context["default_branch"] = default_branch
 
         logger.info(f"Workspace ready: {workspace}")
 
@@ -213,6 +354,8 @@ async def setup_workspace(state: WorkflowState) -> WorkflowState:
                 **state,
                 "workspace_path": str(workspace.path),
                 "current_repo": current_repo,
+                "fork_owner": fork_owner,
+                "fork_repo": fork_repo_name,
                 "context": context,
                 "current_node": "implementation",
                 "last_error": None,
@@ -221,10 +364,6 @@ async def setup_workspace(state: WorkflowState) -> WorkflowState:
 
     except Exception as e:
         logger.error(f"Workspace setup failed for {ticket_key}: {e}")
-        # Post error notification to Jira
-        from forge.workflow.nodes.error_handler import notify_error
-
-        await notify_error(state, str(e), "setup_workspace")
         return {
             **state,
             "last_error": str(e),

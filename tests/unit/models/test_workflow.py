@@ -1,6 +1,5 @@
 """Unit tests for workflow models."""
 
-
 from forge.models.workflow import (
     ForgeLabel,
     JiraStatus,
@@ -62,6 +61,10 @@ class TestForgeLabel:
     def test_plan_approved_label_value(self):
         """ForgeLabel.PLAN_APPROVED already exists with correct value."""
         assert ForgeLabel.PLAN_APPROVED.value == "forge:plan-approved"
+
+    def test_task_takeover_labels_exist(self) -> None:
+        """Verify Task Takeover workflow labels are defined."""
+        assert ForgeLabel.TASK_TRIAGE_PENDING.value == "forge:task-triage-pending"
 
     def test_general_labels_exist(self):
         """Verify general labels are defined."""

@@ -6,13 +6,62 @@ from typing import Any
 
 from forge.config import get_settings
 from forge.integrations.agents import ForgeAgent
-from forge.integrations.jira.client import JiraClient
+from forge.integrations.jira.client import (
+    JiraClient,
+    artifact_interaction_options,
+    pr_interaction_options,
+)
 from forge.models.workflow import ForgeLabel
 from forge.workflow.feature.state import FeatureState as WorkflowState
+from forge.workflow.nodes.prd_generation import (
+    _normalize_proposals_path,
+    _resolve_prd_proposals_repo,
+    _resolve_proposals_path,
+)
+from forge.workflow.nodes.proposal_pr import (
+    SPEC_PROPOSAL,
+    create_proposal_pr,
+    update_proposal_pr,
+)
 from forge.workflow.utils import update_state_timestamp
+from forge.workflow.utils.jira_status import post_status_comment
+from forge.workflow.utils.proposal_review_threads import reply_to_proposal_decisions
 from forge.workflow.utils.qa_summary import post_qa_summary_if_needed
 
 logger = logging.getLogger(__name__)
+
+
+async def _create_spec_proposal_pr(
+    ticket_key: str,
+    spec_content: str,
+    summary: str,
+    proposals_repo: str,
+    proposals_path: str = "",
+) -> dict[str, Any]:
+    """Create a PR with the spec in the enhancement proposals repo."""
+    proposals_path = _normalize_proposals_path(proposals_path)
+    return await create_proposal_pr(
+        artifact=SPEC_PROPOSAL,
+        ticket_key=ticket_key,
+        content=spec_content,
+        summary=summary,
+        proposals_repo=proposals_repo,
+        proposals_path=proposals_path,
+    )
+
+
+async def _update_spec_proposal_pr(
+    ticket_key: str,
+    spec_content: str,
+    state: dict[str, Any],
+) -> None:
+    """Push updated spec content to the existing proposal PR branch."""
+    await update_proposal_pr(
+        artifact=SPEC_PROPOSAL,
+        ticket_key=ticket_key,
+        content=spec_content,
+        state=state,
+    )
 
 
 async def generate_spec(state: WorkflowState) -> WorkflowState:
@@ -46,9 +95,17 @@ async def generate_spec(state: WorkflowState) -> WorkflowState:
     jira_error = None
 
     try:
+        await post_status_comment(
+            jira,
+            ticket_key,
+            "📋 Forge is generating your specification — this may take a few minutes.",
+        )
+
+        # Fetch issue metadata (needed for project_key and summary)
+        issue = await jira.get_issue(ticket_key)
+
         # If PRD not in state, fetch from Jira
         if not prd_content:
-            issue = await jira.get_issue(ticket_key)
             prd_content = issue.description or ""
 
         if not prd_content.strip():
@@ -62,42 +119,57 @@ async def generate_spec(state: WorkflowState) -> WorkflowState:
         # Build context
         context: dict[str, Any] = {
             "ticket_key": ticket_key,
+            "ticket_type": state.get("ticket_type", ""),
+            "current_node": state.get("current_node", ""),
+            "event_type": state.get("event_type", ""),
+            "event_source": state.get("context", {}).get("source", ""),
+            "retry_count": state.get("retry_count", 0),
         }
 
         # Generate specification using Claude - primary operation
         spec_content = await agent.generate_spec(prd_content, context)
 
-        # Store spec in Jira - secondary operation
+        # Publish spec — either as GitHub PR or Jira update
+        proposals_repo = await _resolve_prd_proposals_repo(issue.project_key, jira)
+        spec_pr_result = None
         try:
-            settings = get_settings()
-            if settings.jira_store_in_comments:
-                await jira.add_structured_comment(
-                    ticket_key,
-                    "Technical Specification",
-                    spec_content,
-                    comment_type="spec",
-                )
-            elif settings.jira_spec_custom_field:
-                await jira.update_custom_field(
-                    ticket_key,
-                    settings.jira_spec_custom_field,
-                    spec_content,
+            if proposals_repo:
+                proposals_path = await _resolve_proposals_path(issue.project_key, jira)
+                spec_pr_result = await _create_spec_proposal_pr(
+                    ticket_key=ticket_key,
+                    spec_content=spec_content,
+                    summary=issue.summary,
+                    proposals_repo=proposals_repo,
+                    proposals_path=proposals_path,
                 )
             else:
-                # Default: store as markdown attachment
-                await jira.add_attachment(
-                    ticket_key,
-                    filename=f"{ticket_key}-spec.md",
-                    content=spec_content,
-                    content_type="text/markdown",
-                )
-
-            # Set workflow label (instead of custom status transition)
-            await jira.set_workflow_label(ticket_key, ForgeLabel.SPEC_PENDING)
+                settings = get_settings()
+                if settings.jira_store_in_comments:
+                    await jira.add_structured_comment(
+                        ticket_key,
+                        "Technical Specification",
+                        spec_content,
+                        comment_type="spec",
+                    )
+                elif settings.jira_spec_custom_field:
+                    await jira.update_custom_field(
+                        ticket_key,
+                        settings.jira_spec_custom_field,
+                        spec_content,
+                    )
+                    await jira.add_comment(ticket_key, artifact_interaction_options("spec"))
+                else:
+                    await jira.add_attachment(
+                        ticket_key,
+                        filename=f"{ticket_key}-spec.md",
+                        content=spec_content,
+                        content_type="text/markdown",
+                    )
+                    await jira.add_comment(ticket_key, artifact_interaction_options("spec"))
+                await jira.set_workflow_label(ticket_key, ForgeLabel.SPEC_PENDING)
         except Exception as e:
-            # Jira update failed but we have content - log and continue
             jira_error = str(e)
-            logger.warning(f"Jira update failed for {ticket_key}, but spec was generated: {e}")
+            logger.warning(f"Spec publish failed for {ticket_key}: {e}")
 
         logger.info(f"Spec generated for {ticket_key} ({len(spec_content)} chars)")
 
@@ -108,21 +180,21 @@ async def generate_spec(state: WorkflowState) -> WorkflowState:
             "generated_at": datetime.now(UTC).isoformat(),
         }
 
-        return update_state_timestamp(
+        result = update_state_timestamp(
             {
                 **state,
                 "spec_content": spec_content,
                 "generation_context": generation_context,
                 "current_node": "spec_approval_gate",
-                "last_error": f"Jira update pending: {jira_error}" if jira_error else None,
+                "last_error": f"Spec publish pending: {jira_error}" if jira_error else None,
             }
         )
+        if spec_pr_result:
+            result.update(spec_pr_result)
+        return result
 
     except Exception as e:
         logger.error(f"Spec generation failed for {ticket_key}: {e}")
-        from forge.workflow.nodes.error_handler import notify_error
-
-        await notify_error(state, str(e), "generate_spec")
         # If we have partial content, save it even on failure
         result_state = {
             **state,
@@ -167,44 +239,82 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
             feedback=feedback,
             content_type="spec",
             ticket_key=ticket_key,
+            context={
+                "ticket_type": state.get("ticket_type", ""),
+                "current_node": state.get("current_node", ""),
+                "event_type": state.get("event_type", ""),
+                "event_source": state.get("context", {}).get("source", ""),
+                "retry_count": state.get("retry_count", 0),
+            },
         )
 
-        # Store updated spec in Jira (comment or custom field based on config)
-        settings = get_settings()
-        if settings.jira_store_in_comments:
-            await jira.add_structured_comment(
-                ticket_key,
-                "Technical Specification (Revised)",
-                new_spec,
-                comment_type="spec",
+        # Publish revised spec
+        if state.get("spec_pr_number"):
+            await _update_spec_proposal_pr(ticket_key, new_spec, state)
+            await reply_to_proposal_decisions(
+                repo_full_name=state.get("spec_pr_repo", ""),
+                pr_number=state["spec_pr_number"],
+                decisions=state.get("proposal_review_decisions", []),
+                dispositions={"accept", "uncertain"},
+                default_response=(
+                    "Forge addressed this feedback in the latest specification revision."
+                ),
             )
-        elif settings.jira_spec_custom_field:
-            await jira.update_custom_field(
+            pr_url = state.get("spec_pr_url", "")
+            await post_status_comment(
+                jira,
                 ticket_key,
-                settings.jira_spec_custom_field,
-                new_spec,
+                f"📋 Specification has been revised based on feedback: [GitHub PR]({pr_url})\n\n"
+                f"{pr_interaction_options(pr_url)}",
             )
         else:
-            # Default: replace attachment - delete old one first, then add new
-            old_filename = f"{ticket_key}-spec.md"
-            deleted = await jira.delete_attachments_by_name(ticket_key, old_filename)
-            if deleted:
-                logger.info(f"Deleted {deleted} old spec attachment(s) for {ticket_key}")
-
-            await jira.add_attachment(
+            settings = get_settings()
+            if settings.jira_store_in_comments:
+                await jira.add_structured_comment(
+                    ticket_key,
+                    "Technical Specification (Revised)",
+                    new_spec,
+                    comment_type="spec",
+                )
+            elif settings.jira_spec_custom_field:
+                await jira.update_custom_field(
+                    ticket_key,
+                    settings.jira_spec_custom_field,
+                    new_spec,
+                )
+            else:
+                old_filename = f"{ticket_key}-spec.md"
+                deleted = await jira.delete_attachments_by_name(ticket_key, old_filename)
+                if deleted:
+                    logger.info(f"Deleted {deleted} old spec attachment(s) for {ticket_key}")
+                await jira.add_attachment(
+                    ticket_key,
+                    filename=old_filename,
+                    content=new_spec,
+                    content_type="text/markdown",
+                )
+            if not state.get("spec_pr_number"):
+                await jira.add_comment(ticket_key, artifact_interaction_options("spec"))
+            await post_status_comment(
+                jira,
                 ticket_key,
-                filename=old_filename,
-                content=new_spec,
-                content_type="text/markdown",
+                "Specification has been revised based on feedback. Please review.",
             )
 
-        # Add comment acknowledging revision
-        await jira.add_comment(
-            ticket_key,
-            "Specification has been revised based on feedback. Please review the updated version.",
-        )
-
         logger.info(f"Spec regenerated for {ticket_key} ({len(new_spec)} chars)")
+
+        automated_review_revision_count = state.get("automated_review_revision_count", 0)
+        if state.get("automated_review_revision_pending"):
+            automated_review_revision_count += 1
+        proposal_review_decisions = [
+            {
+                **decision,
+                "status": "addressed",
+            }
+            if decision.get("disposition") in ("accept", "uncertain")
+            else decision
+            for decision in state.get("proposal_review_decisions", [])
+        ]
 
         return update_state_timestamp(
             {
@@ -212,6 +322,9 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
                 "spec_content": new_spec,
                 "feedback_comment": None,
                 "revision_requested": False,
+                "automated_review_revision_count": automated_review_revision_count,
+                "automated_review_revision_pending": False,
+                "proposal_review_decisions": proposal_review_decisions,
                 "current_node": "spec_approval_gate",
                 "last_error": None,
             }
@@ -219,9 +332,6 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
 
     except Exception as e:
         logger.error(f"Spec regeneration failed for {ticket_key}: {e}")
-        from forge.workflow.nodes.error_handler import notify_error
-
-        await notify_error(state, str(e), "regenerate_spec")
         return {
             **state,
             "last_error": str(e),

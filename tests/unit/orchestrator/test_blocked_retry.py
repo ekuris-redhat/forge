@@ -54,12 +54,11 @@ def _make_retry_message(base: QueueMessage) -> QueueMessage:
     )
 
 
-
 class TestWorkerTerminalBlockedCheck:
     """Worker skips invocation when is_blocked=True, same as terminal nodes."""
 
     @pytest.mark.asyncio
-    async def test_blocked_state_skips_invocation(self, worker, base_message):
+    async def test_blocked_state_skips_invocation(self, base_message):
         """Workflow with is_blocked=True does not get invoked."""
         blocked_state = {
             "ticket_key": "TEST-123",
@@ -72,16 +71,15 @@ class TestWorkerTerminalBlockedCheck:
 
         invoked = False
 
-        async def fake_process(message):
+        async def fake_process(_message):
             nonlocal invoked
             mock_state = MagicMock()
             mock_state.values = blocked_state
 
             terminal_nodes = ("complete", "complete_tasks", "aggregate_feature_status")
-            is_terminal_or_blocked = (
-                blocked_state.get("current_node") in terminal_nodes
-                or blocked_state.get("is_blocked", False)
-            )
+            is_terminal_or_blocked = blocked_state.get(
+                "current_node"
+            ) in terminal_nodes or blocked_state.get("is_blocked", False)
 
             if is_terminal_or_blocked:
                 return  # skipped
@@ -91,7 +89,7 @@ class TestWorkerTerminalBlockedCheck:
         assert invoked is False
 
     @pytest.mark.asyncio
-    async def test_non_blocked_mid_workflow_is_invocable(self, worker, base_message):
+    async def test_non_blocked_mid_workflow_is_invocable(self):
         """Workflow without is_blocked proceeds to invocation."""
         state = {
             "ticket_key": "TEST-123",
@@ -103,9 +101,8 @@ class TestWorkerTerminalBlockedCheck:
         }
 
         terminal_nodes = ("complete", "complete_tasks", "aggregate_feature_status")
-        is_terminal_or_blocked = (
-            state.get("current_node") in terminal_nodes
-            or state.get("is_blocked", False)
+        is_terminal_or_blocked = state.get("current_node") in terminal_nodes or state.get(
+            "is_blocked", False
         )
 
         assert is_terminal_or_blocked is False
@@ -123,40 +120,36 @@ class TestRetryHandlerClearsBlockedState:
             "is_paused": False,
             "is_blocked": True,
             "last_error": "CI exhausted after 5 attempts",
-            "ci_fix_attempts": 5,
+            "ci_fix_attempt": 5,
             "retry_count": 0,
             "revision_requested": False,
             "feedback_comment": None,
             "context": {},
         }
 
-        result = await worker._handle_resume_event(
-            _make_retry_message(base_message), blocked_state
-        )
+        result = await worker._handle_resume_event(_make_retry_message(base_message), blocked_state)
 
         assert result.get("is_blocked") is False
 
     @pytest.mark.asyncio
     async def test_retry_resets_ci_fix_attempts_unconditionally(self, worker, base_message):
-        """forge:retry resets ci_fix_attempts=0 regardless of current_node."""
+        """forge:retry resets ci_fix_attempt=0 regardless of current_node."""
         blocked_state = {
             "ticket_key": "TEST-123",
             "current_node": "setup_workspace",  # not ci_evaluator
             "is_paused": False,
             "is_blocked": True,
             "last_error": "Clone failed",
-            "ci_fix_attempts": 3,
+            "ci_fix_attempt": 3,
             "retry_count": 0,
             "revision_requested": False,
             "feedback_comment": None,
             "context": {},
         }
 
-        result = await worker._handle_resume_event(
-            _make_retry_message(base_message), blocked_state
-        )
+        result = await worker._handle_resume_event(_make_retry_message(base_message), blocked_state)
 
-        assert result.get("ci_fix_attempts") == 0
+        assert result.get("ci_fix_attempt") == 0
 
     @pytest.mark.asyncio
     async def test_retry_clears_last_error(self, worker, base_message):
@@ -167,16 +160,14 @@ class TestRetryHandlerClearsBlockedState:
             "is_paused": False,
             "is_blocked": True,
             "last_error": "CI exhausted",
-            "ci_fix_attempts": 5,
+            "ci_fix_attempt": 5,
             "retry_count": 0,
             "revision_requested": False,
             "feedback_comment": None,
             "context": {},
         }
 
-        result = await worker._handle_resume_event(
-            _make_retry_message(base_message), blocked_state
-        )
+        result = await worker._handle_resume_event(_make_retry_message(base_message), blocked_state)
 
         assert result.get("last_error") is None
 
@@ -189,18 +180,62 @@ class TestRetryHandlerClearsBlockedState:
             "is_paused": False,
             "is_blocked": True,
             "last_error": "CI exhausted",
-            "ci_fix_attempts": 5,
+            "ci_fix_attempt": 5,
             "retry_count": 0,
             "revision_requested": False,
             "feedback_comment": None,
             "context": {},
         }
 
-        result = await worker._handle_resume_event(
-            _make_retry_message(base_message), blocked_state
-        )
+        result = await worker._handle_resume_event(_make_retry_message(base_message), blocked_state)
 
         assert result.get("current_node") == "ci_evaluator"
+
+    @pytest.mark.asyncio
+    async def test_retry_marks_non_gate_node_for_fresh_invoke(self, worker, base_message):
+        """forge:retry at an execution node asks the worker to re-run that node."""
+        blocked_state = {
+            "ticket_key": "TEST-123",
+            "current_node": "implement_bug_fix",
+            "is_paused": True,
+            "is_blocked": True,
+            "last_error": "Implementation failed",
+            "ci_fix_attempt": 0,
+            "retry_count": 0,
+            "revision_requested": False,
+            "feedback_comment": None,
+            "context": {},
+        }
+
+        result = await worker._handle_resume_event(_make_retry_message(base_message), blocked_state)
+
+        assert result.get("context", {}).get("force_fresh_invoke") is True
+
+
+class TestRetryOnStuckNonTerminalNode:
+    """forge:retry unblocks a workflow stuck at a non-terminal node without error markers."""
+
+    @pytest.mark.asyncio
+    async def test_retry_on_non_terminal_no_error_still_resumes(self, worker, base_message):
+        """forge:retry at a non-terminal node with no last_error/is_blocked must still resume."""
+        stuck_state = {
+            "ticket_key": "TEST-123",
+            "current_node": "reflect_rca",
+            "is_paused": False,
+            "is_blocked": False,
+            "last_error": None,
+            "ci_fix_attempt": 0,
+            "retry_count": 0,
+            "revision_requested": False,
+            "feedback_comment": None,
+            "context": {},
+        }
+
+        result = await worker._handle_resume_event(_make_retry_message(base_message), stuck_state)
+
+        assert result.get("is_paused") is False
+        assert result.get("last_error") is None
+        assert result.get("current_node") == "reflect_rca"
 
 
 class TestRetryOnHappyPathTerminalPostsComment:
@@ -215,7 +250,7 @@ class TestRetryOnHappyPathTerminalPostsComment:
             "is_paused": False,
             "is_blocked": False,
             "last_error": None,
-            "ci_fix_attempts": 0,
+            "ci_fix_attempt": 0,
             "retry_count": 0,
             "revision_requested": False,
             "feedback_comment": None,
@@ -232,3 +267,31 @@ class TestRetryOnHappyPathTerminalPostsComment:
         assert result.get("current_node") == "complete"
         # And the user must be informed via a Jira comment
         worker._post_terminal_error_comment.assert_called_once()
+
+
+class TestRetryAtTaskPlanApprovalGate:
+    """Tests for forge:retry at task_plan_approval_gate."""
+
+    @pytest.mark.asyncio
+    async def test_retry_at_task_plan_approval_gate_sets_revision_requested(
+        self, worker, base_message
+    ):
+        """forge:retry at task_plan_approval_gate sets revision_requested=True."""
+        state = {
+            "ticket_key": "TEST-123",
+            "current_node": "task_plan_approval_gate",
+            "is_paused": True,
+            "is_blocked": False,
+            "last_error": None,
+            "ci_fix_attempt": 0,
+            "retry_count": 0,
+            "revision_requested": False,
+            "feedback_comment": None,
+            "context": {},
+        }
+
+        result = await worker._handle_resume_event(_make_retry_message(base_message), state)
+
+        assert result.get("is_paused") is False
+        assert result.get("revision_requested") is True
+        assert result.get("feedback_comment") == "Regeneration requested via retry."

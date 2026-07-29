@@ -109,8 +109,23 @@ podman rm $(podman ps -a --filter name=forge- -q)
 | `forge:spec-pending` | Awaiting spec approval |
 | `forge:plan-pending` | Awaiting plan approval |
 | `forge:task-pending` | Awaiting task approval |
+| `forge:task-triage-pending` | Task takeover awaiting triage completion |
+| `forge:managed:task` | Task identity preservation label |
+| `forge:managed:task-takeover` | Task takeover identity preservation label |
 | `forge:blocked` | Workflow blocked, needs intervention |
-| `forge:retry` | Trigger retry of failed step |
+| `forge:retry` | Trigger retry of failed step / reset review state from `review_response_gate` |
+| `forge:yolo` | Autonomous mode — skip all artifact approval gates (see warning below) |
+
+> **⚠️ Warning — `forge:yolo`:** This label removes all human checkpoints for PRD, spec, plan, task, and task plan approval. Forge will proceed autonomously from ticket creation to implementation without pausing for review. Only use this on tickets where you are confident in the requirements and comfortable with Forge making all planning decisions. It does not bypass code review (the human review gate on the implementation PR is always required).
+
+## Jira Comment Syntax
+
+| Prefix | Effect |
+|--------|--------|
+| `!` | Revision request — triggers regeneration with feedback |
+| `?` or `@forge ask` | Question — triggers Q&A answer |
+| `>option N` | RCA option selection (RCA Option Gate only) |
+| _(no prefix)_ | Informational — workflow ignores it |
 
 ## GitHub PR Comment Commands
 
@@ -121,6 +136,38 @@ podman rm $(podman ps -a --filter name=forge- -q)
 | `/forge rebase` | PR comment | Merge main into PR branch, resolving conflicts with AI |
 
 Skip-gate commands are only active at CI stages (`wait_for_ci_gate`, `ci_evaluator`, `attempt_ci_fix`). Rebase works from any workflow stage.
+
+## PRD & Spec Approval via GitHub PR
+
+Opt-in per project via Jira project property. When configured, Forge opens PRs in the proposals repo for PRD and spec review instead of posting to Jira. Reviewer feedback triggers regeneration; merging the PR signals approval.
+
+**Per-project config (Jira project property):**
+
+| Property | Example | Description |
+|----------|---------|-------------|
+| `forge.prd_proposals_repo` | `org/enhancement-proposals` | Enables PR-based PRD/spec approval for this project |
+| `forge.prd_proposals_path` | `enhancements` | Base directory for enhancement folders (default: repo root) |
+
+Set via: `forge project-setup <PROJECT> --prd-proposals-repo owner/repo`
+Remove via: `forge project-setup <PROJECT> --prd-proposals-repo ""`
+Set path: `forge project-setup <PROJECT> --prd-proposals-path enhancements`
+Reset path: `forge project-setup <PROJECT> --prd-proposals-path ""`
+
+**Global fallbacks (`.env`, used when `FORGE_REQUIRE_PROJECT_CONFIG=false`):**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `PRD_PROPOSALS_REPO` | (empty) | Fallback `owner/repo` for projects without the property |
+| `PRD_PROPOSALS_PATH` | (empty) | Base directory for enhancement folders (empty = repo root) |
+
+**File structure per ticket:**
+```
+{path}/{TICKET}/
+  prd.md        # PRD (branch: forge/prd/{ticket-key})
+  design.md     # Spec (branch: forge/spec/{ticket-key})
+```
+
+Each artifact gets its own branch and PR. Same repo and path config applies to both.
 
 ## Container Execution
 

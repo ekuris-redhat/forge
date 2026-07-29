@@ -124,10 +124,14 @@ class ForgeLabel(StrEnum):
     RCA_APPROVED = "forge:rca-approved"
     TRIAGE_PENDING = "forge:triage-pending"
 
+    # Task Takeover workflow
+    TASK_TRIAGE_PENDING = "forge:task-triage-pending"
+
     # General
     FORGE_MANAGED = "forge:managed"
     BLOCKED = "forge:blocked"
     RETRY = "forge:retry"  # Add to trigger retry of current stage
+    YOLO = "forge:yolo"  # Skip human approval gates — auto-approve all artifact reviews
 
 
 class TicketType(StrEnum):

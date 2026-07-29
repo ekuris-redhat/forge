@@ -16,11 +16,18 @@ from pathlib import Path
 
 from forge.config import get_settings
 from forge.integrations.jira.client import JiraClient
+from forge.models.workflow import TicketType
 from forge.sandbox import ContainerRunner
 from forge.workflow.feature.state import FeatureState as WorkflowState
+from forge.workflow.nodes.git_persistence import (
+    PushPersistenceError,
+    build_persistence_error_state,
+    push_to_fork_with_retry,
+)
+from forge.workflow.nodes.workspace_setup import prepare_workspace
 from forge.workflow.utils import update_state_timestamp
+from forge.workflow.utils.jira_status import post_status_comment
 from forge.workspace.git_ops import GitOperations
-from forge.workspace.manager import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +52,63 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
     workspace_path = state.get("workspace_path")
     current_task = state.get("current_task_key")
     task_keys = state.get("task_keys", [])
+    implementation_node = _implementation_node_name(state)
+    recorded_workspace = state.get("workspace_path")
+    local_workspace_survived = bool(recorded_workspace and Path(recorded_workspace).exists())
 
-    if not workspace_path:
-        logger.error(f"No workspace for implementation on {ticket_key}")
+    try:
+        git: GitOperations
+        workspace_path, git = prepare_workspace(state)
+        state = {**state, "workspace_path": workspace_path}
+    except Exception as exc:
+        logger.error("Unable to prepare implementation workspace for %s: %s", ticket_key, exc)
         return {
             **state,
-            "last_error": "Workspace not set up",
-            "current_node": "implement_task",
+            "last_error": str(exc),
+            "current_node": implementation_node,
+            "retry_count": state.get("retry_count", 0) + 1,
+        }
+
+    same_workspace_survived = (
+        local_workspace_survived
+        and workspace_path == recorded_workspace
+        and git.workspace_recreated is not True
+    )
+    if state.get("implementation_push_pending") and same_workspace_survived:
+        try:
+            await push_to_fork_with_retry(git)
+        except PushPersistenceError as exc:
+            return update_state_timestamp(
+                build_persistence_error_state(state, exc, retry_node=implementation_node)
+            )
+
+        pending_task = state.get("implementation_push_pending_task")
+        implemented = list(state.get("implemented_tasks", []))
+        if pending_task and pending_task not in implemented:
+            implemented.append(pending_task)
+        return update_state_timestamp(
+            {
+                **state,
+                "current_task_key": None,
+                "implemented_tasks": implemented,
+                "current_node": implementation_node,
+                "last_error": None,
+                "implementation_push_pending": False,
+                "implementation_push_pending_task": None,
+                "persistence_retry_count": 0,
+            }
+        )
+    if state.get("implementation_push_pending"):
+        logger.warning(
+            "Pending implementation push for %s cannot be recovered on this worker; "
+            "rerunning implementation",
+            ticket_key,
+        )
+        state = {
+            **state,
+            "implementation_push_pending": False,
+            "implementation_push_pending_task": None,
+            "last_error": None,
         }
 
     # Get next task to implement if not set
@@ -69,35 +126,42 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
     if not current_task:
         logger.info(f"All tasks implemented for {ticket_key}")
 
-        # Fallback: commit any files the container agent left uncommitted.
-        # The container is responsible for committing, but this catches edge
-        # cases where it exited before the final commit step.
-        if workspace_path:
-            branch_name = state.get("context", {}).get("branch_name", "")
-            current_repo = state.get("current_repo", "")
-            git = GitOperations(
-                Workspace(
-                    path=Path(workspace_path),
-                    repo_name=current_repo,
-                    branch_name=branch_name,
-                    ticket_key=ticket_key,
-                )
-            )
+        try:
+            # Fallback: commit any files the container agent left uncommitted.
+            # The container is responsible for committing, but this catches edge
+            # cases where it exited before the final commit step.
             if git.has_uncommitted_changes():
                 logger.warning(
                     f"Uncommitted changes found after all tasks for {ticket_key} — "
                     "committing as fallback"
                 )
-                # Remove the .forge/ entry setup_workspace injected into .gitignore
-                # so we don't pollute the repo's gitignore with Forge internals.
-                _clean_forge_gitignore(Path(workspace_path))
                 git.stage_all()
                 git.commit(f"[{ticket_key}] chore: commit uncommitted changes after implementation")
+            await push_to_fork_with_retry(git)
+        except PushPersistenceError as exc:
+            return update_state_timestamp(
+                build_persistence_error_state(state, exc, retry_node=implementation_node)
+            )
+        except Exception as exc:
+            logger.error(
+                "Unable to persist completed implementation for %s: %s",
+                ticket_key,
+                exc,
+            )
+            return update_state_timestamp(
+                {
+                    **state,
+                    "last_error": str(exc),
+                    "current_node": implementation_node,
+                    "retry_count": state.get("retry_count", 0) + 1,
+                }
+            )
 
         return update_state_timestamp(
             {
                 **state,
                 "current_node": "local_review",
+                "local_review_pass_number": 1,
                 "last_error": None,
             }
         )
@@ -113,13 +177,12 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
         task_description = task_issue.description or ""
         task_summary = task_issue.summary
 
-        try:
-            await jira.add_comment(
-                ticket_key,
-                f"Implementation started for [{current_task}]: {task_summary}",
-            )
-        except Exception:
-            logger.warning(f"Failed to post implementation-started comment for {current_task}")
+        # Post status comment at task implementation start
+        await post_status_comment(
+            jira,
+            current_task,
+            f"🔨 Forge started implementing [{current_task}]: {task_summary}",
+        )
 
         # Get guardrails context
         guardrails = state.get("context", {}).get("guardrails", "")
@@ -145,23 +208,55 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
             task_key=current_task,
             repo_name=current_repo,
             previous_task_keys=implemented_tasks,
+            trace_context=_build_implementation_trace_context(
+                state,
+                implementation_node=implementation_node,
+                current_repo=current_repo,
+            ),
         )
 
         if result.success:
             logger.info(f"Container completed successfully for {current_task}")
 
-            # Track implemented tasks
-            implemented = state.get("implemented_tasks", [])
-            implemented.append(current_task)
+            # Persist each task commit before checkpointing. A subsequent task
+            # or local review may resume on a worker with a different filesystem.
+            try:
+                await push_to_fork_with_retry(git)
+            except PushPersistenceError as exc:
+                pending_state = {
+                    **state,
+                    "implementation_push_pending": True,
+                    "implementation_push_pending_task": current_task,
+                }
+                return update_state_timestamp(
+                    build_persistence_error_state(
+                        pending_state,
+                        exc,
+                        retry_node=implementation_node,
+                    )
+                )
 
+            # Persist workflow bookkeeping immediately after the durable push.
+            implemented = list(state.get("implemented_tasks", []))
+            if current_task not in implemented:
+                implemented.append(current_task)
+
+            # Post status comment at task implementation completion
+            await post_status_comment(
+                jira,
+                current_task,
+                "✅ Implementation complete. Running local code review before PR.",
+            )
+
+            # Track implemented tasks
             return update_state_timestamp(
                 {
                     **state,
                     "current_task_key": None,
                     "implemented_tasks": implemented,
-                    "current_node": "implement_task",  # Loop back for next task
+                    "current_node": implementation_node,
                     "last_error": None,
-                    "retry_count": 0,  # Reset retry count on success
+                    "retry_count": 0,
                 }
             )
         else:
@@ -174,46 +269,38 @@ async def implement_task(state: WorkflowState) -> WorkflowState:
 
     except Exception as e:
         logger.error(f"Implementation failed for {current_task}: {e}")
-        from forge.workflow.nodes.error_handler import notify_error
-
-        await notify_error(state, str(e), "implement_task")
         return {
             **state,
             "last_error": str(e),
-            "current_node": "implement_task",
+            "current_node": implementation_node,
             "retry_count": state.get("retry_count", 0) + 1,
         }
     finally:
         await jira.close()
 
 
-def _clean_forge_gitignore(workspace_path: Path) -> None:
-    """Remove the .forge/ entry that setup_workspace injected into .gitignore.
+def _implementation_node_name(state: WorkflowState) -> str:
+    """Return the implementation node name for the active workflow graph."""
+    return "implement_bug_fix" if state.get("ticket_type") == TicketType.BUG else "implement_task"
 
-    setup_workspace adds a .forge/ exclusion to prevent accidental commits of
-    workflow state. Before the fallback commit we strip it out so the target
-    repo's .gitignore isn't polluted with Forge-internal entries.
-    """
-    gitignore_path = workspace_path / ".gitignore"
-    if not gitignore_path.exists():
-        return
 
-    content = gitignore_path.read_text()
-    if ".forge" not in content:
-        return
-
-    cleaned = (
-        "\n".join(
-            line
-            for line in content.splitlines()
-            if ".forge" not in line and "Forge workflow state" not in line
-        ).rstrip("\n")
-        + "\n"
-    )
-
-    if cleaned != content:
-        gitignore_path.write_text(cleaned)
-        logger.debug("Removed .forge/ entry from .gitignore before fallback commit")
+def _build_implementation_trace_context(
+    state: WorkflowState,
+    *,
+    implementation_node: str,
+    current_repo: str,
+) -> dict[str, object]:
+    """Build trace-only fields for the container's Langfuse labels/metadata."""
+    return {
+        "ticket_key": state.get("ticket_key"),
+        "ticket_type": state.get("ticket_type"),
+        "current_node": implementation_node,
+        "current_repo": current_repo,
+        "repo": current_repo,
+        "current_pr_number": state.get("current_pr_number"),
+        "pr_number": state.get("current_pr_number"),
+        "retry_count": state.get("retry_count"),
+    }
 
 
 def _build_task_description(
