@@ -259,7 +259,7 @@ async def _clone_into(
     logger.info("Full clone succeeded for %s", source_url)
 
     if ref is not None:
-        rc, stderr = await _run_git("-C", temp_dir, "checkout", ref, timeout=timeout)
+        rc, stderr = await _run_git("-C", temp_dir, "checkout", "--", ref, timeout=timeout)
         if rc != 0:
             raise CloneError(f"git checkout {ref!r} failed (rc={rc}) in {temp_dir!r}: {stderr}")
         logger.info("Checked out ref %r in %s", ref, temp_dir)
