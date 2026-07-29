@@ -16,7 +16,6 @@ from forge.prompts import load_prompt
 from forge.sandbox import ContainerRunner
 from forge.skills.utils import extract_project_key
 from forge.workflow.feature.state import FeatureState as WorkflowState
-from forge.workflow.nodes.implementation import _clean_forge_gitignore
 from forge.workflow.utils import update_state_timestamp
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.manager import WorkspaceManager
@@ -44,9 +43,9 @@ async def update_docs_repo(state: WorkflowState) -> WorkflowState:
 
     # Check for separate docs repo
     docs_repo = None
+    settings = get_settings()
     try:
         project_key = extract_project_key(ticket_key)
-        settings = get_settings()
         jira = JiraClient(settings)
         try:
             docs_repo = await jira.get_project_docs_repo(project_key)
@@ -60,104 +59,95 @@ async def update_docs_repo(state: WorkflowState) -> WorkflowState:
         return state
 
     logger.info(f"Updating separate docs repo {docs_repo} for {ticket_key}")
-
-    settings = get_settings()
     guardrails = state.get("context", {}).get("guardrails", "")
     branch_name = state.get("context", {}).get("branch_name", f"forge/{ticket_key.lower()}")
-    fork_owner = state.get("fork_owner", "")
-    fork_repo = state.get("fork_repo", "")
+    fork_owner = state.get("fork_owner") or ""
+    fork_repo = state.get("fork_repo") or ""
 
+    workspace_manager = WorkspaceManager(base_dir=settings.workspace_base_dir)
+    code_workspace = None
+    docs_workspace = None
     try:
-        # Clone upstream and checkout the fork branch (same pattern as workspace_setup.py)
-        code_manager = WorkspaceManager(base_dir=settings.workspace_base_dir)
-        code_workspace = code_manager.create_workspace(
+        code_workspace = workspace_manager.create_workspace(
             repo_name=current_repo,
-            ticket_key=f"{ticket_key}-code-ref",
+            ticket_key=ticket_key,
         )
-
-        docs_manager = WorkspaceManager(base_dir=settings.workspace_base_dir)
-        docs_workspace = docs_manager.create_workspace(
+        docs_workspace = workspace_manager.create_workspace(
             repo_name=docs_repo,
             ticket_key=ticket_key,
             branch_name=branch_name,
         )
 
-        try:
-            # Clone upstream repo, add fork remote, checkout the PR branch
-            # (same pattern as workspace_setup.py prepare_workspace)
-            code_git = GitOperations(code_workspace)
-            code_git.clone()
-            code_git.add_fork_remote(fork_owner, fork_repo)
-            code_git.checkout_branch(branch_name, remote="fork")
+        # Clone upstream repo, add fork remote, checkout the PR branch
+        code_git = GitOperations(code_workspace)
+        code_git.clone()
+        code_git.add_fork_remote(fork_owner, fork_repo)
+        code_git.checkout_branch(branch_name, remote="fork")
 
-            # Clone and set up the docs repo
-            docs_git = GitOperations(docs_workspace)
-            docs_git.clone()
-            docs_git.create_branch()
+        # Clone and set up the docs repo
+        docs_git = GitOperations(docs_workspace)
+        docs_git.clone()
+        docs_git.create_branch()
 
-            # Add .forge/ to .gitignore (same pattern as workspace_setup.py)
-            forge_dir = docs_workspace.path / ".forge"
-            forge_dir.mkdir(exist_ok=True)
-            gitignore_path = docs_workspace.path / ".gitignore"
-            if gitignore_path.exists():
-                content = gitignore_path.read_text()
-                if ".forge" not in content:
-                    if not content.endswith("\n"):
-                        content += "\n"
-                    content += "\n.forge/\n"
-                    gitignore_path.write_text(content)
-            else:
-                gitignore_path.write_text(".forge/\n")
+        # Keep .forge/ local without modifying tracked .gitignore (same pattern as workspace_setup.py)
+        forge_dir = docs_workspace.path / ".forge"
+        forge_dir.mkdir(exist_ok=True)
+        exclude_path = docs_workspace.path / ".git" / "info" / "exclude"
+        exclude_path.parent.mkdir(parents=True, exist_ok=True)
+        exclude_content = exclude_path.read_text() if exclude_path.exists() else ""
+        if ".forge/" not in exclude_content:
+            if exclude_content and not exclude_content.endswith("\n"):
+                exclude_content += "\n"
+            exclude_content += "\n# Forge workflow state (do not commit)\n.forge/\n"
+            exclude_path.write_text(exclude_content)
 
-            # Run the doc update agent with both repos mounted
-            task_description = load_prompt(
-                "update-docs-separate",
-                workspace_path=str(docs_workspace.path),
-                guardrails=guardrails[:2000] if guardrails else "",
-            )
+        # Run the doc update agent with both repos mounted
+        task_description = load_prompt(
+            "update-docs-separate",
+            workspace_path=str(docs_workspace.path),
+            guardrails=guardrails[:2000] if guardrails else "",
+        )
 
-            runner = ContainerRunner(settings)
-            await runner.run(
-                workspace_path=docs_workspace.path,
-                task_summary="Update stale documentation in docs repo",
-                task_description=task_description,
-                ticket_key=ticket_key,
-                task_key=f"{ticket_key}-docs-repo",
-                repo_name=docs_repo,
-                extra_mounts=[(code_workspace.path, "/code-repo")],
-            )
+        runner = ContainerRunner(settings)
+        await runner.run(
+            workspace_path=docs_workspace.path,
+            task_summary="Update stale documentation in docs repo",
+            task_description=task_description,
+            ticket_key=ticket_key,
+            task_key=f"{ticket_key}-docs-repo",
+            repo_name=docs_repo,
+            extra_mounts=[(code_workspace.path, "/code-repo")],
+        )
 
-            # Clean .forge/ from .gitignore before committing
-            _clean_forge_gitignore(docs_workspace.path)
+        # Commit any uncommitted changes
+        if docs_git.has_uncommitted_changes():
+            docs_git.stage_all()
+            docs_git.commit(f"[{ticket_key}] docs: update documentation for code changes")
 
-            # Commit any uncommitted changes
-            if docs_git.has_uncommitted_changes():
-                docs_git.stage_all()
-                docs_git.commit(f"[{ticket_key}] docs: update documentation for code changes")
+        # Check if any commits were made
+        if not _branch_has_commits(docs_workspace.path):
+            logger.info(f"No doc changes needed in {docs_repo} for {ticket_key}")
+            return state
 
-            # Check if any commits were made
-            if not _branch_has_commits(docs_workspace.path):
-                logger.info(f"No doc changes needed in {docs_repo} for {ticket_key}")
-                return state
-
-            # Create PR
-            docs_pr_url = await _create_docs_pr(
-                ticket_key=ticket_key,
-                docs_repo=docs_repo,
-                git=docs_git,
-                branch_name=branch_name,
-                settings=settings,
-            )
-            logger.info(f"Created docs PR for {ticket_key}: {docs_pr_url}")
-            return update_state_timestamp({**state, "docs_pr_url": docs_pr_url})
-
-        finally:
-            docs_manager.destroy_workspace(docs_workspace)
-            code_manager.destroy_workspace(code_workspace)
+        # Create PR
+        docs_pr_url = await _create_docs_pr(
+            ticket_key=ticket_key,
+            docs_repo=docs_repo,
+            git=docs_git,
+            branch_name=branch_name,
+            settings=settings,
+        )
+        logger.info(f"Created docs PR for {ticket_key}: {docs_pr_url}")
+        return update_state_timestamp({**state, "docs_pr_url": docs_pr_url})
 
     except Exception as e:
         logger.warning(f"Separate docs repo update failed for {ticket_key}: {e}")
         return state
+    finally:
+        if docs_workspace is not None:
+            workspace_manager.destroy_workspace(docs_workspace)
+        if code_workspace is not None:
+            workspace_manager.destroy_workspace(code_workspace)
 
 
 async def _create_docs_pr(
@@ -168,7 +158,7 @@ async def _create_docs_pr(
     settings: Settings,
 ) -> str:
     """Create a fork-based PR for the docs repo."""
-    owner, repo = docs_repo.split("/")
+    owner, repo = docs_repo.split("/", 1)
 
     github = GitHubClient(settings)
     jira = JiraClient(settings)
