@@ -6,8 +6,8 @@ fork-based PR for the docs changes. Non-blocking.
 """
 
 import logging
-import subprocess
 from pathlib import Path
+from typing import Any
 
 from forge.config import Settings, get_settings
 from forge.integrations.github.client import GitHubClient
@@ -15,10 +15,12 @@ from forge.integrations.jira.client import JiraClient
 from forge.prompts import load_prompt
 from forge.sandbox import ContainerRunner
 from forge.skills.utils import extract_project_key
-from forge.workflow.feature.state import FeatureState as WorkflowState
+from forge.workflow.nodes.workspace_setup import _configure_forge_exclude
 from forge.workflow.utils import update_state_timestamp
 from forge.workspace.git_ops import GitOperations
 from forge.workspace.manager import WorkspaceManager
+
+WorkflowState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,20 @@ async def update_docs_repo(state: WorkflowState) -> WorkflowState:
         return state
 
     logger.info(f"Updating separate docs repo {docs_repo} for {ticket_key}")
+
+    # Resolve the docs repo's actual default branch to avoid hardcoding "main".
+    owner, repo = docs_repo.split("/", 1)
+    default_branch = "main"
+    github_for_meta = GitHubClient(settings)
+    try:
+        repo_data = await github_for_meta.get_repository(owner, repo)
+        default_branch = repo_data.get("default_branch", "main")
+        logger.info(f"Docs repo {docs_repo} default branch: {default_branch}")
+    except Exception as e:
+        logger.warning(f"Could not fetch docs repo metadata, defaulting to 'main': {e}")
+    finally:
+        await github_for_meta.close()
+
     guardrails = state.get("context", {}).get("guardrails", "")
     branch_name = state.get("context", {}).get("branch_name", f"forge/{ticket_key.lower()}")
     fork_owner = state.get("fork_owner") or ""
@@ -87,19 +103,11 @@ async def update_docs_repo(state: WorkflowState) -> WorkflowState:
         # Clone and set up the docs repo
         docs_git = GitOperations(docs_workspace)
         docs_git.clone()
-        docs_git.create_branch()
+        docs_git.create_branch(default_branch)
 
-        # Keep .forge/ local without modifying tracked .gitignore (same pattern as workspace_setup.py)
         forge_dir = docs_workspace.path / ".forge"
         forge_dir.mkdir(exist_ok=True)
-        exclude_path = docs_workspace.path / ".git" / "info" / "exclude"
-        exclude_path.parent.mkdir(parents=True, exist_ok=True)
-        exclude_content = exclude_path.read_text() if exclude_path.exists() else ""
-        if ".forge/" not in exclude_content:
-            if exclude_content and not exclude_content.endswith("\n"):
-                exclude_content += "\n"
-            exclude_content += "\n# Forge workflow state (do not commit)\n.forge/\n"
-            exclude_path.write_text(exclude_content)
+        _configure_forge_exclude(docs_workspace.path)
 
         # Run the doc update agent with both repos mounted
         task_description = load_prompt(
@@ -124,8 +132,8 @@ async def update_docs_repo(state: WorkflowState) -> WorkflowState:
             docs_git.stage_all()
             docs_git.commit(f"[{ticket_key}] docs: update documentation for code changes")
 
-        # Check if any commits were made
-        if not _branch_has_commits(docs_workspace.path):
+        # Check if any commits were made ahead of the upstream default branch
+        if not _branch_has_commits(docs_workspace.path, default_branch):
             logger.info(f"No doc changes needed in {docs_repo} for {ticket_key}")
             return state
 
@@ -135,6 +143,7 @@ async def update_docs_repo(state: WorkflowState) -> WorkflowState:
             docs_repo=docs_repo,
             git=docs_git,
             branch_name=branch_name,
+            base_branch=default_branch,
             settings=settings,
         )
         logger.info(f"Created docs PR for {ticket_key}: {docs_pr_url}")
@@ -155,6 +164,7 @@ async def _create_docs_pr(
     docs_repo: str,
     git: GitOperations,
     branch_name: str,
+    base_branch: str,
     settings: Settings,
 ) -> str:
     """Create a fork-based PR for the docs repo."""
@@ -181,14 +191,15 @@ async def _create_docs_pr(
                 f"files stale. This PR updates them to reflect the current code."
             ),
             head=f"{fork_owner}:{branch_name}",
-            base="main",
+            base=base_branch,
         )
 
-        pr_url = pr_data.get("html_url", "")
+        pr_url = str(pr_data.get("html_url", ""))
+        pr_number = pr_data.get("number", "?")
 
         await jira.add_comment(
             ticket_key,
-            f"Documentation PR created: [{docs_repo}#{pr_data.get('number')}]({pr_url})",
+            f"Documentation PR created: [{docs_repo}#{pr_number}]({pr_url})",
         )
 
         return pr_url
@@ -197,11 +208,13 @@ async def _create_docs_pr(
         await jira.close()
 
 
-def _branch_has_commits(workspace_path: Path) -> bool:
-    """Check if the current branch has commits ahead of origin/main."""
+def _branch_has_commits(workspace_path: Path, base_branch: str = "main") -> bool:
+    """Check if the current branch has commits ahead of the upstream default branch."""
+    import subprocess
+
     try:
         result = subprocess.run(
-            ["git", "log", "origin/main..HEAD", "--oneline"],
+            ["git", "log", f"origin/{base_branch}..HEAD", "--oneline"],
             cwd=workspace_path,
             capture_output=True,
             text=True,
