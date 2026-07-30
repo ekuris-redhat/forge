@@ -1707,6 +1707,11 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
         mock_jira = AsyncMock()
         mock_jira.get_attachments.return_value = [{"filename": "forge-stories-draft.json"}]
 
+        mock_review_comment = MagicMock()
+        mock_review_comment.id = "original_review_comment_id"
+        mock_review_comment.body = "### 📋 Proposed Epics Draft\nSome details here..."
+        mock_jira.get_comments.return_value = [mock_review_comment]
+
         with (
             patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
             patch(
@@ -1729,10 +1734,10 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
             assert len(saved_draft.items) == 1
             assert saved_draft.items[0].id == 1
 
-            # verify edit_comment was called
-            mock_jira.edit_comment.assert_called_once_with(
-                "TEST-123", "10001", "✅ /forge remove 2"
-            )
+            # verify edit_comment was called for both original review comment and the command comment
+            assert mock_jira.edit_comment.call_count == 2
+            mock_jira.edit_comment.assert_any_call("TEST-123", "10001", "✅ /forge remove 2")
+            mock_jira.edit_comment.assert_any_call("TEST-123", "original_review_comment_id", ANY)
 
             # verify state stays paused
             assert result == base_state
@@ -1751,7 +1756,11 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
 
         with (
             patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
-            patch("forge.orchestrator.worker.provision_epics_from_draft", new_callable=AsyncMock, return_value=["EPIC-101", "EPIC-102"]) as mock_provision,
+            patch(
+                "forge.orchestrator.worker.provision_epics_from_draft",
+                new_callable=AsyncMock,
+                return_value=["EPIC-101", "EPIC-102"],
+            ) as mock_provision,
         ):
             result = await worker._handle_resume_event(base_message, base_state)
 
@@ -1797,7 +1806,11 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
         mock_jira = AsyncMock()
         with (
             patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
-            patch("forge.orchestrator.worker.provision_epics_from_draft", new_callable=AsyncMock, return_value=["EPIC-101", "EPIC-102"]) as mock_provision,
+            patch(
+                "forge.orchestrator.worker.provision_epics_from_draft",
+                new_callable=AsyncMock,
+                return_value=["EPIC-101", "EPIC-102"],
+            ) as mock_provision,
         ):
             result = await worker._handle_resume_event(message, base_state)
 
@@ -1846,7 +1859,11 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
         mock_tasks_by_repo = {"org/repo": ["TASK-101", "TASK-102"]}
         with (
             patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
-            patch("forge.orchestrator.worker.provision_tasks_from_draft", new_callable=AsyncMock, return_value=(["TASK-101", "TASK-102"], mock_tasks_by_repo)) as mock_provision,
+            patch(
+                "forge.orchestrator.worker.provision_tasks_from_draft",
+                new_callable=AsyncMock,
+                return_value=(["TASK-101", "TASK-102"], mock_tasks_by_repo),
+            ) as mock_provision,
         ):
             result = await worker._handle_resume_event(message, task_state)
 
@@ -1869,7 +1886,11 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
 
         with (
             patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
-            patch("forge.orchestrator.worker.provision_epics_from_draft", new_callable=AsyncMock, side_effect=ValueError("Failed to connect to Jira")) as mock_provision,
+            patch(
+                "forge.orchestrator.worker.provision_epics_from_draft",
+                new_callable=AsyncMock,
+                side_effect=ValueError("Failed to connect to Jira"),
+            ) as mock_provision,
         ):
             result = await worker._handle_resume_event(base_message, base_state)
 
@@ -1922,7 +1943,11 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
         mock_jira = AsyncMock()
         with (
             patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
-            patch("forge.orchestrator.worker.provision_tasks_from_draft", new_callable=AsyncMock, side_effect=ValueError("Draft corrupted")) as mock_provision,
+            patch(
+                "forge.orchestrator.worker.provision_tasks_from_draft",
+                new_callable=AsyncMock,
+                side_effect=ValueError("Draft corrupted"),
+            ) as mock_provision,
         ):
             result = await worker._handle_resume_event(message, task_state)
 
@@ -1952,6 +1977,11 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
 
         mock_jira = AsyncMock()
         mock_jira.get_attachments.return_value = [{"filename": "forge-stories-draft.json"}]
+
+        mock_review_comment = MagicMock()
+        mock_review_comment.id = "original_review_comment_id"
+        mock_review_comment.body = "### 📋 Proposed Epics Draft\nSome details here..."
+        mock_jira.get_comments.return_value = [mock_review_comment]
 
         revised_draft_str = mock_draft.model_copy(
             update={"items": [mock_draft.items[0]]}
@@ -1988,9 +2018,11 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
             assert len(saved_draft.items) == 1
 
             # verify edit_comment called
-            mock_jira.edit_comment.assert_called_once_with(
+            assert mock_jira.edit_comment.call_count == 2
+            mock_jira.edit_comment.assert_any_call(
                 "TEST-123", "10001", "✅ ! simplify task descriptions"
             )
+            mock_jira.edit_comment.assert_any_call("TEST-123", "original_review_comment_id", ANY)
 
             # verify state stays paused
             assert result == base_state
