@@ -2,7 +2,7 @@
 
 from datetime import UTC
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -1749,7 +1749,10 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
         mock_jira = AsyncMock()
         mock_jira.get_attachments.return_value = [{"filename": "forge-stories-draft.json"}]
 
-        with patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
+        with (
+            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
+            patch("forge.orchestrator.worker.provision_epics_from_draft", new_callable=AsyncMock, return_value=["EPIC-101", "EPIC-102"]) as mock_provision,
+        ):
             result = await worker._handle_resume_event(base_message, base_state)
 
             # verify workflow label set
@@ -1757,8 +1760,183 @@ class TestWorkerInteractiveCommentCommandsAndRollback:
                 "TEST-123", ForgeLabel.PLAN_APPROVED
             )
 
+            # verify provisioning triggered
+            mock_provision.assert_called_once_with(ANY, mock_jira)
+            assert result["epic_keys"] == ["EPIC-101", "EPIC-102"]
+
             # verify state is unpaused
             assert result["is_paused"] is False
+
+    @pytest.mark.asyncio
+    async def test_label_addition_plan_approved_success(
+        self, worker: OrchestratorWorker, base_message: QueueMessage, base_state: dict
+    ):
+        """Label addition event forge:plan-approved triggers Epic provisioning and unpauses."""
+        payload = {
+            **base_message.payload,
+            "comment": {},
+            "changelog": {
+                "items": [
+                    {
+                        "field": "labels",
+                        "fromString": "forge:managed forge:plan-pending",
+                        "toString": "forge:managed forge:plan-approved",
+                    }
+                ]
+            },
+        }
+        message = QueueMessage(
+            message_id=base_message.message_id,
+            event_id=base_message.event_id,
+            source=base_message.source,
+            event_type="jira:issue_updated",
+            ticket_key=base_message.ticket_key,
+            payload=payload,
+        )
+
+        mock_jira = AsyncMock()
+        with (
+            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
+            patch("forge.orchestrator.worker.provision_epics_from_draft", new_callable=AsyncMock, return_value=["EPIC-101", "EPIC-102"]) as mock_provision,
+        ):
+            result = await worker._handle_resume_event(message, base_state)
+
+            # verify provisioning triggered
+            mock_provision.assert_called_once_with(ANY, mock_jira)
+            assert result["epic_keys"] == ["EPIC-101", "EPIC-102"]
+
+            # verify state is unpaused
+            assert result["is_paused"] is False
+
+    @pytest.mark.asyncio
+    async def test_label_addition_task_approved_success(
+        self, worker: OrchestratorWorker, base_message: QueueMessage
+    ):
+        """Label addition event forge:task-approved triggers Task provisioning and unpauses."""
+        task_state = {
+            "ticket_key": "TEST-123",
+            "ticket_type": "Feature",
+            "current_node": "task_approval_gate",
+            "is_paused": True,
+            "context": {},
+        }
+        payload = {
+            **base_message.payload,
+            "comment": {},
+            "changelog": {
+                "items": [
+                    {
+                        "field": "labels",
+                        "fromString": "forge:managed forge:task-pending",
+                        "toString": "forge:managed forge:task-approved",
+                    }
+                ]
+            },
+        }
+        message = QueueMessage(
+            message_id=base_message.message_id,
+            event_id=base_message.event_id,
+            source=base_message.source,
+            event_type="jira:issue_updated",
+            ticket_key=base_message.ticket_key,
+            payload=payload,
+        )
+
+        mock_jira = AsyncMock()
+        mock_tasks_by_repo = {"org/repo": ["TASK-101", "TASK-102"]}
+        with (
+            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
+            patch("forge.orchestrator.worker.provision_tasks_from_draft", new_callable=AsyncMock, return_value=(["TASK-101", "TASK-102"], mock_tasks_by_repo)) as mock_provision,
+        ):
+            result = await worker._handle_resume_event(message, task_state)
+
+            # verify provisioning triggered
+            mock_provision.assert_called_once_with(ANY, mock_jira)
+            assert result["task_keys"] == ["TASK-101", "TASK-102"]
+            assert result["tasks_by_repo"] == mock_tasks_by_repo
+
+            # verify state is unpaused
+            assert result["is_paused"] is False
+
+    @pytest.mark.asyncio
+    async def test_provision_epics_failure_rollback_state_preservation(
+        self, worker: OrchestratorWorker, base_message: QueueMessage, base_state: dict
+    ):
+        """On Epic provisioning failure, keeps state in PENDING_APPROVAL and posts comment."""
+        base_message.payload["comment"]["body"] = "/forge approve"
+        mock_jira = AsyncMock()
+        mock_jira.get_attachments.return_value = [{"filename": "forge-stories-draft.json"}]
+
+        with (
+            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
+            patch("forge.orchestrator.worker.provision_epics_from_draft", new_callable=AsyncMock, side_effect=ValueError("Failed to connect to Jira")) as mock_provision,
+        ):
+            result = await worker._handle_resume_event(base_message, base_state)
+
+            # verify provisioning was attempted
+            mock_provision.assert_called_once()
+
+            # verify error comment added
+            mock_jira.add_comment.assert_called_once_with(
+                "TEST-123", "❌ Ticket provisioning failed: Failed to connect to Jira"
+            )
+
+            # verify state remains paused and unchanged
+            assert result == base_state
+            assert result["is_paused"] is True
+
+    @pytest.mark.asyncio
+    async def test_provision_tasks_failure_rollback_state_preservation(
+        self, worker: OrchestratorWorker, base_message: QueueMessage
+    ):
+        """On Task provisioning failure, keeps state in PENDING_APPROVAL and posts comment."""
+        task_state = {
+            "ticket_key": "TEST-123",
+            "ticket_type": "Feature",
+            "current_node": "task_approval_gate",
+            "is_paused": True,
+            "context": {},
+        }
+        payload = {
+            **base_message.payload,
+            "comment": {},
+            "changelog": {
+                "items": [
+                    {
+                        "field": "labels",
+                        "fromString": "forge:managed forge:task-pending",
+                        "toString": "forge:managed forge:task-approved",
+                    }
+                ]
+            },
+        }
+        message = QueueMessage(
+            message_id=base_message.message_id,
+            event_id=base_message.event_id,
+            source=base_message.source,
+            event_type="jira:issue_updated",
+            ticket_key=base_message.ticket_key,
+            payload=payload,
+        )
+
+        mock_jira = AsyncMock()
+        with (
+            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
+            patch("forge.orchestrator.worker.provision_tasks_from_draft", new_callable=AsyncMock, side_effect=ValueError("Draft corrupted")) as mock_provision,
+        ):
+            result = await worker._handle_resume_event(message, task_state)
+
+            # verify provisioning was attempted
+            mock_provision.assert_called_once()
+
+            # verify error comment added
+            mock_jira.add_comment.assert_called_once_with(
+                "TEST-123", "❌ Ticket provisioning failed: Draft corrupted"
+            )
+
+            # verify state remains paused and unchanged
+            assert result == task_state
+            assert result["is_paused"] is True
 
     @pytest.mark.asyncio
     async def test_revision_feedback_success(

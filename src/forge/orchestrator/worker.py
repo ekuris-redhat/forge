@@ -31,6 +31,8 @@ from forge.queue.models import QueueMessage
 from forge.skills.orchestrator import ensure_skills
 from forge.skills.utils import extract_project_key
 from forge.utils.redaction import redact_secrets
+from forge.workflow.gates.plan_approval import provision_epics_from_draft
+from forge.workflow.gates.task_approval import provision_tasks_from_draft
 from forge.workflow.nodes.error_handler import notify_error
 from forge.workflow.registry import create_default_router
 from forge.workflow.router import WorkflowRouter
@@ -619,6 +621,24 @@ class OrchestratorWorker:
             if "forge:retry" in to_labels.lower() and "forge:retry" not in from_labels.lower():
                 is_retry = True
                 logger.info(f"Detected retry signal via forge:retry label for {current_node}")
+
+            # Direct check for forge:plan-approved and forge:task-approved additions
+            to_lower = to_labels.lower() if to_labels else ""
+            from_lower = from_labels.lower() if from_labels else ""
+            if (
+                "forge:plan-approved" in to_lower
+                and "forge:plan-approved" not in from_lower
+                and current_node in ("plan_approval_gate", "task_plan_approval_gate")
+            ):
+                is_approved = True
+                logger.info(f"Detected forge:plan-approved addition on {message.ticket_key}")
+            if (
+                "forge:task-approved" in to_lower
+                and "forge:task-approved" not in from_lower
+                and current_node == "task_approval_gate"
+            ):
+                is_approved = True
+                logger.info(f"Detected forge:task-approved addition on {message.ticket_key}")
 
             # Check for approval labels - but only if it matches the current stage
             if "approved" in to_labels.lower() and "pending" in from_labels.lower():
@@ -1411,6 +1431,46 @@ class OrchestratorWorker:
             updated_state["last_error"] = None
             if pr_merged:
                 updated_state["pr_merged"] = True
+
+            # Ticket provisioning step on approval!
+            if current_node == "plan_approval_gate" and not updated_state.get("epic_keys"):
+                jira = JiraClient()
+                try:
+                    epic_keys = await provision_epics_from_draft(updated_state, jira)
+                    updated_state["epic_keys"] = epic_keys
+                except Exception as e:
+                    logger.error(
+                        f"Failed ticket provisioning during plan approval for {message.ticket_key}: {e}",
+                        exc_info=True,
+                    )
+                    error_comment_text = f"❌ Ticket provisioning failed: {str(e)}"
+                    try:
+                        await jira.add_comment(message.ticket_key, error_comment_text)
+                    except Exception as post_err:
+                        logger.error(f"Failed to post error comment: {post_err}", exc_info=True)
+                    return current_state
+                finally:
+                    await jira.close()
+
+            elif current_node == "task_approval_gate" and not updated_state.get("task_keys"):
+                jira = JiraClient()
+                try:
+                    task_keys, tasks_by_repo = await provision_tasks_from_draft(updated_state, jira)
+                    updated_state["task_keys"] = task_keys
+                    updated_state["tasks_by_repo"] = tasks_by_repo
+                except Exception as e:
+                    logger.error(
+                        f"Failed ticket provisioning during task approval for {message.ticket_key}: {e}",
+                        exc_info=True,
+                    )
+                    error_comment_text = f"❌ Ticket provisioning failed: {str(e)}"
+                    try:
+                        await jira.add_comment(message.ticket_key, error_comment_text)
+                    except Exception as post_err:
+                        logger.error(f"Failed to post error comment: {post_err}", exc_info=True)
+                    return current_state
+                finally:
+                    await jira.close()
         elif is_question:
             # Unpause so answer_question node runs, it will re-pause after answering
             updated_state["is_paused"] = False
