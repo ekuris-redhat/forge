@@ -110,8 +110,8 @@ class TestJiraIssueFromApiResponse:
             "fields": {
                 "issuetype": {"name": "Task"},
                 "status": {"name": "Open"},
-                "summary": "Minimal issue"
-            }
+                "summary": "Minimal issue",
+            },
         }
         issue = JiraIssue.from_api_response(minimal_data)
 
@@ -134,12 +134,8 @@ class TestJiraIssueFromApiResponse:
                 "issuetype": {"name": "Feature"},
                 "status": {"name": "New"},
                 "summary": "Test",
-                "description": {
-                    "version": 1,
-                    "type": "doc",
-                    "content": []
-                }
-            }
+                "description": {"version": 1, "type": "doc", "content": []},
+            },
         }
         issue = JiraIssue.from_api_response(data)
 
@@ -170,13 +166,10 @@ class TestJiraCommentFromApiResponse:
         """Parse a comment with plain text body."""
         data = {
             "id": "10200",
-            "author": {
-                "accountId": "user-123",
-                "displayName": "Bob Smith"
-            },
+            "author": {"accountId": "user-123", "displayName": "Bob Smith"},
             "body": "LGTM! Approved.",
             "created": "2024-03-21T10:00:00.000+0000",
-            "updated": "2024-03-21T10:00:00.000+0000"
+            "updated": "2024-03-21T10:00:00.000+0000",
         }
         comment = JiraComment.from_api_response(data)
 
@@ -186,11 +179,7 @@ class TestJiraCommentFromApiResponse:
 
     def test_parse_comment_with_missing_optional_fields(self):
         """Parse a comment with minimal fields."""
-        data = {
-            "id": "10300",
-            "author": {},
-            "body": "Simple comment"
-        }
+        data = {"id": "10300", "author": {}, "body": "Simple comment"}
         comment = JiraComment.from_api_response(data)
 
         assert comment.id == "10300"
@@ -209,19 +198,9 @@ class TestAdfTextExtraction:
             "version": 1,
             "type": "doc",
             "content": [
-                {
-                    "type": "paragraph",
-                    "content": [
-                        {"type": "text", "text": "First paragraph."}
-                    ]
-                },
-                {
-                    "type": "paragraph",
-                    "content": [
-                        {"type": "text", "text": "Second paragraph."}
-                    ]
-                }
-            ]
+                {"type": "paragraph", "content": [{"type": "text", "text": "First paragraph."}]},
+                {"type": "paragraph", "content": [{"type": "text", "text": "Second paragraph."}]},
+            ],
         }
         text = JiraIssue._extract_text_from_adf(adf)
         assert "First paragraph." in text
@@ -247,15 +226,13 @@ class TestAdfTextExtraction:
                             "content": [
                                 {
                                     "type": "paragraph",
-                                    "content": [
-                                        {"type": "text", "text": "Item one"}
-                                    ]
+                                    "content": [{"type": "text", "text": "Item one"}],
                                 }
-                            ]
+                            ],
                         }
-                    ]
+                    ],
                 }
-            ]
+            ],
         }
         # Note: Current implementation may not handle nested list items
         # This test documents the current behavior
@@ -270,12 +247,7 @@ class TestProjectKeyExtraction:
     def test_extract_project_key_standard(self):
         """Extract project key from standard issue key."""
         issue = JiraIssue(
-            key="PROJ-123",
-            id="1",
-            summary="Test",
-            description="",
-            status="Open",
-            issue_type="Task"
+            key="PROJ-123", id="1", summary="Test", description="", status="Open", issue_type="Task"
         )
         assert issue.project_key == "PROJ"
 
@@ -287,7 +259,7 @@ class TestProjectKeyExtraction:
             summary="Test",
             description="",
             status="Open",
-            issue_type="Task"
+            issue_type="Task",
         )
         # Should extract everything before the last hyphen-number
         assert issue.project_key == "MY-PROJECT"
@@ -295,12 +267,7 @@ class TestProjectKeyExtraction:
     def test_extract_project_key_no_hyphen(self):
         """Handle key without hyphen (edge case)."""
         issue = JiraIssue(
-            key="INVALID",
-            id="1",
-            summary="Test",
-            description="",
-            status="Open",
-            issue_type="Task"
+            key="INVALID", id="1", summary="Test", description="", status="Open", issue_type="Task"
         )
         assert issue.project_key == "INVALID"
 
@@ -318,8 +285,8 @@ class TestDateParsing:
                 "status": {"name": "Open"},
                 "summary": "Test",
                 "created": "2024-03-15T10:23:45.000+0000",
-                "updated": "2024-03-20T14:30:22.000-0800"
-            }
+                "updated": "2024-03-20T14:30:22.000-0800",
+            },
         }
         issue = JiraIssue.from_api_response(data)
 
@@ -339,8 +306,8 @@ class TestDateParsing:
                 "issuetype": {"name": "Task"},
                 "status": {"name": "Open"},
                 "summary": "Test",
-                "created": "2024-01-01T00:00:00.000Z"
-            }
+                "created": "2024-01-01T00:00:00.000Z",
+            },
         }
         issue = JiraIssue.from_api_response(data)
 

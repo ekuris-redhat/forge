@@ -75,9 +75,7 @@ class TestLocalReviewFixPassComment:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch(
-                "forge.workflow.nodes.local_reviewer.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -111,9 +109,7 @@ class TestLocalReviewFixPassComment:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch(
-                "forge.workflow.nodes.local_reviewer.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -144,9 +140,7 @@ class TestLocalReviewFixPassComment:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch(
-                "forge.workflow.nodes.local_reviewer.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -177,9 +171,7 @@ class TestLocalReviewFixPassComment:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch(
-                "forge.workflow.nodes.local_reviewer.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -249,9 +241,7 @@ class TestLocalReviewFixPassCommentCallOrdering:
 
         with (
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch(
-                "forge.workflow.nodes.local_reviewer.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             result = await local_review_changes(state)
@@ -277,9 +267,7 @@ class TestLocalReviewFixPassCommentCallOrdering:
 
         with (
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
-            patch(
-                "forge.workflow.nodes.local_reviewer.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             result = await local_review_changes(state)
@@ -317,9 +305,7 @@ class TestLocalReviewFixPassCommentEdgeCases:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch(
-                "forge.workflow.nodes.local_reviewer.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             await local_review_changes(state)
@@ -350,9 +336,7 @@ class TestLocalReviewFixPassCommentEdgeCases:
             patch("forge.workflow.nodes.local_reviewer.JiraClient", return_value=mock_jira),
             patch("forge.workflow.nodes.local_reviewer.ContainerRunner", return_value=mock_runner),
             patch("forge.workflow.nodes.local_reviewer.GitOperations", return_value=mock_git),
-            patch(
-                "forge.workflow.nodes.local_reviewer.post_status_comment"
-            ) as mock_post_status,
+            patch("forge.workflow.nodes.local_reviewer.post_status_comment") as mock_post_status,
         ):
             mock_post_status.return_value = AsyncMock()
             result = await local_review_changes(state)

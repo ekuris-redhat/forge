@@ -63,6 +63,7 @@ class TestRouteEntryCompleteness:
     def _route(self, node: str):
 
         from forge.workflow.bug.graph import route_entry
+
         return route_entry({"current_node": node})
 
     def test_all_new_pipeline_nodes_mapped(self):
@@ -82,9 +83,7 @@ class TestRouteEntryCompleteness:
         }
         for node, expected in new_nodes.items():
             result = self._route(node)
-            assert result == expected, (
-                f"route_entry('{node}') = '{result}', expected '{expected}'"
-            )
+            assert result == expected, f"route_entry('{node}') = '{result}', expected '{expected}'"
 
     def test_backward_compat_rca_approval_gate(self):
         """Old rca_approval_gate checkpoint maps to rca_option_gate."""
@@ -93,6 +92,7 @@ class TestRouteEntryCompleteness:
     def test_existing_nodes_still_mapped(self):
         """All pre-redesign node mappings are preserved."""
         from langgraph.graph import END
+
         preserved = {
             "setup_workspace": "setup_workspace",
             "implement_bug_fix": "implement_bug_fix",
@@ -111,6 +111,4 @@ class TestRouteEntryCompleteness:
         }
         for node, expected in preserved.items():
             result = self._route(node)
-            assert result == expected, (
-                f"route_entry('{node}') = '{result}', expected '{expected}'"
-            )
+            assert result == expected, f"route_entry('{node}') = '{result}', expected '{expected}'"

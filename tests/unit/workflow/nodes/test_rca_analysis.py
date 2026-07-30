@@ -179,6 +179,35 @@ class TestAnalyzeBug:
         assert "Missing hypothesis log entries." in captured_desc[0]
 
     @pytest.mark.asyncio
+    async def test_user_revision_feedback_is_preserved_in_every_analysis_prompt(
+        self, base_bug_state
+    ):
+        base_bug_state["user_revision_feedback"] = "Add multipart reply handling."
+        base_bug_state["reflection_critique"] = "Verify the commit hash."
+        mock_jira = _make_mock_jira()
+        captured_desc = []
+
+        class _CapturingRunner:
+            async def run(self, workspace_path, task_description="", **_kwargs):
+                captured_desc.append(task_description)
+                forge_dir = workspace_path / ".forge"
+                forge_dir.mkdir(exist_ok=True)
+                (forge_dir / "rca.json").write_text(json.dumps(SAMPLE_RCA_JSON))
+                return MagicMock(success=True, exit_code=0, stdout="Done", stderr="")
+
+        with (
+            patch("forge.workflow.nodes.rca_analysis.JiraClient", return_value=mock_jira),
+            patch(
+                "forge.workflow.nodes.rca_analysis.ContainerRunner", return_value=_CapturingRunner()
+            ),
+        ):
+            result = await analyze_bug(base_bug_state)
+
+        assert "Add multipart reply handling." in captured_desc[0]
+        assert "Verify the commit hash." in captured_desc[0]
+        assert result["user_revision_feedback"] == "Add multipart reply handling."
+
+    @pytest.mark.asyncio
     async def test_container_success_parses_rca_json_into_state(self, base_bug_state):
         """On success, rca_options and rca_content are populated from rca.json."""
         mock_jira = _make_mock_jira()
@@ -361,6 +390,31 @@ class TestReflectRca:
         assert "Root Cause" in captured_desc[0] or "rca" in captured_desc[0].lower()
 
     @pytest.mark.asyncio
+    async def test_reviewer_receives_structured_artifact_and_repositories(self, rca_state):
+        rca_state["rca_data"] = SAMPLE_RCA_JSON
+        rca_state["rca_repos"] = ["acme/backend"]
+        mock_jira = _make_mock_jira()
+        captured_desc = []
+
+        class _CapturingRunner:
+            async def run(self, workspace_path, task_description="", **_kwargs):
+                del workspace_path
+                captured_desc.append(task_description)
+                return MagicMock(success=True, exit_code=0, stdout="VALID", stderr="")
+
+        with (
+            patch("forge.workflow.nodes.rca_analysis.JiraClient", return_value=mock_jira),
+            patch(
+                "forge.workflow.nodes.rca_analysis.ContainerRunner", return_value=_CapturingRunner()
+            ),
+        ):
+            await reflect_rca(rca_state)
+
+        assert '"hypothesis_log"' in captured_desc[0]
+        assert '"introduced_in"' in captured_desc[0]
+        assert "acme/backend" in captured_desc[0]
+
+    @pytest.mark.asyncio
     async def test_valid_output_routes_to_rca_option_gate(self, rca_state):
         """When container returns 'VALID', current_node is rca_option_gate."""
         mock_jira = _make_mock_jira()
@@ -383,12 +437,16 @@ class TestReflectRca:
             async def run(self, workspace_path, **_kwargs):
                 history_dir = workspace_path / ".forge" / "history"
                 history_dir.mkdir(parents=True, exist_ok=True)
-                (history_dir / "BUG-123-reflect.json").write_text(json.dumps({
-                    "messages": [
-                        {"role": "human", "content": "Review this RCA"},
-                        {"role": "ai", "content": "VALID"},
-                    ],
-                }))
+                (history_dir / "BUG-123-reflect.json").write_text(
+                    json.dumps(
+                        {
+                            "messages": [
+                                {"role": "human", "content": "Review this RCA"},
+                                {"role": "ai", "content": "VALID"},
+                            ],
+                        }
+                    )
+                )
                 result = MagicMock()
                 result.success = True
                 result.exit_code = 0
@@ -402,7 +460,9 @@ class TestReflectRca:
 
         with (
             patch("forge.workflow.nodes.rca_analysis.JiraClient", return_value=mock_jira),
-            patch("forge.workflow.nodes.rca_analysis.ContainerRunner", return_value=_HistoryRunner()),
+            patch(
+                "forge.workflow.nodes.rca_analysis.ContainerRunner", return_value=_HistoryRunner()
+            ),
         ):
             result = await reflect_rca(rca_state)
 

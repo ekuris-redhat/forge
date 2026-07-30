@@ -160,7 +160,7 @@ class TestCIFixStateMachineScenarios:
         """
         state = make_workflow_state(
             current_node="ci_evaluator",
-            ci_status="failed",     # evaluator sets 'failed' after exhaustion
+            ci_status="failed",  # evaluator sets 'failed' after exhaustion
             ci_fix_attempt=5,
             ci_failed_checks=[{"name": "lint", "conclusion": "failure"}],
         )

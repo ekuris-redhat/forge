@@ -3,7 +3,6 @@
 import pytest
 from langgraph.graph import END
 
-from forge.models.workflow import TicketType
 from forge.workflow.gates.task_plan_approval import (
     route_task_plan_approval,
     task_plan_approval_gate,

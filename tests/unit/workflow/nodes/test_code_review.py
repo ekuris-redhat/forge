@@ -31,11 +31,13 @@ class TestRunPostChangeReview:
         runner_mock = MagicMock()
         runner_mock.run = AsyncMock()
 
-        with patch("forge.workflow.nodes.code_review.ContainerRunner", return_value=runner_mock), \
-             patch("forge.workflow.nodes.code_review.GitOperations", return_value=git_mock), \
-             patch("forge.workflow.nodes.code_review.Workspace"), \
-             patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"):
-            result = await run_post_change_review(
+        with (
+            patch("forge.workflow.nodes.code_review.ContainerRunner", return_value=runner_mock),
+            patch("forge.workflow.nodes.code_review.GitOperations", return_value=git_mock),
+            patch("forge.workflow.nodes.code_review.Workspace"),
+            patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"),
+        ):
+            committed, _ = await run_post_change_review(
                 workspace_path="/tmp/ws",
                 ticket_key="TEST-123",
                 current_repo="org/repo",
@@ -59,11 +61,13 @@ class TestRunPostChangeReview:
         runner_mock = MagicMock()
         runner_mock.run = AsyncMock()
 
-        with patch("forge.workflow.nodes.code_review.ContainerRunner", return_value=runner_mock), \
-             patch("forge.workflow.nodes.code_review.GitOperations", return_value=git_mock), \
-             patch("forge.workflow.nodes.code_review.Workspace"), \
-             patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"):
-            result = await run_post_change_review(
+        with (
+            patch("forge.workflow.nodes.code_review.ContainerRunner", return_value=runner_mock),
+            patch("forge.workflow.nodes.code_review.GitOperations", return_value=git_mock),
+            patch("forge.workflow.nodes.code_review.Workspace"),
+            patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"),
+        ):
+            committed, _ = await run_post_change_review(
                 workspace_path="/tmp/ws",
                 ticket_key="TEST-123",
                 current_repo="org/repo",
@@ -81,16 +85,82 @@ class TestRunPostChangeReview:
         runner_mock = MagicMock()
         runner_mock.run = AsyncMock(side_effect=RuntimeError("container crashed"))
 
+<<<<<<< HEAD
         with patch("forge.workflow.nodes.code_review.ContainerRunner", return_value=runner_mock), \
              patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"):
             result = await run_post_change_review(
+=======
+        with (
+            patch("forge.workflow.nodes.code_review.ContainerRunner", return_value=runner_mock),
+            patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"),
+        ):
+            committed, result = await run_post_change_review(
+>>>>>>> eb2986a ([AISOS-2294-review-review-impl] Post-review-impl code review)
                 workspace_path="/tmp/ws",
                 ticket_key="TEST-123",
                 current_repo="org/repo",
                 branch_name="forge/test-123",
             )
 
+<<<<<<< HEAD
         assert result is False
+=======
+        assert committed is False
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_container_result_for_exhaustion_propagation(self):
+        """run_post_change_review must return ContainerResult so callers can merge exhaustion.
+
+        P2.2: when the post-change review skill exhausts retries, the exhaustion
+        data was silently dropped because the utility returned only a bool. Callers
+        (ci_evaluator, implement_review) need the ContainerResult to call
+        merge_review_exhaustion on it.
+        """
+        from forge.workflow.nodes.code_review import run_post_change_review
+
+        exhausted_result = ContainerResult(
+            success=True,
+            exit_code=0,
+            stdout="",
+            stderr="",
+            review_cycles=[
+                ReviewCycleData(
+                    cycle=1,
+                    max_cycles=1,
+                    verdict="rejected",
+                    feedback="auto-review exhausted",
+                    skill="review-code",
+                    elapsed_seconds=5.0,
+                    timestamp="",
+                )
+            ],
+        )
+
+        git_mock = MagicMock()
+        git_mock.has_uncommitted_changes.return_value = False
+        runner_mock = MagicMock()
+        runner_mock.run = AsyncMock(return_value=exhausted_result)
+
+        with (
+            patch("forge.workflow.nodes.code_review.ContainerRunner", return_value=runner_mock),
+            patch("forge.workflow.nodes.code_review.GitOperations", return_value=git_mock),
+            patch("forge.workflow.nodes.code_review.Workspace"),
+            patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"),
+        ):
+            committed, container_result = await run_post_change_review(
+                workspace_path="/tmp/ws",
+                ticket_key="TEST-123",
+                current_repo="org/repo",
+                branch_name="forge/test-123",
+            )
+
+        assert committed is False
+        assert container_result is not None, (
+            "ContainerResult must be returned for exhaustion propagation"
+        )
+        assert container_result.review_exhausted is True
+>>>>>>> eb2986a ([AISOS-2294-review-review-impl] Post-review-impl code review)
 
 
 # ── sync_pr_description ───────────────────────────────────────────────────────
@@ -136,13 +206,19 @@ class TestSyncPrDescription:
         agent_mock.close = AsyncMock()
         agent_mock._strip_preamble = MagicMock(side_effect=lambda x: x)
 
-        with patch("forge.workflow.nodes.code_review.GitHubClient", return_value=github), \
-             patch("forge.workflow.nodes.code_review.JiraClient", return_value=jira), \
-             patch("forge.workflow.nodes.code_review.ForgeAgent", return_value=agent_mock), \
-             patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"):
+        with (
+            patch("forge.workflow.nodes.code_review.GitHubClient", return_value=github),
+            patch("forge.workflow.nodes.code_review.JiraClient", return_value=jira),
+            patch("forge.workflow.nodes.code_review.ForgeAgent", return_value=agent_mock),
+            patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"),
+        ):
             await sync_pr_description(
-                state, _git_mock(),
-                owner="org", repo="repo", pr_number=42, attempt=2,
+                state,
+                _git_mock(),
+                owner="org",
+                repo="repo",
+                pr_number=42,
+                attempt=2,
             )
 
         github.update_pull_request.assert_called_once_with("org", "repo", 42, body=updated)
@@ -161,13 +237,19 @@ class TestSyncPrDescription:
         agent_mock.close = AsyncMock()
         agent_mock._strip_preamble = MagicMock(side_effect=lambda x: x)
 
-        with patch("forge.workflow.nodes.code_review.GitHubClient", return_value=github), \
-             patch("forge.workflow.nodes.code_review.JiraClient", return_value=jira), \
-             patch("forge.workflow.nodes.code_review.ForgeAgent", return_value=agent_mock), \
-             patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"):
+        with (
+            patch("forge.workflow.nodes.code_review.GitHubClient", return_value=github),
+            patch("forge.workflow.nodes.code_review.JiraClient", return_value=jira),
+            patch("forge.workflow.nodes.code_review.ForgeAgent", return_value=agent_mock),
+            patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"),
+        ):
             await sync_pr_description(
-                state, _git_mock(),
-                owner="org", repo="repo", pr_number=42, attempt=2,
+                state,
+                _git_mock(),
+                owner="org",
+                repo="repo",
+                pr_number=42,
+                attempt=2,
             )
 
         github.update_pull_request.assert_not_called()
@@ -180,12 +262,18 @@ class TestSyncPrDescription:
 
         github, jira = _github_jira_mocks("body")
 
-        with patch("forge.workflow.nodes.code_review.GitHubClient", return_value=github), \
-             patch("forge.workflow.nodes.code_review.JiraClient", return_value=jira), \
-             patch("forge.workflow.nodes.code_review.ForgeAgent") as MockAgent:
+        with (
+            patch("forge.workflow.nodes.code_review.GitHubClient", return_value=github),
+            patch("forge.workflow.nodes.code_review.JiraClient", return_value=jira),
+            patch("forge.workflow.nodes.code_review.ForgeAgent") as MockAgent,
+        ):
             await sync_pr_description(
-                state, _git_mock(""),
-                owner="org", repo="repo", pr_number=42, attempt=1,
+                state,
+                _git_mock(""),
+                owner="org",
+                repo="repo",
+                pr_number=42,
+                attempt=1,
             )
 
         MockAgent.assert_not_called()
@@ -197,8 +285,12 @@ class TestSyncPrDescription:
 
         with patch("forge.workflow.nodes.code_review.GitHubClient") as MockGH:
             await sync_pr_description(
-                state, MagicMock(),
-                owner="org", repo="repo", pr_number=None, attempt=1,
+                state,
+                MagicMock(),
+                owner="org",
+                repo="repo",
+                pr_number=None,
+                attempt=1,
             )
 
         MockGH.assert_not_called()
@@ -214,13 +306,19 @@ class TestSyncPrDescription:
         agent_mock.run_task = AsyncMock(side_effect=RuntimeError("timeout"))
         agent_mock.close = AsyncMock()
 
-        with patch("forge.workflow.nodes.code_review.GitHubClient", return_value=github), \
-             patch("forge.workflow.nodes.code_review.JiraClient", return_value=jira), \
-             patch("forge.workflow.nodes.code_review.ForgeAgent", return_value=agent_mock), \
-             patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"):
+        with (
+            patch("forge.workflow.nodes.code_review.GitHubClient", return_value=github),
+            patch("forge.workflow.nodes.code_review.JiraClient", return_value=jira),
+            patch("forge.workflow.nodes.code_review.ForgeAgent", return_value=agent_mock),
+            patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"),
+        ):
             await sync_pr_description(
-                state, _git_mock(),
-                owner="org", repo="repo", pr_number=42, attempt=1,
+                state,
+                _git_mock(),
+                owner="org",
+                repo="repo",
+                pr_number=42,
+                attempt=1,
             )
 
         github.update_pull_request.assert_not_called()
@@ -236,13 +334,19 @@ class TestSyncPrDescription:
         agent_mock.run_task = AsyncMock(return_value="new body")
         agent_mock.close = AsyncMock()
 
-        with patch("forge.workflow.nodes.code_review.GitHubClient", return_value=github), \
-             patch("forge.workflow.nodes.code_review.JiraClient", return_value=jira), \
-             patch("forge.workflow.nodes.code_review.ForgeAgent", return_value=agent_mock), \
-             patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"):
+        with (
+            patch("forge.workflow.nodes.code_review.GitHubClient", return_value=github),
+            patch("forge.workflow.nodes.code_review.JiraClient", return_value=jira),
+            patch("forge.workflow.nodes.code_review.ForgeAgent", return_value=agent_mock),
+            patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"),
+        ):
             await sync_pr_description(
-                state, _git_mock(),
-                owner="org", repo="repo", pr_number=42, attempt=0,
+                state,
+                _git_mock(),
+                owner="org",
+                repo="repo",
+                pr_number=42,
+                attempt=0,
             )
 
         comment_text = jira.add_comment.call_args[0][1]
@@ -289,18 +393,24 @@ class TestSyncCalledFromCreatePR:
         mock_git.push_to_fork = MagicMock()
         mock_git.add_fork_remote = MagicMock()
 
-        with patch("forge.workflow.nodes.pr_creation.GitHubClient", return_value=mock_github), \
-             patch("forge.workflow.nodes.pr_creation.JiraClient", return_value=mock_jira), \
-             patch("forge.workflow.nodes.pr_creation.GitOperations", return_value=mock_git), \
-             patch("forge.workflow.nodes.pr_creation.Workspace"), \
-             patch("forge.workflow.nodes.pr_creation.check_merge_conflicts",
-                   AsyncMock(return_value=(False, []))), \
-             patch("forge.workflow.nodes.pr_creation._generate_pr_body_with_agent",
-                   AsyncMock(return_value="## Summary\n\nTest PR.")), \
-             patch("forge.workflow.nodes.pr_creation.set_pr_ticket_index",
-                   new_callable=AsyncMock), \
-             patch("forge.workflow.nodes.pr_creation.sync_pr_description",
-                   new_callable=AsyncMock) as mock_sync:
+        with (
+            patch("forge.workflow.nodes.pr_creation.GitHubClient", return_value=mock_github),
+            patch("forge.workflow.nodes.pr_creation.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.pr_creation.GitOperations", return_value=mock_git),
+            patch("forge.workflow.nodes.pr_creation.Workspace"),
+            patch(
+                "forge.workflow.nodes.pr_creation.check_merge_conflicts",
+                AsyncMock(return_value=(False, [])),
+            ),
+            patch(
+                "forge.workflow.nodes.pr_creation._generate_pr_body_with_agent",
+                AsyncMock(return_value="## Summary\n\nTest PR."),
+            ),
+            patch("forge.workflow.nodes.pr_creation.set_pr_ticket_index", new_callable=AsyncMock),
+            patch(
+                "forge.workflow.nodes.pr_creation.sync_pr_description", new_callable=AsyncMock
+            ) as mock_sync,
+        ):
             await create_pull_request(state)
 
         mock_sync.assert_called_once()

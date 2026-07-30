@@ -43,9 +43,7 @@ async def test_answer_question_node_receives_bug_rca_artifact_fields():
         ],
     }
 
-    with patch(
-        "forge.workflow.bug.graph.answer_question", new_callable=AsyncMock
-    ) as mock_answer:
+    with patch("forge.workflow.bug.graph.answer_question", new_callable=AsyncMock) as mock_answer:
         mock_answer.side_effect = lambda received: received
         await graph.compile().ainvoke(state)
 

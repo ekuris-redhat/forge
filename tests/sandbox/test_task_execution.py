@@ -249,7 +249,6 @@ class TestTaskExecutionSandbox:
             assert state_after_success["commit_info"]["committed"] is True
             assert state_after_success["commit_info"]["sha"] == "abcdef1234567890"
 
-
     @pytest.mark.asyncio
     @patch("forge.workflow.nodes.workspace_setup.get_workspace_manager")
     async def test_teardown_workspace_secure_destruction(self, mock_get_manager: MagicMock) -> None:

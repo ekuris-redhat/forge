@@ -250,13 +250,13 @@ async def test_revise_draft_with_feedback_success():
     """Verify that revise_draft_with_feedback properly renders prompt and parses valid JSON."""
     agent = ForgeAgent()
 
-    mock_model = MockChatModel(response='{"parent_key": "PROJ-1", "items": [{"id": 1, "summary": "Task 1"}]}')
+    mock_model = MockChatModel(
+        response='{"parent_key": "PROJ-1", "items": [{"id": 1, "summary": "Task 1"}]}'
+    )
 
     with patch.object(agent, "_create_model", return_value=mock_model):
         result = await agent.revise_draft_with_feedback(
-            draft_content='{"items": []}',
-            feedback="Add Task 1",
-            context={"ticket_key": "PROJ-1"}
+            draft_content='{"items": []}', feedback="Add Task 1", context={"ticket_key": "PROJ-1"}
         )
 
     assert json.loads(result) == {"parent_key": "PROJ-1", "items": [{"id": 1, "summary": "Task 1"}]}
@@ -283,9 +283,7 @@ async def test_revise_draft_with_feedback_markdown_stripping():
 
     with patch.object(agent, "_create_model", return_value=mock_model):
         result = await agent.revise_draft_with_feedback(
-            draft_content='{"items": []}',
-            feedback="Add Task 1",
-            context={"ticket_key": "PROJ-1"}
+            draft_content='{"items": []}', feedback="Add Task 1", context={"ticket_key": "PROJ-1"}
         )
 
     assert json.loads(result) == {"items": [{"id": 1, "summary": "Task 1"}]}
@@ -297,14 +295,14 @@ async def test_revise_draft_with_feedback_preamble_no_codeblock():
     """Verify that revise_draft_with_feedback strips preamble and postamble without markdown code block."""
     agent = ForgeAgent()
 
-    llm_response = 'The corrected draft is: {"items": [{"id": 1, "summary": "Task 1"}]} please review.'
+    llm_response = (
+        'The corrected draft is: {"items": [{"id": 1, "summary": "Task 1"}]} please review.'
+    )
     mock_model = MockChatModel(response=llm_response)
 
     with patch.object(agent, "_create_model", return_value=mock_model):
         result = await agent.revise_draft_with_feedback(
-            draft_content='{"items": []}',
-            feedback="Add Task 1",
-            context={"ticket_key": "PROJ-1"}
+            draft_content='{"items": []}', feedback="Add Task 1", context={"ticket_key": "PROJ-1"}
         )
 
     assert json.loads(result) == {"items": [{"id": 1, "summary": "Task 1"}]}
@@ -323,9 +321,7 @@ async def test_revise_draft_with_feedback_invalid_json():
         pytest.raises(ValueError, match="Failed to parse LLM response as valid JSON"),
     ):
         await agent.revise_draft_with_feedback(
-            draft_content='{"items": []}',
-            feedback="Add Task 1",
-            context={"ticket_key": "PROJ-1"}
+            draft_content='{"items": []}', feedback="Add Task 1", context={"ticket_key": "PROJ-1"}
         )
 
     await agent.close()
@@ -338,13 +334,13 @@ async def test_revise_draft_with_feedback_prompt_formatting():
     mock_model = MockChatModel(response='{"items": []}')
 
     with (
-        patch("forge.integrations.agents.agent.load_prompt", return_value="FORMATTED PROMPT") as mock_load_prompt,
+        patch(
+            "forge.integrations.agents.agent.load_prompt", return_value="FORMATTED PROMPT"
+        ) as mock_load_prompt,
         patch.object(agent, "_create_model", return_value=mock_model),
     ):
         await agent.revise_draft_with_feedback(
-            draft_content='{"some": "json"}',
-            feedback="Do this",
-            context={"ticket_key": "PROJ-123"}
+            draft_content='{"some": "json"}', feedback="Do this", context={"ticket_key": "PROJ-123"}
         )
 
     mock_load_prompt.assert_called_once_with(

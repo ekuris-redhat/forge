@@ -140,18 +140,15 @@ class TestTransitionTasksToInProgress:
 
         # Verify success logs for each task
         assert any(
-            "Transitioned TASK-1 to In Progress" in record.message
-            and record.levelname == "INFO"
+            "Transitioned TASK-1 to In Progress" in record.message and record.levelname == "INFO"
             for record in caplog.records
         )
         assert any(
-            "Transitioned TASK-2 to In Progress" in record.message
-            and record.levelname == "INFO"
+            "Transitioned TASK-2 to In Progress" in record.message and record.levelname == "INFO"
             for record in caplog.records
         )
         assert any(
-            "Transitioned TASK-3 to In Progress" in record.message
-            and record.levelname == "INFO"
+            "Transitioned TASK-3 to In Progress" in record.message and record.levelname == "INFO"
             for record in caplog.records
         )
 
@@ -175,13 +172,11 @@ class TestTransitionTasksToInProgress:
 
         # Verify success logs for tasks 1 and 3
         assert any(
-            "Transitioned TASK-1 to In Progress" in record.message
-            and record.levelname == "INFO"
+            "Transitioned TASK-1 to In Progress" in record.message and record.levelname == "INFO"
             for record in caplog.records
         )
         assert any(
-            "Transitioned TASK-3 to In Progress" in record.message
-            and record.levelname == "INFO"
+            "Transitioned TASK-3 to In Progress" in record.message and record.levelname == "INFO"
             for record in caplog.records
         )
 
@@ -213,13 +208,11 @@ class TestTransitionTasksToInProgress:
 
         # Verify success logs for tasks 1 and 3
         assert any(
-            "Transitioned TASK-1 to In Progress" in record.message
-            and record.levelname == "INFO"
+            "Transitioned TASK-1 to In Progress" in record.message and record.levelname == "INFO"
             for record in caplog.records
         )
         assert any(
-            "Transitioned TASK-3 to In Progress" in record.message
-            and record.levelname == "INFO"
+            "Transitioned TASK-3 to In Progress" in record.message and record.levelname == "INFO"
             for record in caplog.records
         )
 

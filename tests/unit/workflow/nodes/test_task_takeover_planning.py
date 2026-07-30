@@ -110,7 +110,9 @@ class TestGeneratePlan:
         ):
             result = await generate_plan(base_task_state)
 
-        assert result["plan_content"] == "## Plan\n\nTask Takeover Plan details.\n\nrepo:owner/project"
+        assert (
+            result["plan_content"] == "## Plan\n\nTask Takeover Plan details.\n\nrepo:owner/project"
+        )
         assert result["current_repo"] == "owner/project"
         assert result["repos_to_process"] == ["owner/project"]
         assert result["current_node"] == "task_plan_approval_gate"
@@ -208,7 +210,10 @@ class TestRegeneratePlanFlow:
         ):
             result = await generate_plan(state)
 
-        assert result["plan_content"] == "## Plan\n\nNew Plan content with logging.\n\nrepo:owner/project"
+        assert (
+            result["plan_content"]
+            == "## Plan\n\nNew Plan content with logging.\n\nrepo:owner/project"
+        )
         assert result["revision_requested"] is False
         assert result["feedback_comment"] is None
         assert result["current_node"] == "task_plan_approval_gate"

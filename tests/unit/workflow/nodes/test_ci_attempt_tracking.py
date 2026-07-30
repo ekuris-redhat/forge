@@ -1,12 +1,12 @@
 """Unit tests for CI attempt tracking (AISOS-654)."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from forge.models.workflow import ForgeLabel
-from forge.workflow.nodes.ci_evaluator import evaluate_ci_status
-from forge.workflow.feature.state import FeatureState
+import pytest
 
+from forge.models.workflow import ForgeLabel
+from forge.workflow.feature.state import FeatureState
+from forge.workflow.nodes.ci_evaluator import evaluate_ci_status
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

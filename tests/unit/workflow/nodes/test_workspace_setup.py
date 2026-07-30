@@ -293,13 +293,9 @@ class TestWorkspaceSetupErrorHandling:
         mock_jira.close.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_workspace_setup_fails_when_fork_cannot_be_created(
-        self, mock_workspace_github
-    ):
+    async def test_workspace_setup_fails_when_fork_cannot_be_created(self, mock_workspace_github):
         """Implementation must not start without its durable backup remote."""
-        mock_workspace_github.get_or_create_fork.side_effect = RuntimeError(
-            "fork creation denied"
-        )
+        mock_workspace_github.get_or_create_fork.side_effect = RuntimeError("fork creation denied")
         mock_jira = create_mock_jira_client()
         mock_manager, _ = create_mock_workspace_manager()
         mock_git = create_mock_git_operations()
@@ -329,9 +325,7 @@ class TestWorkspaceSetupForkBootstrap:
     """Tests for creating and checkpointing the implementation backup fork."""
 
     @pytest.mark.asyncio
-    async def test_creates_fork_remote_before_implementation(
-        self, mock_workspace_github
-    ):
+    async def test_creates_fork_remote_before_implementation(self, mock_workspace_github):
         mock_jira = create_mock_jira_client()
         mock_manager, _ = create_mock_workspace_manager()
         mock_git = create_mock_git_operations()
@@ -352,9 +346,7 @@ class TestWorkspaceSetupForkBootstrap:
         ):
             result = await setup_workspace(state)
 
-        mock_workspace_github.get_or_create_fork.assert_awaited_once_with(
-            "upstream", "repo"
-        )
+        mock_workspace_github.get_or_create_fork.assert_awaited_once_with("upstream", "repo")
         mock_workspace_github.sync_fork_with_upstream.assert_awaited_once_with(
             "fork-owner", "test-repo", branch="main"
         )
@@ -389,18 +381,14 @@ class TestWorkspaceSetupForkBootstrap:
         ):
             result = await setup_workspace(state)
 
-        mock_workspace_github.get_or_create_fork.assert_awaited_once_with(
-            "upstream", "repo"
-        )
+        mock_workspace_github.get_or_create_fork.assert_awaited_once_with("upstream", "repo")
         mock_git.push_to_fork.assert_called_once_with()
         assert result["current_node"] == "setup_workspace"
         assert result["retry_count"] == 1
         assert "invalid refspec" in result["last_error"]
 
     @pytest.mark.asyncio
-    async def test_existing_fork_branch_is_checked_out_without_push(
-        self, mock_workspace_github
-    ):
+    async def test_existing_fork_branch_is_checked_out_without_push(self, mock_workspace_github):
         mock_jira = create_mock_jira_client()
         mock_manager, mock_workspace = create_mock_workspace_manager()
         mock_git = create_mock_git_operations()
@@ -428,9 +416,7 @@ class TestWorkspaceSetupForkBootstrap:
         mock_git.remote_branch_exists.assert_called_once_with(
             mock_workspace.branch_name, remote="fork"
         )
-        mock_git.checkout_branch.assert_called_once_with(
-            mock_workspace.branch_name, remote="fork"
-        )
+        mock_git.checkout_branch.assert_called_once_with(mock_workspace.branch_name, remote="fork")
         mock_git.create_branch.assert_not_called()
         mock_git.push_to_fork.assert_not_called()
         assert result["current_node"] == "implementation"
