@@ -5,7 +5,11 @@ from typing import Any
 
 from langgraph.graph import END
 
-from forge.workflow.utils.comment_classifier import CommentType, classify_comment
+from forge.workflow.utils.comment_classifier import (
+    CommentType,
+    classify_comment,
+    parse_comment_command,
+)
 from forge.workflow.utils.draft_manager import (
     FORGE_STORIES_DRAFT_FILENAME,
     FORGE_TASKS_DRAFT_FILENAME,
@@ -87,6 +91,7 @@ def set_error(state: dict[str, Any], error: str) -> dict[str, Any]:
 __all__ = [
     "CommentType",
     "classify_comment",
+    "parse_comment_command",
     "post_qa_summary_if_needed",
     "post_status_comment",
     "remove_implementing_label",
