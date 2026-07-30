@@ -1,10 +1,12 @@
 """Unit tests for the orchestrator worker."""
 
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from forge.models.draft import ForgeDecompositionDraft
 from forge.models.events import EventSource
 from forge.orchestrator.worker import (
     OrchestratorWorker,
@@ -1629,3 +1631,276 @@ class TestHandleResumeEventReviewGates:
         result = await worker._handle_resume_event(message, state)
 
         assert route_review_response(result) == "implement_review"
+
+
+class TestWorkerInteractiveCommentCommandsAndRollback:
+    """Tests for interactive comment commands and state consistency rollback guard (BR-006)."""
+
+    @pytest.fixture
+    def worker(self) -> OrchestratorWorker:
+        return OrchestratorWorker(consumer_name="test-worker")
+
+    @pytest.fixture
+    def base_message(self) -> QueueMessage:
+        return QueueMessage(
+            message_id="msg-123",
+            event_id="evt-123",
+            source=EventSource.JIRA,
+            event_type="jira:issue_updated",
+            ticket_key="TEST-123",
+            payload={
+                "issue": {
+                    "key": "TEST-123",
+                    "fields": {
+                        "issuetype": {"name": "Feature"},
+                        "labels": ["forge:managed"],
+                    },
+                },
+                "comment": {
+                    "id": "10001",
+                    "body": "/forge remove 2",
+                },
+            },
+        )
+
+    @pytest.fixture
+    def base_state(self) -> dict:
+        return {
+            "ticket_key": "TEST-123",
+            "ticket_type": "Feature",
+            "current_node": "plan_approval_gate",
+            "is_paused": True,
+            "context": {},
+        }
+
+    @pytest.fixture
+    def mock_draft(self) -> ForgeDecompositionDraft:
+        from datetime import datetime
+
+        from forge.models.draft import DraftItem, ForgeDecompositionDraft
+
+        return ForgeDecompositionDraft(
+            parent_key="TEST-123",
+            phase="stories",
+            items=[
+                DraftItem(
+                    id=1, summary="Task 1", description="D1", repo="owner/r", acceptance_criteria=[]
+                ),
+                DraftItem(
+                    id=2, summary="Task 2", description="D2", repo="owner/r", acceptance_criteria=[]
+                ),
+            ],
+            version=1,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+
+    @pytest.mark.asyncio
+    async def test_forge_mutation_command_success(
+        self,
+        worker: OrchestratorWorker,
+        base_message: QueueMessage,
+        base_state: dict,
+        mock_draft: ForgeDecompositionDraft,
+    ):
+        """Worker parses /forge remove 2, mutates draft, saves draft, edits the comment, and stays paused."""
+        mock_jira = AsyncMock()
+        mock_jira.get_attachments.return_value = [{"filename": "forge-stories-draft.json"}]
+
+        with (
+            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
+            patch(
+                "forge.workflow.utils.draft_manager.DraftManager.get_draft_attachment",
+                return_value=mock_draft,
+            ) as mock_get,
+            patch(
+                "forge.workflow.utils.draft_manager.DraftManager.save_draft_attachment",
+                new_callable=AsyncMock,
+            ) as mock_save,
+        ):
+            result = await worker._handle_resume_event(base_message, base_state)
+
+            # verify get_draft_attachment is called with correct filename
+            mock_get.assert_called_once_with(mock_jira, "TEST-123", "forge-stories-draft.json")
+
+            # verify save_draft_attachment is called with updated draft where item 2 is removed
+            mock_save.assert_called_once()
+            saved_draft = mock_save.call_args[0][2]
+            assert len(saved_draft.items) == 1
+            assert saved_draft.items[0].id == 1
+
+            # verify edit_comment was called
+            mock_jira.edit_comment.assert_called_once_with(
+                "TEST-123", "10001", "✅ /forge remove 2"
+            )
+
+            # verify state stays paused
+            assert result == base_state
+            assert result["is_paused"] is True
+
+    @pytest.mark.asyncio
+    async def test_forge_approve_command_success(
+        self, worker: OrchestratorWorker, base_message: QueueMessage, base_state: dict
+    ):
+        """Worker parses /forge approve, sets is_approved=True and workflow label, and unpauses."""
+        from forge.models.workflow import ForgeLabel
+
+        base_message.payload["comment"]["body"] = "/forge approve"
+        mock_jira = AsyncMock()
+        mock_jira.get_attachments.return_value = [{"filename": "forge-stories-draft.json"}]
+
+        with patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira):
+            result = await worker._handle_resume_event(base_message, base_state)
+
+            # verify workflow label set
+            mock_jira.set_workflow_label.assert_called_once_with(
+                "TEST-123", ForgeLabel.PLAN_APPROVED
+            )
+
+            # verify state is unpaused
+            assert result["is_paused"] is False
+
+    @pytest.mark.asyncio
+    async def test_revision_feedback_success(
+        self,
+        worker: OrchestratorWorker,
+        base_message: QueueMessage,
+        base_state: dict,
+        mock_draft: ForgeDecompositionDraft,
+    ):
+        """Worker parses ! comment, triggers LLM revision chain, saves updated draft, edits comment, and stays paused."""
+
+        base_message.payload["comment"]["body"] = "! simplify task descriptions"
+
+        mock_jira = AsyncMock()
+        mock_jira.get_attachments.return_value = [{"filename": "forge-stories-draft.json"}]
+
+        revised_draft_str = mock_draft.model_copy(
+            update={"items": [mock_draft.items[0]]}
+        ).model_dump_json()
+
+        mock_agent = AsyncMock()
+        mock_agent.revise_draft_with_feedback.return_value = revised_draft_str
+        mock_agent.close = AsyncMock()
+
+        with (
+            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
+            patch(
+                "forge.workflow.utils.draft_manager.DraftManager.get_draft_attachment",
+                return_value=mock_draft,
+            ),
+            patch(
+                "forge.workflow.utils.draft_manager.DraftManager.save_draft_attachment",
+                new_callable=AsyncMock,
+            ) as mock_save,
+            patch("forge.orchestrator.worker.ForgeAgent", return_value=mock_agent),
+        ):
+            result = await worker._handle_resume_event(base_message, base_state)
+
+            # verify agent called
+            mock_agent.revise_draft_with_feedback.assert_called_once()
+            assert (
+                mock_agent.revise_draft_with_feedback.call_args[1]["feedback"]
+                == "simplify task descriptions"
+            )
+
+            # verify save_draft_attachment called with revised draft
+            mock_save.assert_called_once()
+            saved_draft = mock_save.call_args[0][2]
+            assert len(saved_draft.items) == 1
+
+            # verify edit_comment called
+            mock_jira.edit_comment.assert_called_once_with(
+                "TEST-123", "10001", "✅ ! simplify task descriptions"
+            )
+
+            # verify state stays paused
+            assert result == base_state
+
+    @pytest.mark.asyncio
+    async def test_state_consistency_guard_br_006_on_mutation_failure(
+        self,
+        worker: OrchestratorWorker,
+        base_message: QueueMessage,
+        base_state: dict,
+        mock_draft: ForgeDecompositionDraft,
+    ):
+        """On mutation failure, rolls back to original draft, keep PENDING_APPROVAL, and post error reply comment."""
+        # Malformed command parameters will fail mutation in DraftManager
+        base_message.payload["comment"]["body"] = "/forge update 2 invalid_param"
+
+        mock_jira = AsyncMock()
+        mock_jira.get_attachments.return_value = [{"filename": "forge-stories-draft.json"}]
+
+        with (
+            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
+            patch(
+                "forge.workflow.utils.draft_manager.DraftManager.get_draft_attachment",
+                return_value=mock_draft,
+            ),
+            patch(
+                "forge.workflow.utils.draft_manager.DraftManager.save_draft_attachment",
+                new_callable=AsyncMock,
+            ) as mock_save,
+        ):
+            result = await worker._handle_resume_event(base_message, base_state)
+
+            # verify save_draft_attachment is called to roll back (saving original_draft)
+            mock_save.assert_called_once_with(
+                mock_jira, "TEST-123", mock_draft, "forge-stories-draft.json"
+            )
+
+            # verify error comment is posted
+            mock_jira.add_comment.assert_called_once()
+            error_comment = mock_jira.add_comment.call_args[0][1]
+            assert "❌ Forge command/revision failed:" in error_comment
+
+            # verify state stays paused in PENDING_APPROVAL
+            assert result == base_state
+            assert result["is_paused"] is True
+
+    @pytest.mark.asyncio
+    async def test_state_consistency_guard_br_006_on_revision_failure(
+        self,
+        worker: OrchestratorWorker,
+        base_message: QueueMessage,
+        base_state: dict,
+        mock_draft: ForgeDecompositionDraft,
+    ):
+        """On LLM revision failure, rolls back to original draft, keep PENDING_APPROVAL, and post error reply comment."""
+        base_message.payload["comment"]["body"] = "! make it simpler"
+
+        mock_jira = AsyncMock()
+        mock_jira.get_attachments.return_value = [{"filename": "forge-stories-draft.json"}]
+
+        mock_agent = AsyncMock()
+        mock_agent.revise_draft_with_feedback.side_effect = Exception("LLM connection timed out")
+        mock_agent.close = AsyncMock()
+
+        with (
+            patch("forge.orchestrator.worker.JiraClient", return_value=mock_jira),
+            patch(
+                "forge.workflow.utils.draft_manager.DraftManager.get_draft_attachment",
+                return_value=mock_draft,
+            ),
+            patch(
+                "forge.workflow.utils.draft_manager.DraftManager.save_draft_attachment",
+                new_callable=AsyncMock,
+            ) as mock_save,
+            patch("forge.orchestrator.worker.ForgeAgent", return_value=mock_agent),
+        ):
+            result = await worker._handle_resume_event(base_message, base_state)
+
+            # verify save_draft_attachment is called to roll back (saving original_draft)
+            mock_save.assert_called_once_with(
+                mock_jira, "TEST-123", mock_draft, "forge-stories-draft.json"
+            )
+
+            # verify error comment is posted with details
+            mock_jira.add_comment.assert_called_once()
+            error_comment = mock_jira.add_comment.call_args[0][1]
+            assert "❌ Forge command/revision failed: LLM connection timed out" in error_comment
+
+            # verify state stays paused in PENDING_APPROVAL
+            assert result == base_state
+            assert result["is_paused"] is True
