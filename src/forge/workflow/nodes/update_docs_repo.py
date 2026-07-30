@@ -17,7 +17,7 @@ from forge.sandbox import ContainerRunner
 from forge.skills.utils import extract_project_key
 from forge.workflow.nodes.workspace_setup import _configure_forge_exclude
 from forge.workflow.utils import update_state_timestamp
-from forge.workspace.git_ops import GitOperations
+from forge.workspace.git_ops import GitError, GitOperations
 from forge.workspace.manager import WorkspaceManager
 
 WorkflowState = dict[str, Any]
@@ -62,6 +62,20 @@ async def update_docs_repo(state: WorkflowState) -> WorkflowState:
 
     logger.info(f"Updating separate docs repo {docs_repo} for {ticket_key}")
 
+    code_owner, code_repo_name = current_repo.split("/", 1)
+
+    # Resolve the code repo's default branch so the prompt diff command is correct.
+    code_default_branch = "main"
+    github_for_code = GitHubClient(settings)
+    try:
+        code_repo_data = await github_for_code.get_repository(code_owner, code_repo_name)
+        code_default_branch = code_repo_data.get("default_branch", "main")
+        logger.info(f"Code repo {current_repo} default branch: {code_default_branch}")
+    except Exception as e:
+        logger.warning(f"Could not fetch code repo metadata, defaulting to 'main': {e}")
+    finally:
+        await github_for_code.close()
+
     # Resolve the docs repo's actual default branch to avoid hardcoding "main".
     owner, repo = docs_repo.split("/", 1)
     default_branch = "main"
@@ -95,17 +109,40 @@ async def update_docs_repo(state: WorkflowState) -> WorkflowState:
         )
 
         # Clone upstream code repo; try to reach the PR branch so the agent
-        # can run `git diff origin/main...HEAD` inside the container.
+        # can run `git diff origin/{code_default_branch}...HEAD` inside the container.
         code_git = GitOperations(code_workspace)
         code_git.clone()
-        if fork_owner and fork_repo:
-            code_git.add_fork_remote(fork_owner, fork_repo)
-            code_git.checkout_branch(branch_name, remote="fork")
-        else:
-            # No fork info (same-repo PR or fork state not populated).
-            # Fall back to origin; if the branch was auto-deleted after merge,
-            # checkout_branch raises and the outer try/except skips with a warning.
-            code_git.checkout_branch(branch_name, remote="origin")
+        try:
+            if fork_owner and fork_repo:
+                code_git.add_fork_remote(fork_owner, fork_repo)
+                code_git.checkout_branch(branch_name, remote="fork")
+            else:
+                code_git.checkout_branch(branch_name, remote="origin")
+        except GitError:
+            # Branch was deleted after merge (GitHub auto-delete is common).
+            # Fall back to checking out the merge commit directly.
+            pr_number = state.get("current_pr_number")
+            if pr_number:
+                github_for_sha = GitHubClient(settings)
+                try:
+                    pr_data = await github_for_sha.get_pull_request(
+                        code_owner, code_repo_name, int(pr_number)
+                    )
+                    merge_sha = pr_data.get("merge_commit_sha")
+                    if merge_sha:
+                        code_git.checkout_commit(merge_sha)
+                        logger.info(
+                            f"Branch {branch_name} not found; checked out merge commit {merge_sha}"
+                        )
+                except Exception as e2:
+                    logger.warning(f"Could not resolve merge commit SHA for {ticket_key}: {e2}")
+                finally:
+                    await github_for_sha.close()
+            else:
+                logger.warning(
+                    f"Branch {branch_name} not found and no PR number in state; "
+                    "agent will work from default branch HEAD"
+                )
 
         # Clone and set up the docs repo
         docs_git = GitOperations(docs_workspace)
@@ -121,6 +158,7 @@ async def update_docs_repo(state: WorkflowState) -> WorkflowState:
             "update-docs-separate",
             workspace_path=str(docs_workspace.path),
             guardrails=guardrails[:2000] if guardrails else "",
+            code_default_branch=code_default_branch,
         )
 
         runner = ContainerRunner(settings)
