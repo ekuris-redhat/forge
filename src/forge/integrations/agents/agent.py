@@ -1260,7 +1260,6 @@ NOTE: No repositories configured. Use REPO: unknown for now."""
             The updated draft JSON string.
         """
         from langchain_core.output_parsers import StrOutputParser
-        from langchain_core.prompts import PromptTemplate
 
         # Format context into a readable string/JSON
         context_str = json.dumps(context, indent=2) if context else "None provided"
@@ -1274,11 +1273,10 @@ NOTE: No repositories configured. Use REPO: unknown for now."""
         )
 
         model = self._create_model()
-        prompt_template = PromptTemplate.from_template("{prompt_text}")
-        chain = prompt_template | model | StrOutputParser()
+        chain = model | StrOutputParser()
 
         logger.info("Revising draft using direct LangChain model chain")
-        response = await chain.ainvoke({"prompt_text": prompt_text})
+        response = await chain.ainvoke(prompt_text)
 
         # Strip preamble/narration and validate as JSON
         cleaned_text = response.strip()
