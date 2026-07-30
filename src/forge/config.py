@@ -312,6 +312,11 @@ class Settings(BaseSettings):
         default=0.5, description="Webhook acknowledgment timeout in seconds"
     )
 
+    yolo_mode: bool = Field(
+        default=False,
+        description="Autonomous mode - skip all artifact approval gates",
+    )
+
     # Container Configuration
     container_image: str = Field(
         default="localhost/forge-dev:latest",
