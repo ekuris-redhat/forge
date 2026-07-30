@@ -141,6 +141,7 @@ def create_initial_bug_state(ticket_key: str, **kwargs: Any) -> BugState:
         "qualitative_retry_count": 0,
         "qualitative_review_failed": False,
         "reflect_rca_retry_count": 0,
+        "docs_pr_url": None,
         "yolo_mode": False,
     }
 

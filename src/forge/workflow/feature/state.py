@@ -118,6 +118,7 @@ def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState
         "parallel_execution_enabled": True,
         "parallel_branch_id": None,
         "parallel_total_branches": None,
+        "docs_pr_url": None,
         "ci_failed_checks": [],
         "ci_skipped_checks": [],
         "ci_fix_attempt": 0,
