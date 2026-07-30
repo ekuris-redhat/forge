@@ -1143,6 +1143,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#auto-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Auto-Review
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#using-your-skills-with-forge" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1443,6 +1454,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#auto-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Auto-Review
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#using-your-skills-with-forge" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1559,6 +1581,16 @@
 <a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a><span class="k">2.</span> Root cause (specific line and file if applicable)
 <a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="k">3.</span> Proposed fix approach
 </code></pre></div>
+<h2 id="auto-review">Auto-Review<a class="headerlink" href="#auto-review" title="Permanent link">&para;</a></h2>
+<p>Skills can include a <code>review.md</code> file alongside <code>SKILL.md</code> to enable automatic quality gates. When present, Forge spawns a reviewer agent after the skill completes, evaluating the output against criteria you define.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>skills/
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>└── myteam/
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    └── implement-task/
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>        ├── SKILL.md
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>        └── review.md      ← reviewer instructions
+</code></pre></div>
+<p>The reviewer issues APPROVED or REJECTED verdicts. On rejection, the skill re-runs with feedback injected — up to <code>max_retries</code> attempts (default: 3).</p>
+<p>See the <a href="../../guide/auto-review/">Auto-Review Guide</a> for configuration options and writing effective review instructions.</p>
 <h2 id="using-your-skills-with-forge">Using your skills with Forge<a class="headerlink" href="#using-your-skills-with-forge" title="Permanent link">&para;</a></h2>
 <p>See <a href="../../dev/contributing/#customize-forge-for-your-project">Customize Forge for your project</a> for how to point a Jira project at your skills repo using <code>forge project-setup</code> and the skill installer.</p>
 
