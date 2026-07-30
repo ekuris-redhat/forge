@@ -135,11 +135,15 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
 
         if not epics_data:
             logger.warning(f"No Epics generated for {ticket_key}")
-            return {
-                **state,
-                "last_error": "Epic generation returned no results",
-                "current_node": "decompose_epics",
-            }
+            return cast(
+                WorkflowState,
+                {
+                    **state,
+                    "last_error": "Epic generation returned no results",
+                    "current_node": "decompose_epics",
+                    "retry_count": state.get("retry_count", 0) + 1,
+                },
+            )
 
         # Check parent Jira ticket labels to check for forge:yolo and inspect global config yolo_mode
         is_yolo = (
