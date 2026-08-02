@@ -318,7 +318,7 @@ async def test_revise_draft_with_feedback_invalid_json():
 
     with (
         patch.object(agent, "_create_model", return_value=mock_model),
-        pytest.raises(ValueError, match="Failed to parse LLM response as valid JSON"),
+        pytest.raises(ValueError, match="Failed to parse revised draft as JSON"),
     ):
         await agent.revise_draft_with_feedback(
             draft_content='{"items": []}', feedback="Add Task 1", context={"ticket_key": "PROJ-1"}

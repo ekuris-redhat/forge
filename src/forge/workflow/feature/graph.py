@@ -12,6 +12,8 @@ from forge.workflow.feature.state import FeatureState
 from forge.workflow.gates import (
     plan_approval_gate,
     prd_approval_gate,
+    provision_epics,
+    provision_tasks,
     route_plan_approval,
     route_prd_approval,
     route_spec_approval,
@@ -111,6 +113,8 @@ def route_by_ticket_type(state: FeatureState) -> str:
             return "update_single_epic"
         elif current_node == "plan_approval_gate":
             return "plan_approval_gate"
+        elif current_node == "provision_epics":
+            return "provision_epics"
         elif current_node == "generate_tasks":
             return "generate_tasks"
         elif current_node == "regenerate_all_tasks":
@@ -121,6 +125,8 @@ def route_by_ticket_type(state: FeatureState) -> str:
             return "regenerate_epic_tasks"
         elif current_node == "task_approval_gate":
             return "task_approval_gate"
+        elif current_node == "provision_tasks":
+            return "provision_tasks"
         elif current_node == "wait_for_ci_gate":
             return "wait_for_ci_gate"
         elif current_node in ("implement_task", "implementation", "implement_bug_fix"):
@@ -453,6 +459,7 @@ def build_feature_graph() -> StateGraph:
     graph.add_node("plan_approval_gate", plan_approval_gate)
     graph.add_node("regenerate_all_epics", regenerate_all_epics)
     graph.add_node("update_single_epic", update_single_epic)
+    graph.add_node("provision_epics", provision_epics)
 
     # Task Generation nodes (US4)
     graph.add_node("generate_tasks", generate_tasks)
@@ -460,6 +467,7 @@ def build_feature_graph() -> StateGraph:
     graph.add_node("regenerate_all_tasks", regenerate_all_tasks)
     graph.add_node("update_single_task", update_single_task)
     graph.add_node("regenerate_epic_tasks", regenerate_epic_tasks)
+    graph.add_node("provision_tasks", provision_tasks)
 
     # Execution nodes (US6)
     graph.add_node("task_router", route_tasks_by_repo)
@@ -511,11 +519,13 @@ def build_feature_graph() -> StateGraph:
             "regenerate_all_epics": "regenerate_all_epics",
             "update_single_epic": "update_single_epic",
             "plan_approval_gate": "plan_approval_gate",
+            "provision_epics": "provision_epics",
             "generate_tasks": "generate_tasks",
             "regenerate_all_tasks": "regenerate_all_tasks",
             "update_single_task": "update_single_task",
             "regenerate_epic_tasks": "regenerate_epic_tasks",
             "task_approval_gate": "task_approval_gate",
+            "provision_tasks": "provision_tasks",
             # Resume routing for Feature workflow - execution stages
             "task_router": "task_router",
             "setup_workspace": "setup_workspace",
@@ -610,13 +620,14 @@ def build_feature_graph() -> StateGraph:
         "plan_approval_gate",
         route_plan_approval,
         {
-            "generate_tasks": "generate_tasks",
+            "provision_epics": "provision_epics",
             "regenerate_all_epics": "regenerate_all_epics",
             "update_single_epic": "update_single_epic",
             "answer_question": "answer_question",  # Q&A mode
             END: END,  # Pause workflow until next webhook
         },
     )
+    graph.add_edge("provision_epics", "generate_tasks")
     graph.add_conditional_edges(
         "regenerate_all_epics",
         _route_after_epic_regeneration,
@@ -647,7 +658,7 @@ def build_feature_graph() -> StateGraph:
         "task_approval_gate",
         route_task_approval,
         {
-            "task_router": "task_router",
+            "provision_tasks": "provision_tasks",
             "regenerate_all_tasks": "regenerate_all_tasks",  # Feature-level rejection
             "regenerate_epic_tasks": "regenerate_epic_tasks",  # Epic-level rejection
             "update_single_task": "update_single_task",  # Task-level rejection
@@ -655,6 +666,7 @@ def build_feature_graph() -> StateGraph:
             END: END,  # Pause workflow until approval webhook
         },
     )
+    graph.add_edge("provision_tasks", "task_router")
     graph.add_conditional_edges(
         "regenerate_all_tasks",
         _route_after_task_regeneration,
