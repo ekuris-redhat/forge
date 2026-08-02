@@ -49,6 +49,8 @@ def mock_jira_client():
     mock.add_comment = AsyncMock()
     mock.add_structured_comment = AsyncMock()
     mock.set_workflow_label = AsyncMock()
+    mock.get_prd_proposals_repo = AsyncMock(return_value=None)
+    mock.get_prd_proposals_path = AsyncMock(return_value="")
     mock.close = AsyncMock()
     return mock
 
@@ -225,6 +227,8 @@ class TestBugWorkflowExecution:
         """Bug workflow should generate RCA and pause at approval gate."""
         # Update mock for bug issue
         from forge.integrations.jira.models import JiraIssue
+        from forge.workflow.bug import BugWorkflow
+        from forge.workflow.bug.state import create_initial_bug_state
 
         mock_jira_client.get_issue = AsyncMock(
             return_value=JiraIssue(
@@ -237,35 +241,52 @@ class TestBugWorkflowExecution:
                 labels=["forge:managed"],
             )
         )
+        mock_jira_client.get_comments = AsyncMock(return_value=[])
+        mock_jira_client.get_project_repos = AsyncMock(return_value=["acme/backend"])
+
+        # triage-bug agent response must be sufficient
+        mock_agent.run_task = AsyncMock(return_value="sufficient")
+
+        class _FakeRunner:
+            async def run(self, workspace_path, **_kwargs):
+                import json
+                from tests.unit.workflow.nodes.test_rca_analysis import SAMPLE_RCA_JSON
+                forge_dir = workspace_path / ".forge"
+                forge_dir.mkdir(exist_ok=True)
+                (forge_dir / "rca.json").write_text(json.dumps(SAMPLE_RCA_JSON))
+                
+                result = MagicMock()
+                result.success = True
+                result.stdout = "VALID"
+                result.stderr = ""
+                result.review_exhausted = False
+                return result
 
         async with AsyncSqliteSaver.from_conn_string(str(temp_checkpoint_db)) as checkpointer:
-            workflow = compile_workflow(checkpointer=checkpointer)
+            workflow = BugWorkflow().build_graph().compile(checkpointer=checkpointer)
 
-            initial_state = create_initial_state(
-                thread_id="BUG-456",
+            initial_state = create_initial_bug_state(
                 ticket_key="BUG-456",
                 ticket_type=TicketType.BUG,
             )
 
             with (
-                patch("forge.workflow.nodes.bug_workflow.JiraClient") as MockJira,
-                patch("forge.workflow.nodes.bug_workflow.ForgeAgent") as MockAgent,
-                patch("forge.workflow.nodes.bug_workflow.get_settings") as mock_settings,
+                patch("forge.workflow.nodes.triage.JiraClient", return_value=mock_jira_client),
+                patch("forge.workflow.nodes.triage.ForgeAgent", return_value=mock_agent),
+                patch("forge.workflow.nodes.rca_analysis.JiraClient", return_value=mock_jira_client),
+                patch("forge.workflow.nodes.rca_analysis.ContainerRunner", return_value=_FakeRunner()),
+                patch("forge.workflow.nodes.rca_option_gate.JiraClient", return_value=mock_jira_client),
             ):
-                MockJira.return_value = mock_jira_client
-                MockAgent.return_value = mock_agent
-                mock_settings.return_value = MagicMock()
-
                 config = {"configurable": {"thread_id": "BUG-456"}}
                 result = await workflow.ainvoke(initial_state, config)
 
                 # Verify RCA was generated
                 assert result.get("rca_content"), "RCA content should be populated"
-                assert "Root Cause Analysis" in result["rca_content"]
+                assert "Code Location" in result["rca_content"]
 
-                # Verify workflow paused at approval gate
+                # Verify workflow paused at approval gate (rca_option_gate)
                 assert result.get("is_paused"), "Workflow should be paused"
-                assert result.get("current_node") == "rca_approval_gate"
+                assert result.get("current_node") == "rca_option_gate"
 
 
 class TestWorkflowResumption:
@@ -276,8 +297,9 @@ class TestWorkflowResumption:
         self, temp_checkpoint_db, mock_jira_client, mock_agent
     ):
         """Workflow should resume from checkpointed state after approval."""
+        from forge.workflow.feature import FeatureWorkflow
         async with AsyncSqliteSaver.from_conn_string(str(temp_checkpoint_db)) as checkpointer:
-            workflow = compile_workflow(checkpointer=checkpointer)
+            workflow = FeatureWorkflow().build_graph().compile(checkpointer=checkpointer)
 
             initial_state = create_initial_state(
                 thread_id="TEST-123",
