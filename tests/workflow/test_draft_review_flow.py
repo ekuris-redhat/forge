@@ -764,6 +764,7 @@ class TestDraftRetentionOnFailure:
 
             with pytest.raises(Exception, match="Jira API Failure"):
                 from forge.workflow.gates.plan_approval import provision_epics
+
                 await provision_epics(state)
 
         # Verify delete_draft_attachment was NEVER called, thus retaining the draft
@@ -827,6 +828,7 @@ class TestDraftRetentionOnFailure:
 
             with pytest.raises(Exception, match="Jira API Failure"):
                 from forge.workflow.gates.task_approval import provision_tasks
+
                 await provision_tasks(state)
 
         # Verify delete_draft_attachment was NEVER called, thus retaining the draft

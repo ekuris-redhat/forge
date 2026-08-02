@@ -148,6 +148,7 @@ class TestFeatureWorkflowExecution:
     ):
         """Feature workflow should generate PRD and pause at approval gate."""
         from forge.workflow.feature import FeatureWorkflow
+
         async with AsyncSqliteSaver.from_conn_string(str(temp_checkpoint_db)) as checkpointer:
             workflow = FeatureWorkflow().build_graph().compile(checkpointer=checkpointer)
 
@@ -188,6 +189,7 @@ class TestFeatureWorkflowExecution:
     ):
         """Workflow state should be persisted and retrievable."""
         from forge.workflow.feature import FeatureWorkflow
+
         async with AsyncSqliteSaver.from_conn_string(str(temp_checkpoint_db)) as checkpointer:
             workflow = FeatureWorkflow().build_graph().compile(checkpointer=checkpointer)
 
@@ -251,10 +253,11 @@ class TestBugWorkflowExecution:
             async def run(self, workspace_path, **_kwargs):
                 import json
                 from tests.unit.workflow.nodes.test_rca_analysis import SAMPLE_RCA_JSON
+
                 forge_dir = workspace_path / ".forge"
                 forge_dir.mkdir(exist_ok=True)
                 (forge_dir / "rca.json").write_text(json.dumps(SAMPLE_RCA_JSON))
-                
+
                 result = MagicMock()
                 result.success = True
                 result.stdout = "VALID"
@@ -273,9 +276,15 @@ class TestBugWorkflowExecution:
             with (
                 patch("forge.workflow.nodes.triage.JiraClient", return_value=mock_jira_client),
                 patch("forge.workflow.nodes.triage.ForgeAgent", return_value=mock_agent),
-                patch("forge.workflow.nodes.rca_analysis.JiraClient", return_value=mock_jira_client),
-                patch("forge.workflow.nodes.rca_analysis.ContainerRunner", return_value=_FakeRunner()),
-                patch("forge.workflow.nodes.rca_option_gate.JiraClient", return_value=mock_jira_client),
+                patch(
+                    "forge.workflow.nodes.rca_analysis.JiraClient", return_value=mock_jira_client
+                ),
+                patch(
+                    "forge.workflow.nodes.rca_analysis.ContainerRunner", return_value=_FakeRunner()
+                ),
+                patch(
+                    "forge.workflow.nodes.rca_option_gate.JiraClient", return_value=mock_jira_client
+                ),
             ):
                 config = {"configurable": {"thread_id": "BUG-456"}}
                 result = await workflow.ainvoke(initial_state, config)
@@ -298,6 +307,7 @@ class TestWorkflowResumption:
     ):
         """Workflow should resume from checkpointed state after approval."""
         from forge.workflow.feature import FeatureWorkflow
+
         async with AsyncSqliteSaver.from_conn_string(str(temp_checkpoint_db)) as checkpointer:
             workflow = FeatureWorkflow().build_graph().compile(checkpointer=checkpointer)
 
@@ -426,7 +436,9 @@ class TestGraphStructure:
 
         async def _test():
             async with AsyncSqliteSaver.from_conn_string(str(temp_checkpoint_db)) as checkpointer:
-                compiled_feature = FeatureWorkflow().build_graph().compile(checkpointer=checkpointer)
+                compiled_feature = (
+                    FeatureWorkflow().build_graph().compile(checkpointer=checkpointer)
+                )
                 compiled_bug = BugWorkflow().build_graph().compile(checkpointer=checkpointer)
                 assert compiled_feature is not None
                 assert compiled_bug is not None

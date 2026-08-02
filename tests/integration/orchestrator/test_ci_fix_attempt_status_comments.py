@@ -78,16 +78,22 @@ class TestCIFixAttemptStatusCommentsTS007:
                         "forge.workflow.nodes.ci_evaluator.prepare_workspace"
                     ) as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
+                        with (
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
+                                AsyncMock(),
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._collect_error_info",
+                                return_value="errors",
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator.load_prompt",
+                                return_value="prompt",
+                            ),
+                            patch("pathlib.Path.mkdir"),
+                            patch("pathlib.Path.write_text"),
+                        ):
                             with patch("pathlib.Path.exists", return_value=False):
                                 await attempt_ci_fix(state)
 
@@ -138,16 +144,22 @@ class TestCIFixAttemptStatusCommentsTS007:
                         "forge.workflow.nodes.ci_evaluator.prepare_workspace"
                     ) as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
+                        with (
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
+                                AsyncMock(),
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._collect_error_info",
+                                return_value="errors",
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator.load_prompt",
+                                return_value="prompt",
+                            ),
+                            patch("pathlib.Path.mkdir"),
+                            patch("pathlib.Path.write_text"),
+                        ):
                             with patch("pathlib.Path.exists", return_value=False):
                                 await attempt_ci_fix(state)
 
@@ -195,16 +207,22 @@ class TestCIFixAttemptStatusCommentsTS007:
                         "forge.workflow.nodes.ci_evaluator.prepare_workspace"
                     ) as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
+                        with (
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
+                                AsyncMock(),
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._collect_error_info",
+                                return_value="errors",
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator.load_prompt",
+                                return_value="prompt",
+                            ),
+                            patch("pathlib.Path.mkdir"),
+                            patch("pathlib.Path.write_text"),
+                        ):
                             with patch("pathlib.Path.exists", return_value=False):
                                 await attempt_ci_fix(state)
 
@@ -252,16 +270,22 @@ class TestCIFixAttemptStatusCommentsTS007:
                         "forge.workflow.nodes.ci_evaluator.prepare_workspace"
                     ) as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
+                        with (
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
+                                AsyncMock(),
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._collect_error_info",
+                                return_value="errors",
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator.load_prompt",
+                                return_value="prompt",
+                            ),
+                            patch("pathlib.Path.mkdir"),
+                            patch("pathlib.Path.write_text"),
+                        ):
                             with patch("pathlib.Path.exists", return_value=False):
                                 await attempt_ci_fix(state)
 
@@ -323,17 +347,22 @@ class TestCIFixAttemptCommentCounts:
                             "forge.workflow.nodes.ci_evaluator.prepare_workspace"
                         ) as mock_prepare:
                             mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                            with patch(
-                                "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                                AsyncMock(),
-                            ), patch(
-                                "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                                return_value="errors",
-                            ), patch(
-                                "forge.workflow.nodes.ci_evaluator.load_prompt",
-                                return_value="prompt",
-                            ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"), patch(
-                                "pathlib.Path.exists", return_value=False
+                            with (
+                                patch(
+                                    "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
+                                    AsyncMock(),
+                                ),
+                                patch(
+                                    "forge.workflow.nodes.ci_evaluator._collect_error_info",
+                                    return_value="errors",
+                                ),
+                                patch(
+                                    "forge.workflow.nodes.ci_evaluator.load_prompt",
+                                    return_value="prompt",
+                                ),
+                                patch("pathlib.Path.mkdir"),
+                                patch("pathlib.Path.write_text"),
+                                patch("pathlib.Path.exists", return_value=False),
                             ):
                                 await attempt_ci_fix(state)
 
@@ -379,16 +408,22 @@ class TestCIFixAttemptCommentCounts:
                         "forge.workflow.nodes.ci_evaluator.prepare_workspace"
                     ) as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
+                        with (
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
+                                AsyncMock(),
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._collect_error_info",
+                                return_value="errors",
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator.load_prompt",
+                                return_value="prompt",
+                            ),
+                            patch("pathlib.Path.mkdir"),
+                            patch("pathlib.Path.write_text"),
+                        ):
                             with patch("pathlib.Path.exists", return_value=False):
                                 await attempt_ci_fix(state)
 
@@ -442,16 +477,22 @@ class TestCIFixAttemptErrorHandling:
                         "forge.workflow.nodes.ci_evaluator.prepare_workspace"
                     ) as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
+                        with (
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
+                                AsyncMock(),
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._collect_error_info",
+                                return_value="errors",
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator.load_prompt",
+                                return_value="prompt",
+                            ),
+                            patch("pathlib.Path.mkdir"),
+                            patch("pathlib.Path.write_text"),
+                        ):
                             with patch("pathlib.Path.exists", return_value=False):
                                 result = await attempt_ci_fix(state)
 
@@ -499,16 +540,22 @@ class TestCIFixAttemptErrorHandling:
                         "forge.workflow.nodes.ci_evaluator.prepare_workspace"
                     ) as mock_prepare:
                         mock_prepare.return_value = (Path("/tmp/test-workspace"), None)
-                        with patch(
-                            "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
-                            AsyncMock(),
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator._collect_error_info",
-                            return_value="errors",
-                        ), patch(
-                            "forge.workflow.nodes.ci_evaluator.load_prompt",
-                            return_value="prompt",
-                        ), patch("pathlib.Path.mkdir"), patch("pathlib.Path.write_text"):
+                        with (
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._fetch_ci_logs_and_artifacts",
+                                AsyncMock(),
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator._collect_error_info",
+                                return_value="errors",
+                            ),
+                            patch(
+                                "forge.workflow.nodes.ci_evaluator.load_prompt",
+                                return_value="prompt",
+                            ),
+                            patch("pathlib.Path.mkdir"),
+                            patch("pathlib.Path.write_text"),
+                        ):
                             with patch("pathlib.Path.exists", return_value=False):
                                 await attempt_ci_fix(state)
 

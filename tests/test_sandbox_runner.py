@@ -11,8 +11,7 @@ from forge.sandbox import ContainerRunner
 from forge.sandbox.runner import ContainerConfig
 
 pytestmark = pytest.mark.skipif(
-    shutil.which("podman") is None,
-    reason="podman is not available in PATH"
+    shutil.which("podman") is None, reason="podman is not available in PATH"
 )
 
 

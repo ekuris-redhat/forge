@@ -358,9 +358,7 @@ async def test_revise_draft_with_feedback_fallback_matched_delimiters():
     agent = ForgeAgent()
 
     # Case 1: JSON Object starting with '{' but having a trailing ']' in the postamble
-    llm_response_object = (
-        'Here is the result: {"parent_key": "PROJ-1", "items": [{"id": 1}]} with an unmatched trailing bracket ]'
-    )
+    llm_response_object = 'Here is the result: {"parent_key": "PROJ-1", "items": [{"id": 1}]} with an unmatched trailing bracket ]'
     mock_model_object = MockChatModel(response=llm_response_object)
 
     with patch.object(agent, "_create_model", return_value=mock_model_object):
@@ -370,9 +368,7 @@ async def test_revise_draft_with_feedback_fallback_matched_delimiters():
     assert json.loads(result_object) == {"parent_key": "PROJ-1", "items": [{"id": 1}]}
 
     # Case 2: JSON List starting with '[' but having a trailing '}' in the postamble
-    llm_response_list = (
-        'Here is the result: [{"id": 1}] with an unmatched trailing brace }'
-    )
+    llm_response_list = 'Here is the result: [{"id": 1}] with an unmatched trailing brace }'
     mock_model_list = MockChatModel(response=llm_response_list)
 
     with patch.object(agent, "_create_model", return_value=mock_model_list):
