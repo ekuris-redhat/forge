@@ -22,22 +22,41 @@ All configuration is via environment variables in `.env`. See `.env.example` in 
 
 ### LLM
 
-Choose one backend:
+Choose one backend explicitly. Gemini 3.5 Flash through Vertex AI is recommended.
 
-=== "Anthropic Direct"
-
-    ```bash
-    ANTHROPIC_API_KEY=sk-ant-your-key
-    LLM_MODEL=claude-opus-4-5@20251101
-    ```
-
-=== "Google Vertex AI"
+=== "Vertex AI (recommended)"
 
     ```bash
-    ANTHROPIC_VERTEX_PROJECT_ID=your-gcp-project
-    ANTHROPIC_VERTEX_REGION=us-east5
-    LLM_MODEL=claude-opus-4-5@20251101
+    LLM_BACKEND=vertex-ai
+    GOOGLE_CLOUD_PROJECT=your-gcp-project
+    GOOGLE_CLOUD_LOCATION=global
+    LLM_MODEL=gemini-3.5-flash
     ```
+
+=== "Gemini API"
+
+    ```bash
+    LLM_BACKEND=google-genai
+    GOOGLE_API_KEY=your-google-api-key
+    LLM_MODEL=gemini-3.5-flash
+    ```
+
+=== "Anthropic API"
+
+    ```bash
+    LLM_BACKEND=anthropic
+    ANTHROPIC_API_KEY=your-anthropic-api-key
+    LLM_MODEL=claude-sonnet-4-6
+    ```
+
+`LLM_BACKEND` and `LLM_MODEL` are required. Provider credentials must use the
+provider-native variables shown above; legacy aliases are not supported.
+Forge validates the backend, credentials, and model compatibility at startup.
+
+`CONTAINER_LLM_MODEL` may override the model used for implementation tasks, but
+it does not select a separate backend. The override must be compatible with
+`LLM_BACKEND`; using different orchestrator and container backends is not
+currently supported.
 
 ### Redis
 
@@ -105,6 +124,16 @@ Use these to skip the Jira project property requirement during local development
 | `CONTAINER_IMAGE` | Container image for task execution (default: `forge-dev:latest`) |
 | `CONTAINER_MEMORY_LIMIT` | Memory limit for task containers (default: `4g`) |
 | `CONTAINER_CPU_LIMIT` | CPU limit for task containers (default: `2`) |
+
+## Auto-Review
+
+Settings for the automatic review loop that runs after skill execution. See the [Auto-Review Guide](../guide/auto-review.md) for details.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTO_REVIEW_MAX_RETRIES` | `3` | Default maximum retry attempts when a skill's `review.md` doesn't specify `max_retries` |
+| `AUTO_REVIEW_POLL_INTERVAL` | `5.0` | Polling interval in seconds for detecting review cycle files during container execution |
+| `AUTO_REVIEW_RECORD_POLLED_FILES` | (none) | Recording mode for polled review cycle files: `log` logs cycle data at INFO level, `copy` copies files to recording directory |
 
 ## Observability
 

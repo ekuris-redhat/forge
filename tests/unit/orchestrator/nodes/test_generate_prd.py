@@ -186,9 +186,11 @@ class TestRegeneratePrdWithFeedback:
         self, state_with_feedback, mock_jira, mock_agent
     ):
         """Feedback is cleared after regeneration."""
-        with patch("forge.workflow.nodes.prd_generation.JiraClient", return_value=mock_jira):
-            with patch("forge.workflow.nodes.prd_generation.ForgeAgent", return_value=mock_agent):
-                result = await regenerate_prd_with_feedback(state_with_feedback)
+        with (
+            patch("forge.workflow.nodes.prd_generation.JiraClient", return_value=mock_jira),
+            patch("forge.workflow.nodes.prd_generation.ForgeAgent", return_value=mock_agent),
+        ):
+            result = await regenerate_prd_with_feedback(state_with_feedback)
 
         assert result["feedback_comment"] is None
         assert result["revision_requested"] is False

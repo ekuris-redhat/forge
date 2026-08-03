@@ -1,5 +1,6 @@
 """Tests for the implement_review node and review_response_gate (proposal 007)."""
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -81,6 +82,43 @@ class TestHumanReviewRoutingToImplementReview:
         )
         assert route_human_review(state) == END
 
+    def test_human_review_gate_skips_pause_when_pr_merged(self):
+        """human_review_gate must not re-pause when pr_merged is True."""
+        from forge.workflow.nodes.human_review import human_review_gate
+
+        state = make_workflow_state(
+            current_node="human_review_gate",
+            is_paused=False,
+            pr_merged=True,
+        )
+        result = human_review_gate(state)
+        assert result["is_paused"] is False
+        assert result["current_node"] == "human_review_gate"
+
+    def test_human_review_gate_clears_stale_pause_when_pr_merged(self):
+        """human_review_gate explicitly unpauses even if checkpoint had is_paused=True."""
+        from forge.workflow.nodes.human_review import human_review_gate
+
+        state = make_workflow_state(
+            current_node="human_review_gate",
+            is_paused=True,
+            pr_merged=True,
+        )
+        result = human_review_gate(state)
+        assert result["is_paused"] is False
+
+    def test_human_review_gate_pauses_when_pr_not_merged(self):
+        """human_review_gate pauses normally when pr_merged is False."""
+        from forge.workflow.nodes.human_review import human_review_gate
+
+        state = make_workflow_state(
+            current_node="human_review_gate",
+            is_paused=False,
+            pr_merged=False,
+        )
+        result = human_review_gate(state)
+        assert result["is_paused"] is True
+
 
 # ── review_response_gate pause node ──────────────────────────────────────────
 
@@ -97,6 +135,31 @@ class TestReviewResponseGate:
         result = review_response_gate(state)
         assert result["is_paused"] is True
         assert result["current_node"] == "review_response_gate"
+
+    def test_review_response_gate_skips_pause_when_pr_merged(self):
+        """review_response_gate must not re-pause when pr_merged is True."""
+        from forge.workflow.nodes.implement_review import review_response_gate
+
+        state = make_workflow_state(
+            current_node="review_response_gate",
+            is_paused=False,
+            pr_merged=True,
+        )
+        result = review_response_gate(state)
+        assert result["is_paused"] is False
+        assert result["current_node"] == "review_response_gate"
+
+    def test_review_response_gate_clears_stale_pause_when_pr_merged(self):
+        """review_response_gate explicitly unpauses even if checkpoint had is_paused=True."""
+        from forge.workflow.nodes.implement_review import review_response_gate
+
+        state = make_workflow_state(
+            current_node="review_response_gate",
+            is_paused=True,
+            pr_merged=True,
+        )
+        result = review_response_gate(state)
+        assert result["is_paused"] is False
 
     def test_route_review_response_confirmed_resumes_implement_review(self):
         """When human confirms, route back to implement_review.
@@ -227,6 +290,44 @@ class TestResumeRoutingForReviewNodes:
         assert route_entry(state) == "review_response_gate"
 
 
+# ── gate→router regression: merge reaches completion path ─────────────────
+
+
+class TestMergeReachesCompletionPath:
+    """Gate→router integration: a merge event must flow through each review gate
+    to the completion path, not get stuck at END due to stale is_paused."""
+
+    def test_human_review_gate_merge_flows_to_complete_tasks(self):
+        """human_review_gate(pr_merged) → route_human_review → complete_tasks."""
+        from forge.workflow.nodes.human_review import (
+            human_review_gate,
+            route_human_review,
+        )
+
+        state = make_workflow_state(
+            current_node="human_review_gate",
+            is_paused=True,
+            pr_merged=True,
+        )
+        gate_output = human_review_gate(state)
+        assert route_human_review(gate_output) == "complete_tasks"
+
+    def test_review_response_gate_merge_does_not_end(self):
+        """review_response_gate(pr_merged) → route_review_response → not END."""
+        from forge.workflow.nodes.implement_review import (
+            review_response_gate,
+            route_review_response,
+        )
+
+        state = make_workflow_state(
+            current_node="review_response_gate",
+            is_paused=True,
+            pr_merged=True,
+        )
+        gate_output = review_response_gate(state)
+        assert route_review_response(gate_output) != END
+
+
 # ── implement_review error handling ──────────────────────────────────────────
 
 
@@ -325,6 +426,178 @@ class TestImplementReviewStatusComment:
             )
 
         mock_github.create_issue_comment.assert_not_called()
+
+
+class TestThreadAwareReviewHandling:
+    @pytest.mark.asyncio
+    async def test_processed_threads_are_excluded_from_next_analysis(self):
+        from forge.workflow.nodes.implement_review import _fetch_pr_review_comments
+
+        github = MagicMock()
+        github.get_pull_request_review_threads = AsyncMock(
+            return_value=[
+                {
+                    "thread_id": "already-accepted",
+                    "path": "a.py",
+                    "line": 1,
+                    "comments": [{"comment_id": 10, "body": "Done", "author": "r"}],
+                },
+                {
+                    "thread_id": "new-thread",
+                    "path": "b.py",
+                    "line": 2,
+                    "comments": [{"comment_id": 20, "body": "New", "author": "r"}],
+                },
+            ]
+        )
+        github.close = AsyncMock()
+
+        with patch("forge.workflow.nodes.implement_review.GitHubClient", return_value=github):
+            result = await _fetch_pr_review_comments("org", "repo", 7, "", {"already-accepted"})
+
+        assert "already-accepted" not in result
+        assert "new-thread" in result
+
+    @pytest.mark.asyncio
+    async def test_legacy_objections_file_still_pauses_for_response(self, tmp_path):
+        from forge.workflow.nodes.implement_review import implement_review
+
+        async def run_container(**_kwargs):
+            (tmp_path / ".forge" / "review-objections.md").write_text("Legacy objection")
+            (tmp_path / ".forge" / "review-plan.md").write_text("# No actionable items")
+
+        runner = MagicMock()
+        runner.run = AsyncMock(side_effect=run_container)
+        git = MagicMock()
+        git._run_git.return_value = MagicMock(stdout="")
+        state = make_workflow_state(
+            ticket_key="TEST-233",
+            current_node="implement_review",
+            workspace_path=str(tmp_path),
+            current_repo="org/repo",
+            current_pr_number=9,
+            feedback_comment="Review",
+            context={"branch_name": "forge/TEST-233"},
+        )
+
+        with (
+            patch(
+                "forge.workflow.nodes.implement_review.prepare_workspace",
+                return_value=(str(tmp_path), git),
+            ),
+            patch(
+                "forge.workflow.nodes.implement_review._fetch_pr_review_comments",
+                new=AsyncMock(return_value="# Review"),
+            ),
+            patch(
+                "forge.workflow.nodes.implement_review._post_review_addressing_comment",
+                new=AsyncMock(),
+            ),
+            patch(
+                "forge.workflow.nodes.implement_review._post_review_objection",
+                new=AsyncMock(),
+            ) as post_objection,
+            patch(
+                "forge.workflow.nodes.implement_review.ContainerRunner",
+                return_value=runner,
+            ),
+        ):
+            result = await implement_review(state)
+
+        post_objection.assert_awaited_once()
+        assert result["current_node"] == "review_response_gate"
+        assert result["contested_comments"] == [{"text": "Legacy objection"}]
+
+    @pytest.mark.asyncio
+    async def test_contested_thread_does_not_block_accepted_plan(self, tmp_path):
+        from forge.workflow.nodes.implement_review import implement_review
+
+        decisions = [
+            {
+                "thread_id": "accepted-thread",
+                "comment_id": 10,
+                "disposition": "accept",
+                "feedback": "Handle the empty case.",
+                "reason": "Valid edge case",
+                "response": "",
+            },
+            {
+                "thread_id": "contested-thread",
+                "comment_id": 20,
+                "disposition": "contest",
+                "feedback": "",
+                "reason": "Conflicts with the public API",
+                "response": "This conflicts with the documented public API. Can you confirm?",
+            },
+        ]
+
+        async def run_container(**_kwargs):
+            if not (tmp_path / ".forge" / "review-decisions.json").exists():
+                (tmp_path / ".forge" / "review-decisions.json").write_text(json.dumps(decisions))
+                (tmp_path / ".forge" / "review-plan.md").write_text(
+                    "# Plan\n\nImplement accepted-thread."
+                )
+
+        mock_runner = MagicMock()
+        mock_runner.run = AsyncMock(side_effect=run_container)
+        mock_git = MagicMock()
+        mock_git.has_uncommitted_changes.return_value = False
+        mock_git._run_git.return_value = MagicMock(stdout="")
+        state = make_workflow_state(
+            ticket_key="TEST-233",
+            current_node="implement_review",
+            workspace_path=str(tmp_path),
+            current_repo="org/repo",
+            current_pr_number=9,
+            feedback_comment="Mixed review",
+            context={"branch_name": "forge/TEST-233"},
+        )
+
+        with (
+            patch(
+                "forge.workflow.nodes.implement_review.prepare_workspace",
+                return_value=(str(tmp_path), mock_git),
+            ),
+            patch(
+                "forge.workflow.nodes.implement_review._fetch_pr_review_comments",
+                new=AsyncMock(return_value="# Review"),
+            ),
+            patch(
+                "forge.workflow.nodes.implement_review._post_review_addressing_comment",
+                new=AsyncMock(),
+            ),
+            patch(
+                "forge.workflow.nodes.implement_review._reply_to_review_threads",
+                new=AsyncMock(),
+            ) as reply_threads,
+            patch(
+                "forge.workflow.nodes.implement_review.ContainerRunner",
+                return_value=mock_runner,
+            ),
+        ):
+            result = await implement_review(state)
+
+        assert mock_runner.run.await_count == 2
+        assert result["current_node"] == "review_response_gate"
+        assert result["contested_comments"] == [decisions[1]]
+        assert result["review_comments"][0] == {
+            **decisions[0],
+            "response": "Forge verified this feedback; no additional code change was needed.",
+        }
+        assert result["review_comments"][1] == decisions[1]
+        assert reply_threads.await_count == 2
+
+    def test_confirming_one_thread_routes_to_implementation_with_others_pending(self):
+        from forge.workflow.nodes.implement_review import route_review_response
+
+        state = make_workflow_state(
+            current_node="review_response_gate",
+            is_paused=False,
+            revision_requested=True,
+            contested_comments=[{"thread_id": "still-pending", "comment_id": 20}],
+        )
+
+        assert route_review_response(state) == "implement_review"
 
 
 # ── resume path from review_response_gate after forge:retry ────────────────────

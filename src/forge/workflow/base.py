@@ -1,5 +1,6 @@
 """Base workflow classes and state definitions."""
 
+import operator
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Annotated, Any, TypedDict
@@ -8,6 +9,7 @@ from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 
 from forge.models.workflow import TicketType
+from forge.workflow.pr_state import PullRequestState
 
 
 class BaseState(TypedDict, total=False):
@@ -46,6 +48,7 @@ class PRIntegrationState(TypedDict, total=False):
 
     workspace_path: str | None
     pr_urls: list[str]
+    pull_requests: dict[str, PullRequestState]
     current_pr_url: str | None
     current_pr_number: int | None
     current_repo: str | None
@@ -63,6 +66,7 @@ class PRIntegrationState(TypedDict, total=False):
     persistence_retry_count: int
     review_push_pending: bool
     review_push_pending_updates: dict[str, Any]
+    review_exhaustion_report: Annotated[dict[str, Any], operator.or_]
 
 
 class CIIntegrationState(TypedDict, total=False):

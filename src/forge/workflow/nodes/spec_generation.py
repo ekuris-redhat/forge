@@ -6,22 +6,26 @@ from typing import Any
 
 from forge.config import get_settings
 from forge.integrations.agents import ForgeAgent
-from forge.integrations.github.client import GitHubClient
 from forge.integrations.jira.client import (
     JiraClient,
     artifact_interaction_options,
     pr_interaction_options,
 )
 from forge.models.workflow import ForgeLabel
-from forge.orchestrator.checkpointer import set_pr_ticket_index
 from forge.workflow.feature.state import FeatureState as WorkflowState
 from forge.workflow.nodes.prd_generation import (
     _normalize_proposals_path,
     _resolve_prd_proposals_repo,
     _resolve_proposals_path,
 )
+from forge.workflow.nodes.proposal_pr import (
+    SPEC_PROPOSAL,
+    create_proposal_pr,
+    update_proposal_pr,
+)
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import post_status_comment
+from forge.workflow.utils.proposal_review_threads import reply_to_proposal_decisions
 from forge.workflow.utils.qa_summary import post_qa_summary_if_needed
 
 logger = logging.getLogger(__name__)
@@ -35,60 +39,15 @@ async def _create_spec_proposal_pr(
     proposals_path: str = "",
 ) -> dict[str, Any]:
     """Create a PR with the spec in the enhancement proposals repo."""
-    owner, repo = proposals_repo.split("/", 1)
-    branch = f"forge/spec/{ticket_key.lower()}"
     proposals_path = _normalize_proposals_path(proposals_path)
-    file_path = "/".join(filter(None, [proposals_path, ticket_key, "design.md"]))
-
-    gh = GitHubClient()
-    jira = JiraClient()
-    try:
-        await gh.create_branch(owner, repo, branch)
-        await gh.create_or_update_file(
-            owner=owner,
-            repo=repo,
-            path=file_path,
-            content=spec_content,
-            message=f"Add spec for {ticket_key}",
-            branch=branch,
-        )
-        pr_body = (
-            f"**Spec for [{ticket_key}](https://redhat.atlassian.net/browse/{ticket_key})**\n\n"
-            f"The specification is in [`{file_path}`](/{file_path}) on this branch.\n\n"
-            "Review the file changes for the latest version. "
-            "Leave comments on this PR to provide feedback — "
-            "Forge will regenerate the spec and push updated commits."
-        )
-        pr_data = await gh.create_pull_request(
-            owner=owner,
-            repo=repo,
-            title=f"[{ticket_key}] Spec: {summary}",
-            body=pr_body,
-            head=branch,
-        )
-
-        pr_url = pr_data["html_url"]
-        pr_number = pr_data["number"]
-
-        await set_pr_ticket_index(pr_url, ticket_key)
-        await jira.set_workflow_label(ticket_key, ForgeLabel.SPEC_PENDING)
-        await post_status_comment(
-            jira,
-            ticket_key,
-            f"Specification published for review: [GitHub PR]({pr_url})\n\n"
-            f"{pr_interaction_options(pr_url)}",
-        )
-
-        return {
-            "spec_pr_url": pr_url,
-            "spec_pr_number": pr_number,
-            "spec_pr_repo": proposals_repo,
-            "spec_pr_branch": branch,
-            "spec_pr_file_path": file_path,
-        }
-    finally:
-        await gh.close()
-        await jira.close()
+    return await create_proposal_pr(
+        artifact=SPEC_PROPOSAL,
+        ticket_key=ticket_key,
+        content=spec_content,
+        summary=summary,
+        proposals_repo=proposals_repo,
+        proposals_path=proposals_path,
+    )
 
 
 async def _update_spec_proposal_pr(
@@ -97,35 +56,12 @@ async def _update_spec_proposal_pr(
     state: dict[str, Any],
 ) -> None:
     """Push updated spec content to the existing proposal PR branch."""
-    owner, repo = state["spec_pr_repo"].split("/", 1)
-    branch = state["spec_pr_branch"]
-    pr_number = state["spec_pr_number"]
-    file_path = state["spec_pr_file_path"]
-
-    gh = GitHubClient()
-    try:
-        file_meta = await gh.get_file_contents(owner, repo, file_path, branch)
-        if not file_meta:
-            logger.warning(f"Could not find spec file {file_path} on branch {branch}")
-            return
-
-        await gh.create_or_update_file(
-            owner=owner,
-            repo=repo,
-            path=file_path,
-            content=spec_content,
-            message=f"Revise spec for {ticket_key} based on feedback",
-            branch=branch,
-            sha=file_meta["sha"],
-        )
-        await gh.create_issue_comment(
-            owner,
-            repo,
-            pr_number,
-            "Specification has been revised based on feedback. Please review the updated version.",
-        )
-    finally:
-        await gh.close()
+    await update_proposal_pr(
+        artifact=SPEC_PROPOSAL,
+        ticket_key=ticket_key,
+        content=spec_content,
+        state=state,
+    )
 
 
 async def generate_spec(state: WorkflowState) -> WorkflowState:
@@ -190,7 +126,7 @@ async def generate_spec(state: WorkflowState) -> WorkflowState:
             "retry_count": state.get("retry_count", 0),
         }
 
-        # Generate specification using Claude - primary operation
+        # Generate specification using the configured LLM backend - primary operation
         spec_content = await agent.generate_spec(prd_content, context)
 
         # Publish spec — either as GitHub PR or Jira update
@@ -315,6 +251,15 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
         # Publish revised spec
         if state.get("spec_pr_number"):
             await _update_spec_proposal_pr(ticket_key, new_spec, state)
+            await reply_to_proposal_decisions(
+                repo_full_name=state.get("spec_pr_repo", ""),
+                pr_number=state["spec_pr_number"],
+                decisions=state.get("proposal_review_decisions", []),
+                dispositions={"accept", "uncertain"},
+                default_response=(
+                    "Forge addressed this feedback in the latest specification revision."
+                ),
+            )
             pr_url = state.get("spec_pr_url", "")
             await post_status_comment(
                 jira,
@@ -358,12 +303,28 @@ async def regenerate_spec_with_feedback(state: WorkflowState) -> WorkflowState:
 
         logger.info(f"Spec regenerated for {ticket_key} ({len(new_spec)} chars)")
 
+        automated_review_revision_count = state.get("automated_review_revision_count", 0)
+        if state.get("automated_review_revision_pending"):
+            automated_review_revision_count += 1
+        proposal_review_decisions = [
+            {
+                **decision,
+                "status": "addressed",
+            }
+            if decision.get("disposition") in ("accept", "uncertain")
+            else decision
+            for decision in state.get("proposal_review_decisions", [])
+        ]
+
         return update_state_timestamp(
             {
                 **state,
                 "spec_content": new_spec,
                 "feedback_comment": None,
                 "revision_requested": False,
+                "automated_review_revision_count": automated_review_revision_count,
+                "automated_review_revision_pending": False,
+                "proposal_review_decisions": proposal_review_decisions,
                 "current_node": "spec_approval_gate",
                 "last_error": None,
             }

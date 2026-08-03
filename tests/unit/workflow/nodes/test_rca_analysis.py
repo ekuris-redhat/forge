@@ -23,6 +23,9 @@ def base_bug_state():
         "rca_options": [],
         "reflection_count": 0,
         "reflection_critique": None,
+        "user_revision_feedback": None,
+        "rca_data": None,
+        "rca_repos": [],
         "reproducibility_assessment": None,
         "triage_passed": True,
         "triage_missing_fields": [],
@@ -220,6 +223,8 @@ class TestAnalyzeBug:
             result = await analyze_bug(base_bug_state)
 
         assert result["rca_options"] == SAMPLE_RCA_JSON["options"]
+        assert result["rca_data"] == SAMPLE_RCA_JSON
+        assert result["rca_repos"] == ["acme/backend"]
         assert result["rca_content"] is not None
         assert len(result["rca_content"]) > 0
 

@@ -50,13 +50,22 @@ class FeatureState(
     prd_pr_url: str | None
     prd_pr_number: int | None
     prd_pr_repo: str | None
+    prd_pr_fork_owner: str | None
+    prd_pr_fork_repo: str | None
     prd_pr_branch: str | None
     prd_pr_file_path: str | None
+
+    # Automated proposal review loop protection
+    automated_review_revision_count: int
+    automated_review_revision_pending: bool
+    proposal_review_decisions: list[dict[str, Any]]
 
     # Spec PR tracking (enhancement proposal flow)
     spec_pr_url: str | None
     spec_pr_number: int | None
     spec_pr_repo: str | None
+    spec_pr_fork_owner: str | None
+    spec_pr_fork_repo: str | None
     spec_pr_branch: str | None
     spec_pr_file_path: str | None
 
@@ -85,6 +94,7 @@ def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState
         "tasks_by_repo": {},
         "workspace_path": None,
         "pr_urls": [],
+        "pull_requests": {},
         "fork_owner": None,
         "fork_repo": None,
         "merge_conflicts": [],
@@ -102,6 +112,7 @@ def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState
         "repos_to_process": [],
         "repos_completed": [],
         "implemented_tasks": [],
+        "review_exhaustion_report": {},
         "current_task_key": None,
         "parallel_execution_enabled": True,
         "parallel_branch_id": None,
@@ -130,11 +141,18 @@ def create_initial_feature_state(ticket_key: str, **kwargs: Any) -> FeatureState
         "prd_pr_url": None,
         "prd_pr_number": None,
         "prd_pr_repo": None,
+        "prd_pr_fork_owner": None,
+        "prd_pr_fork_repo": None,
         "prd_pr_branch": None,
         "prd_pr_file_path": None,
+        "automated_review_revision_count": 0,
+        "automated_review_revision_pending": False,
+        "proposal_review_decisions": [],
         "spec_pr_url": None,
         "spec_pr_number": None,
         "spec_pr_repo": None,
+        "spec_pr_fork_owner": None,
+        "spec_pr_fork_repo": None,
         "spec_pr_branch": None,
         "spec_pr_file_path": None,
         "yolo_mode": False,

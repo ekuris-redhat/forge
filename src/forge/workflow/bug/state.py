@@ -37,6 +37,9 @@ class BugState(
     # Analysis / reflection loop
     reflection_count: int
     reflection_critique: str | None
+    user_revision_feedback: str | None
+    rca_data: dict[str, Any] | None
+    rca_repos: list[str]
     rca_options: list[dict]  # [{title, description, tradeoffs}, ...]
     reproducibility_assessment: str | None
 
@@ -81,6 +84,7 @@ def create_initial_bug_state(ticket_key: str, **kwargs: Any) -> BugState:
         "bug_fix_implemented": False,
         "workspace_path": None,
         "pr_urls": [],
+        "pull_requests": {},
         "fork_owner": None,
         "fork_repo": None,
         "merge_conflicts": [],
@@ -99,6 +103,7 @@ def create_initial_bug_state(ticket_key: str, **kwargs: Any) -> BugState:
         "repos_to_process": [],
         "repos_completed": [],
         "implemented_tasks": [],
+        "review_exhaustion_report": {},
         "current_task_key": None,
         "ci_failed_checks": [],
         "ci_skipped_checks": [],
@@ -121,6 +126,9 @@ def create_initial_bug_state(ticket_key: str, **kwargs: Any) -> BugState:
         # Analysis / reflection loop
         "reflection_count": 0,
         "reflection_critique": None,
+        "user_revision_feedback": None,
+        "rca_data": None,
+        "rca_repos": [],
         "rca_options": [],
         "reproducibility_assessment": None,
         # Option selection

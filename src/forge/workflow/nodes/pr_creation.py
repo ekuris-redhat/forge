@@ -15,6 +15,7 @@ from forge.orchestrator.checkpointer import set_pr_ticket_index
 from forge.prompts import load_prompt
 from forge.workflow.nodes.code_review import sync_pr_description
 from forge.workflow.nodes.post_merge_summary import _extract_impact
+from forge.workflow.pr_state import save_active_pull_request
 from forge.workflow.utils import update_state_timestamp
 from forge.workflow.utils.jira_status import post_status_comment
 from forge.workspace.git_ops import GitOperations
@@ -303,17 +304,44 @@ async def create_pull_request(state: WorkflowState) -> WorkflowState:
             attempt=0,
         )
 
+        # Append auto-review exhaustion section AFTER sync_pr_description
+        # (sync rewrites the body with an AI agent that would drop this section)
+        if pr_number is not None:
+            exhaustion_section = _format_review_exhaustion_section(
+                state.get("review_exhaustion_report", {})
+            )
+            if exhaustion_section:
+                try:
+                    pr_data = await github.get_pull_request(
+                        pr_target.owner, pr_target.repo, pr_number
+                    )
+                    current_body = pr_data.get("body", "") or ""
+                    if "## Auto-Review Notes" in current_body:
+                        logger.debug("PR body already contains Auto-Review Notes — skipping append")
+                    else:
+                        await github.update_pull_request(
+                            pr_target.owner,
+                            pr_target.repo,
+                            pr_number,
+                            body=current_body + "\n\n" + exhaustion_section,
+                        )
+                        logger.info("Appended auto-review exhaustion section to PR body")
+                except Exception as e:
+                    logger.warning(f"Failed to append review exhaustion section: {e}")
+
         return update_state_timestamp(
-            {
-                **state,
-                "pr_urls": pr_urls,
-                "current_pr_url": pr_url,
-                "current_pr_number": pr_number,
-                "fork_owner": pr_target.fork_owner,
-                "fork_repo": pr_target.fork_repo,
-                "current_node": "teardown_workspace",
-                "last_error": None,
-            }
+            save_active_pull_request(
+                {
+                    **state,
+                    "pr_urls": pr_urls,
+                    "current_pr_url": pr_url,
+                    "current_pr_number": pr_number,
+                    "fork_owner": pr_target.fork_owner,
+                    "fork_repo": pr_target.fork_repo,
+                    "current_node": "teardown_workspace",
+                    "last_error": None,
+                }
+            )
         )
 
     except Exception as e:
@@ -339,6 +367,37 @@ def _get_pr_title(state: WorkflowState, ticket_summary: str = "") -> str:
         or context.get("summary")
         or f"Implementation for {state.get('ticket_key', 'Unknown')}"
     )
+
+
+def _format_review_exhaustion_section(report: dict[str, dict]) -> str:
+    """Format review exhaustion data as a markdown section for the PR body."""
+    if not report:
+        return ""
+
+    lines = [
+        "## Auto-Review Notes",
+        "",
+        "The following review criteria could not be resolved after all retry attempts.",
+        "Human reviewers should pay particular attention to these areas.",
+        "",
+    ]
+
+    for entry in report.values():
+        step = entry.get("step_name", "unknown")
+        task = entry.get("task_key", "unknown")
+        skill = entry.get("skill", "unknown")
+        max_retries = entry.get("max_retries", "?")
+        feedback = entry.get("final_feedback", "")
+
+        lines.append(f"### {step} — {task}")
+        lines.append(f"**Skill:** {skill} | **Retries:** {max_retries}/{max_retries} exhausted")
+        lines.append("")
+        if feedback:
+            for feedback_line in feedback.split("\n"):
+                lines.append(f"> {feedback_line}")
+            lines.append("")
+
+    return "\n".join(lines)
 
 
 def _build_pr_body(

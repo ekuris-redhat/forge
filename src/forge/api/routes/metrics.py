@@ -62,6 +62,12 @@ REVISIONS_REQUESTED = Counter(
     ["stage"],  # prd, spec, plan
 )
 
+PROPOSAL_REVIEW_DECISIONS = Counter(
+    "forge_proposal_review_decisions_total",
+    "Proposal review thread decisions by artifact type and disposition",
+    ["artifact_type", "disposition"],
+)
+
 # CI/CD metrics
 CI_FIX_ATTEMPTS = Counter(
     "forge_ci_fix_attempts_total",
@@ -112,7 +118,7 @@ EXTERNAL_API_LATENCY = Histogram(
     [
         "service",
         "operation",
-    ],  # service: jira, github, claude; operation: get_issue, create_pr, etc.
+    ],  # service: jira, github, llm; operation: get_issue, create_pr, etc.
     buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0],
 )
 
@@ -120,6 +126,26 @@ EXTERNAL_API_ERRORS = Counter(
     "forge_external_api_errors_total",
     "Total external API call errors",
     ["service", "operation", "error_type"],
+)
+
+# Review cycle metrics
+REVIEW_CYCLES = Counter(
+    "forge_review_cycles_total",
+    "Total review cycles detected",
+    ["skill", "step"],
+)
+
+REVIEW_VERDICTS = Counter(
+    "forge_review_verdicts_total",
+    "Review verdicts by outcome",
+    ["skill", "step", "verdict"],  # verdict: approved, rejected
+)
+
+REVIEW_DURATION = Histogram(
+    "forge_review_duration_seconds",
+    "Review cycle duration",
+    ["skill", "step"],
+    buckets=[1, 5, 10, 30, 60, 120, 300, 600],  # Same as AGENT_DURATION
 )
 
 
@@ -202,6 +228,14 @@ def record_revision_requested(stage: str) -> None:
     REVISIONS_REQUESTED.labels(stage=stage).inc()
 
 
+def record_proposal_review_decision(artifact_type: str, disposition: str) -> None:
+    """Record one semantic proposal-review thread decision."""
+    PROPOSAL_REVIEW_DECISIONS.labels(
+        artifact_type=artifact_type,
+        disposition=disposition,
+    ).inc()
+
+
 def observe_phase_duration(phase: str, duration: float) -> None:
     """Record duration of a workflow phase.
 
@@ -216,7 +250,7 @@ def observe_external_api_latency(service: str, operation: str, duration: float) 
     """Record latency of an external API call.
 
     Args:
-        service: External service name (jira, github, claude).
+        service: External service name (jira, github, llm).
         operation: Operation name (get_issue, create_pr, generate, etc.).
         duration: Duration in seconds.
     """
@@ -227,8 +261,40 @@ def record_external_api_error(service: str, operation: str, error_type: str) -> 
     """Record an external API call error.
 
     Args:
-        service: External service name (jira, github, claude).
+        service: External service name (jira, github, llm).
         operation: Operation name.
         error_type: Type of error (timeout, rate_limit, auth, etc.).
     """
     EXTERNAL_API_ERRORS.labels(service=service, operation=operation, error_type=error_type).inc()
+
+
+def record_review_cycle(skill: str, step: str) -> None:
+    """Record a review cycle detected.
+
+    Args:
+        skill: Skill name (e.g., implement-task, fix-ci).
+        step: Workflow step name.
+    """
+    REVIEW_CYCLES.labels(skill=skill, step=step).inc()
+
+
+def record_review_verdict(skill: str, step: str, verdict: str) -> None:
+    """Record a review verdict.
+
+    Args:
+        skill: Skill name (e.g., implement-task, fix-ci).
+        step: Workflow step name.
+        verdict: Verdict outcome (approved, rejected).
+    """
+    REVIEW_VERDICTS.labels(skill=skill, step=step, verdict=verdict).inc()
+
+
+def observe_review_duration(skill: str, step: str, duration: float) -> None:
+    """Record review cycle duration.
+
+    Args:
+        skill: Skill name (e.g., implement-task, fix-ci).
+        step: Workflow step name.
+        duration: Duration in seconds.
+    """
+    REVIEW_DURATION.labels(skill=skill, step=step).observe(duration)

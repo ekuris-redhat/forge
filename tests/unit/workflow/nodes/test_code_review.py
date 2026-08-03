@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from forge.observability.review_poller import ReviewCycleData
+from forge.sandbox.runner import ContainerResult
 from tests.fixtures.workflow_states import make_workflow_state
 
 FIX_COMMITS = (
@@ -45,7 +47,7 @@ class TestRunPostChangeReview:
                 label="ci-fix-1",
             )
 
-        assert result is True
+        assert committed is True
         git_mock.stage_all.assert_called_once()
         git_mock.commit.assert_called_once()
         assert "ci-fix-1" in git_mock.commit.call_args[0][0]
@@ -74,7 +76,7 @@ class TestRunPostChangeReview:
                 branch_name="forge/test-123",
             )
 
-        assert result is False
+        assert committed is False
         git_mock.commit.assert_not_called()
 
     @pytest.mark.asyncio
@@ -85,26 +87,17 @@ class TestRunPostChangeReview:
         runner_mock = MagicMock()
         runner_mock.run = AsyncMock(side_effect=RuntimeError("container crashed"))
 
-<<<<<<< HEAD
-        with patch("forge.workflow.nodes.code_review.ContainerRunner", return_value=runner_mock), \
-             patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"):
-            result = await run_post_change_review(
-=======
         with (
             patch("forge.workflow.nodes.code_review.ContainerRunner", return_value=runner_mock),
             patch("forge.workflow.nodes.code_review.load_prompt", return_value="prompt"),
         ):
             committed, result = await run_post_change_review(
->>>>>>> eb2986a ([AISOS-2294-review-review-impl] Post-review-impl code review)
                 workspace_path="/tmp/ws",
                 ticket_key="TEST-123",
                 current_repo="org/repo",
                 branch_name="forge/test-123",
             )
 
-<<<<<<< HEAD
-        assert result is False
-=======
         assert committed is False
         assert result is None
 
@@ -160,7 +153,6 @@ class TestRunPostChangeReview:
             "ContainerResult must be returned for exhaustion propagation"
         )
         assert container_result.review_exhausted is True
->>>>>>> eb2986a ([AISOS-2294-review-review-impl] Post-review-impl code review)
 
 
 # ── sync_pr_description ───────────────────────────────────────────────────────

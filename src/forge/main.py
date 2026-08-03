@@ -64,7 +64,7 @@ AI-powered software development lifecycle orchestration.
 
 - **Webhook Gateway**: Receives events from Jira and GitHub
 - **Workflow Orchestration**: LangGraph-based state machine
-- **AI Integration**: Claude-powered planning and code generation
+- **AI Integration**: Deep Agents-backed planning and code generation
 - **Multi-repo Support**: Concurrent execution across repositories
 
 ### Workflow
@@ -82,6 +82,8 @@ All webhook endpoints verify signatures:
 - **Jira**: HMAC-SHA256 signature in headers
 - **GitHub**: HMAC-SHA256 signature in `X-Hub-Signature-256`
 """
+
+    settings = get_settings()
 
     app = FastAPI(
         title="Forge SDLC Orchestrator",
@@ -106,16 +108,16 @@ All webhook endpoints verify signatures:
                 "description": "GitHub webhook endpoints",
             },
         ],
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url=None if settings.disable_openapi_docs else "/docs",
+        redoc_url=None if settings.disable_openapi_docs else "/redoc",
+        openapi_url=None if settings.disable_openapi_docs else "/openapi.json",
     )
 
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Configure appropriately for production
-        allow_credentials=True,
+        allow_origins=["*"],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -36,8 +36,6 @@ class MockChatModel(SimpleChatModel):
     @property
     def _llm_type(self) -> str:
         return "mock"
-
-
 def _model_agent(backend: str, model: str) -> ForgeAgent:
     agent = ForgeAgent.__new__(ForgeAgent)
     agent.settings = MagicMock(
