@@ -290,6 +290,7 @@ class ContainerRunner:
         config: ContainerConfig,
         container_name: str,
         ticket_key: str | None = None,
+        extra_mounts: list[tuple[Path, str]] | None = None,
     ) -> list[str]:
         """Build the podman run command."""
 
@@ -337,6 +338,11 @@ class ContainerRunner:
         skill_mounts, container_skill_paths = self._get_skill_mounts(ticket_key)
         for host_path, container_path in skill_mounts:
             cmd.extend(["-v", f"{host_path}:{container_path}:ro,Z"])
+
+        # Mount extra directories if provided
+        if extra_mounts:
+            for host_path, container_path in extra_mounts:
+                cmd.extend(["-v", f"{host_path}:{container_path}:ro,Z"])
 
         # Add environment variables
         for key, value in self._build_env_vars(config, container_skill_paths).items():
@@ -732,6 +738,7 @@ class ContainerRunner:
         trace_context: dict[str, Any] | None = None,
         step_name: str | None = None,
         skill_name: str | None = None,
+        extra_mounts: list[tuple[Path, str]] | None = None,
     ) -> ContainerResult:
         """Run a task in a container sandbox.
 
@@ -778,7 +785,7 @@ class ContainerRunner:
             # Build container name and command
             container_name = self._build_container_name(ticket_key, repo_name)
             cmd = self._build_podman_command(
-                workspace_path, task_file, config, container_name, ticket_key
+                workspace_path, task_file, config, container_name, ticket_key, extra_mounts
             )
 
             logger.info(f"Starting container {container_name} for task: {task_summary}")
