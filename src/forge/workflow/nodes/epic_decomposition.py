@@ -8,7 +8,12 @@ from forge.integrations.agents import ForgeAgent
 from forge.integrations.jira.client import JiraClient, MissingProjectConfig
 from forge.models.workflow import ForgeLabel
 from forge.workflow.feature.state import FeatureState as WorkflowState
-from forge.workflow.utils import update_state_timestamp
+from forge.workflow.utils import (
+    generate_revision_delta,
+    get_current_revision_state,
+    update_state_timestamp,
+)
+from forge.workflow.utils.delta_processor import validate_delta_response
 from forge.workflow.utils.jira_status import post_status_comment
 from forge.workflow.utils.qa_summary import post_qa_summary_if_needed
 
@@ -250,43 +255,237 @@ async def decompose_epics(state: WorkflowState) -> WorkflowState:
 
 
 async def regenerate_all_epics(state: WorkflowState) -> WorkflowState:
-    """Delete all Epics and regenerate from spec with feedback.
+    """Regenerate Epics using delta-revision orchestration.
 
-    This handles Feature-level rejection where the entire Epic
-    breakdown needs to be revised.
+    This handles Feature-level rejection where existing Epics are incrementally
+    updated, created, or archived based on feedback.
 
     Args:
         state: Current workflow state with feedback_comment set.
 
     Returns:
-        Updated state with new epic_keys.
+        Updated state with revised epic_keys.
     """
     ticket_key = state["ticket_key"]
-    feedback = state.get("feedback_comment", "")
-    existing_epics = state.get("epic_keys", [])
+    feedback = state.get("feedback_comment", "") or ""
+    existing_epics = list(state.get("epic_keys", []) or [])
 
-    logger.info(f"Regenerating all Epics for {ticket_key} with feedback")
+    logger.info(f"Regenerating Epics for {ticket_key} using delta orchestration")
+
+    # Verify scope exclusions (BR-005)
+    # Check if the revision requests a direct single-ticket update starting with !
+    import re
+    match = re.match(r"^\s*!\s*([A-Z0-9]+-[0-9]+)(?:\s+(.*))?$", feedback, re.IGNORECASE)
+    if match:
+        target_key = match.group(1).upper()
+        if target_key in existing_epics:
+            logger.info(
+                f"Direct single-ticket update requested for {target_key} starting with !. "
+                "Bypassing delta orchestration."
+            )
+            # Delegate to update_single_epic
+            updated_state = {
+                **state,
+                "current_epic_key": target_key,
+                "feedback_comment": match.group(2) if match.group(2) else feedback,
+            }
+            return await update_single_epic(updated_state)
 
     jira = JiraClient()
+    agent = ForgeAgent()
 
     try:
-        # Archive existing Epics (unlink from parent, mark as archived)
-        for epic_key in existing_epics:
+        # Fetch active Epic context
+        epic_context = await get_current_revision_state(state, "epic", jira)
+
+        from pydantic import ValidationError
+
+        current_feedback = feedback
+        validated_delta = None
+
+        for attempt in range(2):
+            try:
+                # Invoke LLM delta generation
+                delta_raw = await generate_revision_delta(state, epic_context, current_feedback, agent)
+
+                # Normalize to_archive if it contains dicts instead of strings (backward compatibility)
+                if isinstance(delta_raw, dict) and "to_archive" in delta_raw and isinstance(delta_raw["to_archive"], list):
+                    normalized_archive = []
+                    for item in delta_raw["to_archive"]:
+                        if isinstance(item, dict) and "key" in item:
+                            normalized_archive.append(str(item["key"]))
+                        elif isinstance(item, str):
+                            normalized_archive.append(item)
+                        else:
+                            normalized_archive.append(item)
+                    delta_raw["to_archive"] = normalized_archive
+
+                # Invoke validate_delta_response on the generated LLM response
+                validated_res = validate_delta_response(delta_raw, existing_epics)
+
+                if isinstance(validated_res, dict):
+                    validated_delta = validated_res
+                else:
+                    validated_delta = {
+                        "to_create": [
+                            {
+                                "summary": item.summary,
+                                "description": item.description,
+                                "repo": item.repo,
+                                "parent_epic_key": item.parent_epic_key,
+                            }
+                            for item in validated_res.to_create
+                        ],
+                        "to_edit": [
+                            {
+                                "key": item.key,
+                                "summary": item.summary,
+                                "description": item.description,
+                                "repo": item.repo,
+                            }
+                            for item in validated_res.to_edit
+                        ],
+                        "to_archive": [
+                            {"key": key}
+                            for key in validated_res.to_archive
+                        ],
+                    }
+                break
+            except (ValidationError, ValueError) as e:
+                error_msg = str(e)
+                logger.warning(
+                    f"Validation or key mismatch error on attempt {attempt + 1}: {error_msg}"
+                )
+                if attempt == 0:
+                    # Post a status comment on the Feature ticket in Jira
+                    comment_text = (
+                        f"⚠️ Forge detected a validation error in the generated plan: {error_msg}. "
+                        "Retrying with corrective feedback..."
+                    )
+                    await post_status_comment(jira, ticket_key, comment_text)
+
+                    # Build a corrective prompt containing the validation error message and request a corrected JSON
+                    current_feedback = (
+                        f"The JSON payload you generated previously failed validation with the following error:\n"
+                        f"{error_msg}\n\n"
+                        f"Please correct the payload and regenerate the JSON matching the required schema and constraints.\n"
+                        f"Ensure all keys in to_edit or to_archive are present in the list of active keys: {existing_epics}.\n"
+                        f"Original feedback:\n{feedback}\n\n"
+                        f"Do not include any explanation or preamble. Output ONLY the corrected JSON block."
+                    )
+                else:
+                    # On a second consecutive validation failure, cleanly halt execution
+                    logger.error(
+                        f"Consecutive validation failures for {ticket_key}. Cleanly halting execution."
+                    )
+                    # Keep state and tickets entirely untouched
+                    # Log the failure and post a status comment on the parent feature in Jira indicating that manual intervention is required
+                    halt_comment = (
+                        "⚠️ Forge has halted execution because it received an invalid plan from the AI generator twice consecutively.\n\n"
+                        "Manual intervention is required to review or refine the requirements."
+                    )
+                    await post_status_comment(jira, ticket_key, halt_comment)
+                    return state
+
+        if validated_delta is None:
+            return state
+
+        final_epic_keys = list(existing_epics)
+
+        # 1. Execute transactional changes - Archive
+        for item in validated_delta.get("to_archive", []):
+            epic_key = item["key"]
             try:
                 await jira.archive_issue(epic_key, archive_subtasks=True)
                 logger.info(f"Archived Epic {epic_key}")
+                if epic_key in final_epic_keys:
+                    final_epic_keys.remove(epic_key)
             except Exception as e:
                 logger.warning(f"Failed to archive Epic {epic_key}: {e}")
 
-        # Clear epic_keys and set feedback for decomposition
-        updated_state = {
-            **state,
-            "epic_keys": [],
-            "feedback_comment": feedback,
-        }
+        # 2. Execute transactional changes - Edit/Update
+        for item in validated_delta.get("to_edit", []):
+            epic_key = item["key"]
+            summary = item["summary"]
+            description = item["description"]
+            repo = item.get("repo", "")
+            try:
+                await jira.update_summary_and_description(epic_key, summary, description)
+                logger.info(f"Updated Epic {epic_key}: {summary}")
 
-        # Re-run decomposition (which will use context including feedback)
-        return await decompose_epics(updated_state)
+                # Update repo labels if specified
+                if repo and "/" in repo:
+                    current_labels = await jira.get_labels(epic_key)
+                    repo_labels_to_remove = [l for l in current_labels if l.startswith("repo:")]
+                    if repo_labels_to_remove:
+                        await jira.remove_labels(epic_key, repo_labels_to_remove)
+                    await jira.add_labels(epic_key, [f"repo:{repo}"])
+            except Exception as e:
+                logger.warning(f"Failed to update Epic {epic_key}: {e}")
+
+        # 3. Execute transactional changes - Create
+        parent_issue = await jira.get_issue(ticket_key)
+        project_key = parent_issue.project_key
+
+        for item in validated_delta.get("to_create", []):
+            summary = item["summary"]
+            description = item["description"]
+            repo = item.get("repo", "")
+            try:
+                # Build labels
+                labels = [
+                    ForgeLabel.FORGE_MANAGED.value,
+                    f"forge:parent:{ticket_key}",
+                ]
+                if repo and "/" in repo:
+                    labels.append(f"repo:{repo}")
+
+                new_key = await jira.create_epic(
+                    project_key=project_key,
+                    summary=summary,
+                    description=description,
+                    parent_key=ticket_key,
+                    labels=labels,
+                )
+                final_epic_keys.append(new_key)
+                logger.info(f"Created new Epic {new_key}: {summary}")
+            except Exception as e:
+                logger.warning(f"Failed to create new Epic '{summary}': {e}")
+
+        # Build plan summary for generation_context
+        final_epics = await get_current_revision_state(
+            {**state, "epic_keys": final_epic_keys}, "epic", jira
+        )
+        generation_context = state.get("generation_context", {}) or {}
+        plan_summary_parts = []
+        for epic in final_epics:
+            summary = epic.get("summary", "")
+            plan = epic.get("description", "")
+            plan_summary_parts.append(f"## {summary}\n{plan}")
+        generation_context["plan"] = "\n\n".join(plan_summary_parts)
+
+        # Notify PO of revised plan
+        await jira.add_comment(
+            ticket_key,
+            "## 🤖 Forge interaction options\n\n"
+            f"- ✅ **Approve:** add `{ForgeLabel.PLAN_APPROVED.value}` to continue.\n"
+            "- ♻️ **Revise all epics:** add a comment starting with `!` on this ticket.\n"
+            "- 🔧 **Revise a single epic:** add a comment starting with `!` on the Epic.\n"
+            "- ❓ **Ask a question:** add a Jira comment starting with `?`.",
+        )
+
+        return update_state_timestamp(
+            {
+                **state,
+                "epic_keys": final_epic_keys,
+                "generation_context": generation_context,
+                "feedback_comment": None,
+                "revision_requested": False,
+                "current_epic_key": None,
+                "current_node": "plan_approval_gate",
+                "last_error": None,
+            }
+        )
 
     except Exception as e:
         logger.error(f"Epic regeneration failed for {ticket_key}: {e}")
@@ -298,6 +497,7 @@ async def regenerate_all_epics(state: WorkflowState) -> WorkflowState:
         }
     finally:
         await jira.close()
+        await agent.close()
 
 
 async def update_single_epic(state: WorkflowState) -> WorkflowState:

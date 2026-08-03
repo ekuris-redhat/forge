@@ -67,7 +67,7 @@ Forge breaks the feature into logical epics — high-level areas of work that ma
 | Approve | Change label to `forge:plan-approved` |
 | Ask a question | Comment with `?` prefix — Forge answers without re-decomposing |
 | Revise one epic | `!` comment on the **specific epic sub-ticket** — Forge updates only that epic |
-| Redo the full decomposition | `!` comment on the **feature ticket** — Forge regenerates all epics with your feedback |
+| Redo the full decomposition | `!` comment on the **feature ticket** — Forge incrementally updates, creates, or archives epics via delta-revision orchestration |
 
 ```mermaid
 flowchart TD
@@ -94,7 +94,7 @@ Forge generates granular implementation tasks scoped to individual repositories.
 | Approve | Change label to `forge:task-approved` |
 | Ask a question | Comment with `?` prefix — Forge answers without regenerating |
 | Revise one task | `!` comment on the **specific task sub-ticket** — Forge updates only that task |
-| Regenerate all tasks | `!` comment on the **feature or epic ticket** — Forge regenerates the full task list with your feedback |
+| Regenerate all tasks | `!` comment on the **feature or epic ticket** — Forge incrementally updates, creates, or archives tasks via delta-revision orchestration |
 
 ```mermaid
 flowchart TD
@@ -178,7 +178,7 @@ A summary of all Q&A exchanges is posted to the ticket when you approve.
 
 ## Requesting Revisions
 
-Start a comment with `!` followed by your feedback. Forge regenerates the current artifact incorporating your feedback, replacing the previous version.
+Start a comment with `!` followed by your feedback. For PRDs and Specs, Forge regenerates the artifact and replaces the previous version. For Epics and Tasks, Forge performs incremental delta-revision orchestration—evaluating the active tickets and applying minimal targeted edits, creations, or archives transactionally to preserve existing grounding and ticket keys.
 
 ```
 ! The spec is missing error handling for the webhook retry path

@@ -174,6 +174,23 @@ class JiraClient:
         response.raise_for_status()
         logger.info(f"Updated description for {issue_key}")
 
+    async def update_summary_and_description(self, issue_key: str, summary: str, description: str) -> None:
+        """Update both the summary and description of a Jira issue.
+
+        Args:
+            issue_key: The Jira issue key.
+            summary: The new summary.
+            description: The new description (will be converted to ADF).
+        """
+        client = await self._get_client()
+        adf_content = self._text_to_adf(description)
+        response = await client.put(
+            f"/issue/{issue_key}",
+            json={"fields": {"summary": summary, "description": adf_content}},
+        )
+        response.raise_for_status()
+        logger.info(f"Updated summary and description for {issue_key}")
+
     async def update_custom_field(self, issue_key: str, field_id: str, value: str) -> None:
         """Update a custom field on a Jira issue.
 
