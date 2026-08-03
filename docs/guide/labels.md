@@ -53,7 +53,7 @@ Standalone Tasks and Epics can be processed with the standard `forge:managed` la
 
 **Approving a stage:** When Forge posts a PRD, spec, or other artifact, it sets the `forge:*-pending` label. Change it to `forge:*-approved` to advance the workflow. Do not add the approved label manually before Forge posts — it won't be recognized until the pending state is set.
 
-**Requesting revisions:** Start a comment with `!` followed by your feedback. Forge regenerates the artifact and resets the pending label.
+**Requesting revisions:** Start a comment with `!` followed by your feedback. Forge regenerates the artifact (or performs incremental delta updates for Epics and Tasks) and resets the pending label.
 
 **Asking questions:** Start a comment with `?` or `@forge ask`. Forge answers without advancing or regenerating.
 
