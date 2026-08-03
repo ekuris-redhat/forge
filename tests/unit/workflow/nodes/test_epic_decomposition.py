@@ -246,12 +246,104 @@ class TestEpicRevisionState:
 
             mock_agent = AsyncMock()
             MockAgent.return_value = mock_agent
-            mock_agent.generate_epics = AsyncMock(return_value=mock_epics_data)
+            import json
+            delta_response = {
+                "to_create": [{"summary": "Epic One", "description": "Do stuff.", "repo": "acme/backend"}],
+                "to_edit": [],
+                "to_archive": [{"key": "MYPROJ-10"}, {"key": "MYPROJ-11"}]
+            }
+            mock_agent.run_task = AsyncMock(return_value=json.dumps(delta_response))
 
             result = await regenerate_all_epics(state)
 
         assert mock_jira.archive_issue.call_count == 2
+        mock_jira.archive_issue.assert_any_call("MYPROJ-10", archive_subtasks=True)
+        mock_jira.archive_issue.assert_any_call("MYPROJ-11", archive_subtasks=True)
         assert result["epic_keys"] == ["MYPROJ-100"]
         assert result["current_node"] == "plan_approval_gate"
         assert result["revision_requested"] is False
         assert result["feedback_comment"] is None
+
+    @pytest.mark.asyncio
+    async def test_regenerate_all_epics_direct_single_ticket_update_bypass(
+        self, base_state, mock_issue
+    ):
+        """If feedback requests a direct single-ticket update starting with !, bypass delta and delegate."""
+        state = {
+            **base_state,
+            "epic_keys": ["MYPROJ-10", "MYPROJ-11"],
+            "feedback_comment": "!MYPROJ-10 Add more logging instructions",
+            "revision_requested": True,
+        }
+
+        with (
+            patch("forge.workflow.nodes.epic_decomposition.JiraClient") as MockJira,
+            patch("forge.workflow.nodes.epic_decomposition.ForgeAgent") as MockAgent,
+            patch("forge.workflow.nodes.epic_decomposition.update_single_epic") as MockUpdateSingle,
+        ):
+            mock_jira = AsyncMock()
+            MockJira.return_value = mock_jira
+            mock_agent = AsyncMock()
+            MockAgent.return_value = mock_agent
+
+            MockUpdateSingle.return_value = {
+                **state,
+                "current_epic_key": None,
+                "feedback_comment": None,
+                "revision_requested": False,
+                "current_node": "plan_approval_gate",
+            }
+
+            result = await regenerate_all_epics(state)
+
+        # Verify update_single_epic was called, and delta orchestration was bypassed
+        MockUpdateSingle.assert_called_once()
+        called_state = MockUpdateSingle.call_args[0][0]
+        assert called_state["current_epic_key"] == "MYPROJ-10"
+        assert called_state["feedback_comment"] == "Add more logging instructions"
+
+    @pytest.mark.asyncio
+    async def test_regenerate_all_epics_calls_state_retrieval_and_delta_generation(
+        self, base_state, mock_issue
+    ):
+        """regenerate_all_epics should fetch active state and generate LLM delta."""
+        state = {
+            **base_state,
+            "epic_keys": ["MYPROJ-10"],
+            "feedback_comment": "Add something.",
+            "revision_requested": True,
+        }
+
+        with (
+            patch("forge.workflow.nodes.epic_decomposition.JiraClient") as MockJira,
+            patch("forge.workflow.nodes.epic_decomposition.ForgeAgent") as MockAgent,
+            patch("forge.workflow.nodes.epic_decomposition.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.epic_decomposition.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.epic_decomposition.validate_delta_response") as MockValidate,
+        ):
+            mock_jira = AsyncMock()
+            MockJira.return_value = mock_jira
+            mock_jira.get_issue = AsyncMock(return_value=mock_issue)
+            mock_jira.add_comment = AsyncMock()
+            mock_jira.create_epic = AsyncMock(return_value="MYPROJ-100")
+
+            mock_agent = AsyncMock()
+            MockAgent.return_value = mock_agent
+
+            MockGetState.return_value = [{"key": "MYPROJ-10", "summary": "Epic 10", "description": "Desc"}]
+            MockGenDelta.return_value = {
+                "to_create": [{"summary": "Epic 100", "description": "Desc 100"}],
+                "to_edit": [],
+                "to_archive": []
+            }
+            MockValidate.return_value = {
+                "to_create": [{"summary": "Epic 100", "description": "Desc 100"}],
+                "to_edit": [],
+                "to_archive": []
+            }
+
+            await regenerate_all_epics(state)
+
+        # Verify active state retrieval and delta generation calls were made
+        MockGetState.assert_any_call(state, "epic", mock_jira)
+        MockGenDelta.assert_called_once_with(state, [{"key": "MYPROJ-10", "summary": "Epic 10", "description": "Desc"}], "Add something.", mock_agent)

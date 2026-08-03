@@ -175,3 +175,59 @@ async def generate_revision_delta(
 
     return delta
 
+
+def validate_delta_response(delta: dict[str, Any], existing_keys: list[str]) -> dict[str, Any]:
+    """Validate and filter the LLM delta-revision response structure.
+
+    Args:
+        delta: The raw parsed delta dictionary containing to_create, to_edit, to_archive.
+        existing_keys: The list of active issue keys prior to the delta revision.
+
+    Returns:
+        A validated delta dictionary where edits and archives are strictly limited
+        to existing active keys, and structure is normalized.
+    """
+    validated = {
+        "to_create": [],
+        "to_edit": [],
+        "to_archive": []
+    }
+
+    # Ensure to_create has elements with valid fields
+    for item in delta.get("to_create", []):
+        if isinstance(item, dict) and "summary" in item and "description" in item:
+            validated["to_create"].append({
+                "summary": str(item["summary"]),
+                "description": str(item["description"]),
+                "repo": str(item.get("repo", ""))
+            })
+
+    # Ensure to_edit has elements with valid fields, and only references existing keys
+    existing_set = set(existing_keys)
+    for item in delta.get("to_edit", []):
+        if isinstance(item, dict) and "key" in item and "summary" in item and "description" in item:
+            key = str(item["key"])
+            if key in existing_set:
+                validated["to_edit"].append({
+                    "key": key,
+                    "summary": str(item["summary"]),
+                    "description": str(item["description"]),
+                    "repo": str(item.get("repo", ""))
+                })
+            else:
+                logger.warning(f"validate_delta_response: Ignoring edit request for non-existent key {key}")
+
+    # Ensure to_archive only references existing keys
+    for item in delta.get("to_archive", []):
+        if isinstance(item, dict) and "key" in item:
+            key = str(item["key"])
+            if key in existing_set:
+                validated["to_archive"].append({
+                    "key": key
+                })
+            else:
+                logger.warning(f"validate_delta_response: Ignoring archive request for non-existent key {key}")
+
+    return validated
+
+

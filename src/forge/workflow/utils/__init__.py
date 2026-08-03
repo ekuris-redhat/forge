@@ -9,6 +9,7 @@ from forge.workflow.utils.comment_classifier import CommentType, classify_commen
 from forge.workflow.utils.delta_orchestration import (
     generate_revision_delta,
     get_current_revision_state,
+    validate_delta_response,
 )
 from forge.workflow.utils.jira_status import (
     post_status_comment,
@@ -108,4 +109,5 @@ __all__ = [
     "set_review_pending_label",
     "transition_tasks_to_in_progress",
     "update_state_timestamp",
+    "validate_delta_response",
 ]
