@@ -173,3 +173,206 @@ def test_rejection_of_unrecognized_keys_in_to_archive() -> None:
 
     assert "TASK-UNKNOWN" in str(exc_info.value)
     assert "to_archive" in str(exc_info.value)
+
+
+from unittest.mock import AsyncMock, MagicMock
+from forge.integrations.jira.client import JiraClient
+from forge.workflow.utils.delta_processor import apply_delta_updates
+
+
+@pytest.fixture
+def mock_jira_client() -> MagicMock:
+    """Create a mock Jira client."""
+    client = MagicMock(spec=JiraClient)
+    client.archive_issue = AsyncMock()
+    client.update_summary_and_description = AsyncMock()
+    client.create_epic = AsyncMock()
+    client.create_task = AsyncMock()
+    client.get_issue = AsyncMock()
+    client.get_labels = AsyncMock(return_value=[])
+    client.add_labels = AsyncMock()
+    client.remove_labels = AsyncMock()
+    client.get_project_default_repo = AsyncMock(return_value="owner/default-repo")
+    return client
+
+
+@pytest.mark.asyncio
+async def test_apply_delta_updates_epic_success(mock_jira_client: MagicMock) -> None:
+    """Verify successful application of an epic delta and corresponding state updates."""
+    payload = {
+        "to_edit": [
+            {
+                "key": "EPIC-1",
+                "summary": "Updated Epic 1 Summary",
+                "description": "Updated Epic 1 Description",
+                "repo": "owner/epic-repo",
+            }
+        ],
+        "to_create": [
+            {
+                "summary": "New Epic Summary",
+                "description": "New Epic Description",
+                "repo": "owner/new-repo",
+            }
+        ],
+        "to_archive": ["EPIC-2"],
+    }
+    active_keys = ["EPIC-1", "EPIC-2", "EPIC-PRESERVED"]
+    delta = validate_delta_response(payload, active_keys)
+
+    state = {
+        "ticket_key": "FEAT-1",
+        "epic_keys": ["EPIC-1", "EPIC-2", "EPIC-PRESERVED"],
+    }
+
+    mock_jira_client.create_epic.return_value = "EPIC-3"
+
+    updated_state = await apply_delta_updates(
+        jira=mock_jira_client,
+        delta=delta,
+        state=state,
+        level="epic",
+        project_key="PROJ",
+    )
+
+    # Verify state updates
+    assert updated_state["epic_keys"] == ["EPIC-1", "EPIC-PRESERVED", "EPIC-3"]
+    # Verify transactional preservation: original state must be untouched
+    assert state["epic_keys"] == ["EPIC-1", "EPIC-2", "EPIC-PRESERVED"]
+
+    # Verify Jira sequential operations
+    mock_jira_client.archive_issue.assert_called_once_with("EPIC-2", archive_subtasks=True)
+    mock_jira_client.update_summary_and_description.assert_called_once_with(
+        "EPIC-1", "Updated Epic 1 Summary", "Updated Epic 1 Description"
+    )
+    mock_jira_client.create_epic.assert_called_once_with(
+        project_key="PROJ",
+        summary="New Epic Summary",
+        description="New Epic Description",
+        parent_key="FEAT-1",
+        labels=["forge:managed", "forge:parent:FEAT-1", "repo:owner/new-repo"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_apply_delta_updates_task_success(mock_jira_client: MagicMock) -> None:
+    """Verify successful application of a task delta and corresponding state updates."""
+    payload = {
+        "to_edit": [
+            {
+                "key": "TASK-1",
+                "summary": "Updated Task 1 Summary",
+                "description": "Updated Task 1 Description",
+                "repo": "owner/updated-task-repo",
+            }
+        ],
+        "to_create": [
+            {
+                "summary": "New Task Summary",
+                "description": "New Task Description",
+                "repo": "owner/new-task-repo",
+            }
+        ],
+        "to_archive": ["TASK-2"],
+    }
+    active_keys = ["TASK-1", "TASK-2", "TASK-PRESERVED"]
+    delta = validate_delta_response(payload, active_keys)
+
+    state = {
+        "ticket_key": "FEAT-1",
+        "epic_keys": ["EPIC-1"],
+        "task_keys": ["TASK-1", "TASK-2", "TASK-PRESERVED"],
+        "tasks_by_repo": {
+            "owner/old-repo": ["TASK-1", "TASK-2"],
+            "owner/preserved-repo": ["TASK-PRESERVED"],
+        },
+    }
+
+    mock_jira_client.create_task.return_value = "TASK-3"
+
+    # Mock get_issue to return a task issue with a parent epic key
+    issue_mock = MagicMock()
+    issue_mock.parent_key = "EPIC-1"
+    mock_jira_client.get_issue.return_value = issue_mock
+
+    updated_state = await apply_delta_updates(
+        jira=mock_jira_client,
+        delta=delta,
+        state=state,
+        level="task",
+        project_key="PROJ",
+    )
+
+    # Verify state updates
+    assert updated_state["task_keys"] == ["TASK-1", "TASK-PRESERVED", "TASK-3"]
+    assert updated_state["tasks_by_repo"] == {
+        "owner/updated-task-repo": ["TASK-1"],
+        "owner/preserved-repo": ["TASK-PRESERVED"],
+        "owner/new-task-repo": ["TASK-3"],
+    }
+
+    # Verify original state remains untouched
+    assert state["task_keys"] == ["TASK-1", "TASK-2", "TASK-PRESERVED"]
+    assert state["tasks_by_repo"] == {
+        "owner/old-repo": ["TASK-1", "TASK-2"],
+        "owner/preserved-repo": ["TASK-PRESERVED"],
+    }
+
+    # Verify Jira sequential operations
+    mock_jira_client.archive_issue.assert_called_once_with("TASK-2", archive_subtasks=False)
+    mock_jira_client.update_summary_and_description.assert_called_once_with(
+        "TASK-1", "Updated Task 1 Summary", "Updated Task 1 Description"
+    )
+    mock_jira_client.create_task.assert_called_once_with(
+        project_key="PROJ",
+        summary="New Task Summary",
+        description="New Task Description",
+        parent_key="EPIC-1",
+        labels=["forge:managed", "forge:parent:FEAT-1", "repo:owner/new-task-repo"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_apply_delta_updates_failure_rolls_back_state(mock_jira_client: MagicMock) -> None:
+    """Verify that a failure during sequential operations leaves state untouched and propagates error."""
+    payload = {
+        "to_edit": [
+            {
+                "key": "EPIC-1",
+                "summary": "Updated Epic 1 Summary",
+                "description": "Updated Epic 1 Description",
+            }
+        ],
+        "to_create": [
+            {
+                "summary": "New Epic Summary",
+                "description": "New Epic Description",
+            }
+        ],
+        "to_archive": ["EPIC-2"],
+    }
+    active_keys = ["EPIC-1", "EPIC-2", "EPIC-PRESERVED"]
+    delta = validate_delta_response(payload, active_keys)
+
+    state = {
+        "ticket_key": "FEAT-1",
+        "epic_keys": ["EPIC-1", "EPIC-2", "EPIC-PRESERVED"],
+    }
+
+    # Simulate failure on the second operation (edit)
+    mock_jira_client.update_summary_and_description.side_effect = RuntimeError("Jira Edit Failure")
+
+    with pytest.raises(RuntimeError, match="Jira Edit Failure"):
+        await apply_delta_updates(
+            jira=mock_jira_client,
+            delta=delta,
+            state=state,
+            level="epic",
+            project_key="PROJ",
+        )
+
+    # Verify state is completely untouched
+    assert state["epic_keys"] == ["EPIC-1", "EPIC-2", "EPIC-PRESERVED"]
+    # archive should have been called, but edit failed and create was never called
+    mock_jira_client.archive_issue.assert_called_once_with("EPIC-2", archive_subtasks=True)
+    mock_jira_client.create_epic.assert_not_called()
