@@ -10,6 +10,7 @@ from forge.integrations.agents import ForgeAgent
 from forge.workflow.utils.delta_orchestration import (
     generate_revision_delta,
     get_current_revision_state,
+    validate_delta_response,
 )
 
 
@@ -358,4 +359,67 @@ async def test_generate_revision_delta_missing_keys_or_malformed() -> None:
     assert result["to_edit"] == []
     # Invalid type to_archive should be normalized to []
     assert result["to_archive"] == []
+
+
+def test_validate_delta_response_parent_epic_key_extraction() -> None:
+    """Test that validate_delta_response extracts parent epic keys correctly from multiple possible JSON fields."""
+    existing_keys = ["TASK-1", "TASK-2"]
+
+    # Test cases with different parent key fields
+    delta_cases = [
+        {"to_create": [{"summary": "T1", "description": "D1", "parent_epic_key": "EPIC-101"}]},
+        {"to_create": [{"summary": "T2", "description": "D2", "parent_key": "EPIC-102"}]},
+        {"to_create": [{"summary": "T3", "description": "D3", "epic_key": "EPIC-103"}]},
+        {"to_create": [{"summary": "T4", "description": "D4", "parent": "EPIC-104"}]},
+        {"to_create": [{"summary": "T5", "description": "D5", "epic": "EPIC-105"}]},
+        {"to_create": [{"summary": "T6", "description": "D6"}]},  # No parent key
+    ]
+
+    expected_parents = ["EPIC-101", "EPIC-102", "EPIC-103", "EPIC-104", "EPIC-105", None]
+
+    for case, expected in zip(delta_cases, expected_parents):
+        validated = validate_delta_response(case, existing_keys)
+        assert len(validated["to_create"]) == 1
+        assert validated["to_create"][0]["parent_epic_key"] == expected
+
+
+def test_validate_delta_response_robustness() -> None:
+    """Test that validate_delta_response is robust to malformed/non-dict items inside lists."""
+    existing_keys = ["TASK-1", "TASK-2"]
+
+    # Delta with malformed elements under to_create, to_edit, and to_archive
+    delta = {
+        "to_create": [
+            "This is a string and not a dictionary, should be filtered out",
+            None,
+            {"summary": "Valid Task", "description": "Valid Desc", "parent_epic_key": "EPIC-1"}
+        ],
+        "to_edit": [
+            "Another malformed item",
+            {"key": "TASK-1", "summary": "Edited Task", "description": "Edited Desc"},
+            {"key": "NON_EXISTENT", "summary": "Bad Key", "description": "Bad Desc"}  # Key not in existing_keys
+        ],
+        "to_archive": [
+            12345,
+            {"key": "TASK-2"},
+            {"key": "NON_EXISTENT"}  # Key not in existing_keys
+        ]
+    }
+
+    validated = validate_delta_response(delta, existing_keys)
+
+    # Check that strings/none were filtered out from to_create
+    assert len(validated["to_create"]) == 1
+    assert validated["to_create"][0]["summary"] == "Valid Task"
+    assert validated["to_create"][0]["parent_epic_key"] == "EPIC-1"
+
+    # Check to_edit filtering
+    assert len(validated["to_edit"]) == 1
+    assert validated["to_edit"][0]["key"] == "TASK-1"
+    assert validated["to_edit"][0]["summary"] == "Edited Task"
+
+    # Check to_archive filtering
+    assert len(validated["to_archive"]) == 1
+    assert validated["to_archive"][0]["key"] == "TASK-2"
+
 

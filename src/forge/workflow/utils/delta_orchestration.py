@@ -196,10 +196,18 @@ def validate_delta_response(delta: dict[str, Any], existing_keys: list[str]) -> 
     # Ensure to_create has elements with valid fields
     for item in delta.get("to_create", []):
         if isinstance(item, dict) and "summary" in item and "description" in item:
+            parent_epic_key = (
+                item.get("parent_epic_key")
+                or item.get("parent_key")
+                or item.get("epic_key")
+                or item.get("parent")
+                or item.get("epic")
+            )
             validated["to_create"].append({
                 "summary": str(item["summary"]),
                 "description": str(item["description"]),
-                "repo": str(item.get("repo", ""))
+                "repo": str(item.get("repo", "")),
+                "parent_epic_key": str(parent_epic_key) if parent_epic_key else None
             })
 
     # Ensure to_edit has elements with valid fields, and only references existing keys

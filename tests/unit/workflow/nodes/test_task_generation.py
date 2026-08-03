@@ -166,6 +166,73 @@ class TestTaskRevisionState:
         MockGetState.assert_any_call(state, "task", mock_jira)
         MockGenDelta.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_regenerate_all_tasks_uses_pre_extracted_parent_epic_key(
+        self, base_state, mock_parent_issue, mock_epic_issue
+    ):
+        """Full task regeneration should correctly use pre-extracted parent_epic_key from validated delta."""
+        state = {
+            **base_state,
+            "task_keys": [],
+            "tasks_by_repo": {},
+            "feedback_comment": "Create tasks with explicit parents.",
+            "revision_requested": True,
+        }
+
+        with (
+            patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
+            patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
+            patch("forge.workflow.nodes.task_generation.post_status_comment"),
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.validate_delta_response") as MockValidate,
+        ):
+            mock_jira = AsyncMock()
+            MockJira.return_value = mock_jira
+
+            async def mock_get_issue(key):
+                if key == "MYPROJ-1":
+                    return mock_parent_issue
+                elif key == "MYPROJ-10":
+                    return mock_epic_issue
+                else:
+                    return _make_issue(key, parent_key="MYPROJ-10")
+
+            mock_jira.get_issue = mock_get_issue
+            mock_jira.get_labels = AsyncMock(return_value=["repo:acme/backend"])
+            mock_jira.create_task = AsyncMock(return_value="MYPROJ-101")
+            mock_jira.close = AsyncMock()
+            mock_agent = AsyncMock()
+            MockAgent.return_value = mock_agent
+
+            MockGetState.return_value = []
+
+            # The validate mock returns pre-extracted parent_epic_key
+            MockValidate.return_value = {
+                "to_create": [
+                    {
+                        "summary": "Task with specific epic",
+                        "description": "Specific desc.",
+                        "repo": "acme/backend",
+                        "parent_epic_key": "MYPROJ-10"
+                    }
+                ],
+                "to_edit": [],
+                "to_archive": []
+            }
+
+            result = await regenerate_all_tasks(state)
+
+        # Assert that create_task was called with the pre-extracted parent_epic_key
+        mock_jira.create_task.assert_called_once_with(
+            project_key="MYPROJ",
+            summary="Task with specific epic",
+            description="Specific desc.",
+            parent_key="MYPROJ-10",
+            labels=["forge:managed", "forge:parent:MYPROJ-1", "repo:acme/backend"]
+        )
+        assert result["task_keys"] == ["MYPROJ-101"]
+
 
 class TestFeedbackThreading:
     """Feedback in context is appended to the generate-tasks prompt."""

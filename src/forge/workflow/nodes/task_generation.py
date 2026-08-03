@@ -589,21 +589,13 @@ async def regenerate_all_tasks(state: WorkflowState) -> WorkflowState:
                 else ""
             )
 
-        raw_creates = delta_raw.get("to_create", [])
-        for idx, item in enumerate(validated_delta.get("to_create", [])):
+        for item in validated_delta.get("to_create", []):
             summary = item["summary"]
             description = item["description"]
             repo = item.get("repo", "")
 
-            # Check if there is an epic key in raw_item
-            raw_item = raw_creates[idx] if idx < len(raw_creates) else {}
-            parent_epic_key = (
-                raw_item.get("parent_epic_key")
-                or raw_item.get("parent_key")
-                or raw_item.get("epic_key")
-                or raw_item.get("parent")
-                or raw_item.get("epic")
-            )
+            # Check if there is an epic key pre-extracted in item
+            parent_epic_key = item.get("parent_epic_key")
 
             # Search in summary/description if not found
             if not parent_epic_key and epic_keys:
