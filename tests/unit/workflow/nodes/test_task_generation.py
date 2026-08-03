@@ -719,3 +719,143 @@ class TestRegenerateEpicTasks:
             r for r in caplog.records if "TASK-100" in r.message and "parent" in r.message.lower()
         ]
         assert orphan_warnings, "Expected a warning about the orphaned task TASK-100"
+
+
+    @pytest.mark.asyncio
+    async def test_regenerate_all_tasks_corrective_retry_flow(
+        self, base_state, mock_parent_issue, mock_epic_issue
+    ):
+        """On validation or key mismatch, perform exactly one corrective retry containing precise error."""
+        state = {
+            **base_state,
+            "task_keys": ["MYPROJ-20"],
+            "tasks_by_repo": {"acme/backend": ["MYPROJ-20"]},
+            "feedback_comment": "Add database migration.",
+            "revision_requested": True,
+        }
+
+        with (
+            patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
+            patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.post_status_comment") as MockPostStatus,
+        ):
+            mock_jira = AsyncMock()
+            MockJira.return_value = mock_jira
+            mock_jira.get_issue = AsyncMock(
+                side_effect=[
+                    mock_parent_issue,  # parent feature
+                    _make_issue("MYPROJ-20", parent_key="MYPROJ-10"),  # task
+                ]
+            )
+            mock_jira.get_labels = AsyncMock(return_value=["repo:acme/backend"])
+            mock_jira.create_task = AsyncMock(return_value="MYPROJ-100")
+            mock_jira.close = AsyncMock()
+
+            mock_agent = AsyncMock()
+            MockAgent.return_value = mock_agent
+
+            MockGetState.return_value = [{"key": "MYPROJ-20", "summary": "Task 20", "description": "Desc"}]
+
+            # 1st call: Key mismatch (INVALID-KEY is not in existing_tasks)
+            # 2nd call: Valid response
+            MockGenDelta.side_effect = [
+                {
+                    "to_create": [],
+                    "to_edit": [{"key": "INVALID-KEY", "summary": "Bad Task", "description": "Bad Description"}],
+                    "to_archive": []
+                },
+                {
+                    "to_create": [{"summary": "Task 100", "description": "Desc 100", "repo": "acme/backend", "parent_epic_key": "MYPROJ-10"}],
+                    "to_edit": [],
+                    "to_archive": []
+                }
+            ]
+
+            result = await regenerate_all_tasks(state)
+
+        # Assert we had exactly two generate_revision_delta calls (1 initial + 1 corrective retry)
+        assert MockGenDelta.call_count == 2
+        
+        # Verify the corrective retry prompt contains the precise error message
+        corrective_feedback_prompt = MockGenDelta.call_args_list[1][0][2]
+        assert "Key 'INVALID-KEY' in to_edit is not an active ticket key" in corrective_feedback_prompt
+        assert "Add database migration" in corrective_feedback_prompt
+
+        # Verify a status comment was posted to Jira for the retry
+        MockPostStatus.assert_any_call(
+            mock_jira,
+            state["ticket_key"],
+            "⚠️ Forge detected a validation error in the generated plan: Validation error: Key 'INVALID-KEY' in to_edit is not an active ticket key.. Retrying with corrective feedback..."
+        )
+
+        # Verify that after the retry, execution succeeded
+        assert "MYPROJ-100" in result["task_keys"]
+        assert result["current_node"] == "task_approval_gate"
+
+
+    @pytest.mark.asyncio
+    async def test_regenerate_all_tasks_execution_halting_on_consecutive_failures(
+        self, base_state, mock_parent_issue
+    ):
+        """On second consecutive validation failure, cleanly halt execution, posting status comment."""
+        state = {
+            **base_state,
+            "task_keys": ["MYPROJ-20"],
+            "tasks_by_repo": {"acme/backend": ["MYPROJ-20"]},
+            "feedback_comment": "Add database migration.",
+            "revision_requested": True,
+        }
+
+        with (
+            patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
+            patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.post_status_comment") as MockPostStatus,
+        ):
+            mock_jira = AsyncMock()
+            MockJira.return_value = mock_jira
+            mock_jira.get_issue = AsyncMock(return_value=mock_parent_issue)
+            mock_jira.close = AsyncMock()
+
+            mock_agent = AsyncMock()
+            MockAgent.return_value = mock_agent
+
+            MockGetState.return_value = [{"key": "MYPROJ-20", "summary": "Task 20", "description": "Desc"}]
+
+            # Always return key mismatch to trigger 2 failures
+            MockGenDelta.return_value = {
+                "to_create": [],
+                "to_edit": [{"key": "INVALID-KEY", "summary": "Bad Task", "description": "Bad Description"}],
+                "to_archive": []
+            }
+
+            result = await regenerate_all_tasks(state)
+
+        # Assert we had exactly two generate_revision_delta calls (1 initial + 1 corrective retry)
+        assert MockGenDelta.call_count == 2
+
+        # Verify status comments posted
+        # 1. Posted first error retry comment
+        MockPostStatus.assert_any_call(
+            mock_jira,
+            state["ticket_key"],
+            "⚠️ Forge detected a validation error in the generated plan: Validation error: Key 'INVALID-KEY' in to_edit is not an active ticket key.. Retrying with corrective feedback..."
+        )
+        # 2. Posted halting comment
+        MockPostStatus.assert_any_call(
+            mock_jira,
+            state["ticket_key"],
+            "⚠️ Forge has halted execution because it received an invalid plan from the AI generator twice consecutively.\n\n"
+            "Manual intervention is required to review or refine the requirements."
+        )
+
+        # State should be left entirely untouched, returning original state
+        assert result == state
+
+        # Verify no task creation or updates were made on the jira client
+        mock_jira.create_task.assert_not_called()
+        mock_jira.update_summary_and_description.assert_not_called()
+        mock_jira.archive_issue.assert_not_called()
