@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import cast
 
 from forge.config import get_settings
 from forge.prompts import load_prompt
@@ -35,14 +36,14 @@ async def update_documentation(state: WorkflowState) -> WorkflowState:
 
     if not workspace_path:
         logger.info(f"No workspace for doc update on {ticket_key}, skipping")
-        return update_state_timestamp({**state, "current_node": "create_pr"})
+        return cast(WorkflowState, update_state_timestamp({**state, "current_node": "create_pr"}))
 
     logger.info(f"Running documentation update for {ticket_key}")
 
     settings = get_settings()
     guardrails = state.get("context", {}).get("guardrails", "")
-    current_repo = state.get("current_repo", "")
-    branch_name = state.get("context", {}).get("branch_name", "")
+    current_repo = state.get("current_repo") or ""
+    branch_name: str = str(state.get("context", {}).get("branch_name") or "")
 
     task_description = load_prompt(
         "update-docs",
@@ -63,7 +64,9 @@ async def update_documentation(state: WorkflowState) -> WorkflowState:
             skill_name="update-docs",
         )
 
-        state = merge_review_exhaustion(state, result, ticket_key, "update_docs")
+        state = cast(
+            WorkflowState, merge_review_exhaustion(dict(state), result, ticket_key, "update_docs")
+        )
 
         git = GitOperations(
             Workspace(
@@ -87,20 +90,26 @@ async def update_documentation(state: WorkflowState) -> WorkflowState:
                 f"proceeding to PR creation"
             )
 
-        return update_state_timestamp(
-            {
-                **state,
-                "current_node": "create_pr",
-                "last_error": None,
-            }
+        return cast(
+            WorkflowState,
+            update_state_timestamp(
+                {
+                    **state,
+                    "current_node": "create_pr",
+                    "last_error": None,
+                }
+            ),
         )
 
     except Exception as e:
         logger.warning(f"Documentation update failed for {ticket_key}: {e}")
-        return update_state_timestamp(
-            {
-                **state,
-                "current_node": "create_pr",
-                "last_error": None,
-            }
+        return cast(
+            WorkflowState,
+            update_state_timestamp(
+                {
+                    **state,
+                    "current_node": "create_pr",
+                    "last_error": None,
+                }
+            ),
         )
