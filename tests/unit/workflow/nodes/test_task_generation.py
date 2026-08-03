@@ -116,21 +116,44 @@ class TestTaskRevisionState:
             patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
             patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
             patch("forge.workflow.nodes.task_generation.post_status_comment"),
-            patch(
-                "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
-                new_callable=AsyncMock,
-                return_value=mock_tasks_data,
-            ) as mock_generate,
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.validate_delta_response") as MockValidate,
         ):
             mock_jira = AsyncMock()
             MockJira.return_value = mock_jira
             mock_jira.archive_issue = AsyncMock()
-            mock_jira.get_issue = AsyncMock(side_effect=[mock_parent_issue, mock_epic_issue])
+            
+            async def mock_get_issue(key):
+                if key == "MYPROJ-1":
+                    return mock_parent_issue
+                elif key == "MYPROJ-10":
+                    return mock_epic_issue
+                else:
+                    return _make_issue(key, parent_key="MYPROJ-10")
+                    
+            mock_jira.get_issue = mock_get_issue
             mock_jira.get_labels = AsyncMock(return_value=["repo:acme/backend"])
             mock_jira.create_task = AsyncMock(return_value="MYPROJ-100")
             mock_jira.set_workflow_label = AsyncMock()
             mock_jira.close = AsyncMock()
-            MockAgent.return_value = AsyncMock()
+            mock_agent = AsyncMock()
+            MockAgent.return_value = mock_agent
+
+            MockGetState.return_value = [
+                {"key": "MYPROJ-20", "summary": "Task 20", "description": "Desc 20"},
+                {"key": "MYPROJ-21", "summary": "Task 21", "description": "Desc 21"},
+            ]
+            MockGenDelta.return_value = {
+                "to_create": [{"summary": "Task One", "description": "Do the first thing.", "repo": "acme/backend"}],
+                "to_edit": [],
+                "to_archive": [{"key": "MYPROJ-20"}, {"key": "MYPROJ-21"}]
+            }
+            MockValidate.return_value = {
+                "to_create": [{"summary": "Task One", "description": "Do the first thing.", "repo": "acme/backend"}],
+                "to_edit": [],
+                "to_archive": [{"key": "MYPROJ-20"}, {"key": "MYPROJ-21"}]
+            }
 
             result = await regenerate_all_tasks(state)
 
@@ -140,8 +163,8 @@ class TestTaskRevisionState:
         assert result["revision_requested"] is False
         assert result["feedback_comment"] is None
         assert result["current_epic_key"] is None
-        generated_context = mock_generate.await_args.args[3]
-        assert generated_context["feedback"] == "Use smaller implementation tasks."
+        MockGetState.assert_any_call(state, "task", mock_jira)
+        MockGenDelta.assert_called_once()
 
 
 class TestFeedbackThreading:
@@ -290,28 +313,20 @@ class TestRegenerateEpicTasks:
         with (
             patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
             patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
-            patch(
-                "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
-                new_callable=AsyncMock,
-                return_value=[{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
-            ),
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.validate_delta_response") as MockValidate,
         ):
             mock_jira = AsyncMock()
             MockJira.return_value = mock_jira
 
-            # get_issue calls: feature, TASK-100 (parent=EPIC-10), TASK-101 (parent=EPIC-10),
-            # TASK-200 (parent=EPIC-20), EPIC-10 (epic details), EPIC-20 (sibling)
             mock_jira.get_issue = AsyncMock(
                 side_effect=[
                     _make_issue("FEAT-1", project_key="MYPROJ"),  # parent feature
                     _make_issue("TASK-100", parent_key="EPIC-10"),
                     _make_issue("TASK-101", parent_key="EPIC-10"),
                     _make_issue("TASK-200", parent_key="EPIC-20"),
-                    _make_issue(
-                        "EPIC-10", summary="Epic 10", description="Plan 10"
-                    ),  # epic details
-                    _make_issue("EPIC-20", summary="Epic 20", description="Plan 20"),  # sibling
-                    _make_issue("TASK-200", summary="Old task 200"),  # remaining task ctx
+                    _make_issue("EPIC-10", summary="Epic 10", description="Plan 10"),  # epic details
                 ]
             )
             mock_jira.get_labels = AsyncMock(return_value=["repo:acme/backend"])
@@ -319,6 +334,18 @@ class TestRegenerateEpicTasks:
             mock_jira.create_task = AsyncMock(return_value="TASK-102")
 
             MockAgent.return_value = AsyncMock()
+
+            MockGetState.return_value = [
+                {"key": "TASK-100", "summary": "Task 100", "description": "D100"},
+                {"key": "TASK-101", "summary": "Task 101", "description": "D101"},
+            ]
+            delta = {
+                "to_create": [{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
+                "to_edit": [],
+                "to_archive": [{"key": "TASK-100"}, {"key": "TASK-101"}]
+            }
+            MockGenDelta.return_value = delta
+            MockValidate.return_value = delta
 
             await regenerate_epic_tasks(base_state)
 
@@ -332,11 +359,9 @@ class TestRegenerateEpicTasks:
         with (
             patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
             patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
-            patch(
-                "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
-                new_callable=AsyncMock,
-                return_value=[{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
-            ),
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.validate_delta_response") as MockValidate,
         ):
             mock_jira = AsyncMock()
             MockJira.return_value = mock_jira
@@ -347,8 +372,6 @@ class TestRegenerateEpicTasks:
                     _make_issue("TASK-101", parent_key="EPIC-10"),
                     _make_issue("TASK-200", parent_key="EPIC-20"),
                     _make_issue("EPIC-10", summary="Epic 10", description="Plan 10"),
-                    _make_issue("EPIC-20", summary="Epic 20", description="Plan 20"),
-                    _make_issue("TASK-200", summary="Old task 200"),  # for existing_tasks context
                 ]
             )
             mock_jira.get_labels = AsyncMock(return_value=["repo:acme/backend"])
@@ -356,6 +379,18 @@ class TestRegenerateEpicTasks:
             mock_jira.create_task = AsyncMock(return_value="TASK-102")
 
             MockAgent.return_value = AsyncMock()
+
+            MockGetState.return_value = [
+                {"key": "TASK-100", "summary": "Task 100", "description": "D100"},
+                {"key": "TASK-101", "summary": "Task 101", "description": "D101"},
+            ]
+            delta = {
+                "to_create": [{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
+                "to_edit": [],
+                "to_archive": [{"key": "TASK-100"}, {"key": "TASK-101"}]
+            }
+            MockGenDelta.return_value = delta
+            MockValidate.return_value = delta
 
             result = await regenerate_epic_tasks(base_state)
 
@@ -370,11 +405,9 @@ class TestRegenerateEpicTasks:
         with (
             patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
             patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
-            patch(
-                "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
-                new_callable=AsyncMock,
-                return_value=[{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
-            ),
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.validate_delta_response") as MockValidate,
         ):
             mock_jira = AsyncMock()
             MockJira.return_value = mock_jira
@@ -385,14 +418,24 @@ class TestRegenerateEpicTasks:
                     _make_issue("TASK-101", parent_key="EPIC-10"),
                     _make_issue("TASK-200", parent_key="EPIC-20"),
                     _make_issue("EPIC-10", summary="Epic 10", description="Plan 10"),
-                    _make_issue("EPIC-20", summary="Epic 20", description="Plan 20"),
-                    _make_issue("TASK-200", summary="Old task 200"),
                 ]
             )
             mock_jira.get_labels = AsyncMock(return_value=["repo:acme/backend"])
             mock_jira.archive_issue = AsyncMock()
             mock_jira.create_task = AsyncMock(return_value="TASK-102")
             MockAgent.return_value = AsyncMock()
+
+            MockGetState.return_value = [
+                {"key": "TASK-100", "summary": "Task 100", "description": "D100"},
+                {"key": "TASK-101", "summary": "Task 101", "description": "D101"},
+            ]
+            delta = {
+                "to_create": [{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
+                "to_edit": [],
+                "to_archive": [{"key": "TASK-100"}, {"key": "TASK-101"}]
+            }
+            MockGenDelta.return_value = delta
+            MockValidate.return_value = delta
 
             result = await regenerate_epic_tasks(base_state)
 
@@ -403,20 +446,13 @@ class TestRegenerateEpicTasks:
 
     @pytest.mark.asyncio
     async def test_feedback_passed_to_generate(self, base_state):
-        """feedback_comment is passed as 'feedback' in context to _generate_tasks_for_epic."""
-        captured_context = {}
-
-        async def fake_generate(_agent, _epic_plan, _epic_summary, context, **_kwargs):
-            captured_context.update(context)
-            return []
-
+        """feedback_comment is passed as 'feedback' to generate_revision_delta."""
         with (
             patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
             patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
-            patch(
-                "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
-                side_effect=fake_generate,
-            ),
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.validate_delta_response") as MockValidate,
         ):
             mock_jira = AsyncMock()
             MockJira.return_value = mock_jira
@@ -427,17 +463,33 @@ class TestRegenerateEpicTasks:
                     _make_issue("TASK-101", parent_key="EPIC-10"),
                     _make_issue("TASK-200", parent_key="EPIC-20"),
                     _make_issue("EPIC-10", summary="Epic 10", description="Plan 10"),
-                    _make_issue("EPIC-20", summary="Epic 20", description="Plan 20"),
-                    _make_issue("TASK-200", summary="Old task 200"),
                 ]
             )
             mock_jira.get_labels = AsyncMock(return_value=[])
             mock_jira.archive_issue = AsyncMock()
-            MockAgent.return_value = AsyncMock()
+            mock_agent = AsyncMock()
+            MockAgent.return_value = mock_agent
+
+            MockGetState.return_value = [
+                {"key": "TASK-100", "summary": "Task 100", "description": "D100"},
+                {"key": "TASK-101", "summary": "Task 101", "description": "D101"},
+            ]
+            delta = {
+                "to_create": [{"summary": "New Task", "description": "D", "repo": "acme/backend"}],
+                "to_edit": [],
+                "to_archive": [{"key": "TASK-100"}, {"key": "TASK-101"}]
+            }
+            MockGenDelta.return_value = delta
+            MockValidate.return_value = delta
 
             await regenerate_epic_tasks(base_state)
 
-            assert captured_context.get("feedback") == "Split the task into two."
+            MockGenDelta.assert_called_once_with(
+                base_state,
+                MockGetState.return_value,
+                "Split the task into two.",
+                mock_agent,
+            )
 
     @pytest.mark.asyncio
     async def test_no_generated_replacements_does_not_archive_existing_tasks(self, base_state):
@@ -445,11 +497,9 @@ class TestRegenerateEpicTasks:
         with (
             patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
             patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
-            patch(
-                "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
-                new_callable=AsyncMock,
-                return_value=[],
-            ),
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.validate_delta_response") as MockValidate,
         ):
             mock_jira = AsyncMock()
             MockJira.return_value = mock_jira
@@ -460,13 +510,19 @@ class TestRegenerateEpicTasks:
                     _make_issue("TASK-101", parent_key="EPIC-10"),
                     _make_issue("TASK-200", parent_key="EPIC-20"),
                     _make_issue("EPIC-10", summary="Epic 10", description="Plan 10"),
-                    _make_issue("EPIC-20", summary="Epic 20", description="Plan 20"),
-                    _make_issue("TASK-200", summary="Old task 200"),
                 ]
             )
             mock_jira.get_labels = AsyncMock(return_value=[])
             mock_jira.archive_issue = AsyncMock()
             MockAgent.return_value = AsyncMock()
+
+            MockGetState.return_value = [
+                {"key": "TASK-100", "summary": "Task 100", "description": "D100"},
+                {"key": "TASK-101", "summary": "Task 101", "description": "D101"},
+            ]
+            delta = {"to_create": [], "to_edit": [], "to_archive": []}
+            MockGenDelta.return_value = delta
+            MockValidate.return_value = delta
 
             result = await regenerate_epic_tasks(base_state)
 
@@ -486,14 +542,9 @@ class TestRegenerateEpicTasks:
         with (
             patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
             patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
-            patch(
-                "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
-                new_callable=AsyncMock,
-                return_value=[
-                    {"summary": "New Task 1", "description": "D1", "repo": "acme/backend"},
-                    {"summary": "New Task 2", "description": "D2", "repo": "acme/backend"},
-                ],
-            ),
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.validate_delta_response") as MockValidate,
         ):
             mock_jira = AsyncMock()
             MockJira.return_value = mock_jira
@@ -504,8 +555,6 @@ class TestRegenerateEpicTasks:
                     _make_issue("TASK-101", parent_key="EPIC-10"),
                     _make_issue("TASK-200", parent_key="EPIC-20"),
                     _make_issue("EPIC-10", summary="Epic 10", description="Plan 10"),
-                    _make_issue("EPIC-20", summary="Epic 20", description="Plan 20"),
-                    _make_issue("TASK-200", summary="Old task 200"),
                 ]
             )
             mock_jira.get_labels = AsyncMock(return_value=["repo:acme/backend"])
@@ -514,6 +563,21 @@ class TestRegenerateEpicTasks:
             )
             mock_jira.archive_issue = AsyncMock()
             MockAgent.return_value = AsyncMock()
+
+            MockGetState.return_value = [
+                {"key": "TASK-100", "summary": "Task 100", "description": "D100"},
+                {"key": "TASK-101", "summary": "Task 101", "description": "D101"},
+            ]
+            delta = {
+                "to_create": [
+                    {"summary": "New Task 1", "description": "D1", "repo": "acme/backend"},
+                    {"summary": "New Task 2", "description": "D2", "repo": "acme/backend"},
+                ],
+                "to_edit": [],
+                "to_archive": []
+            }
+            MockGenDelta.return_value = delta
+            MockValidate.return_value = delta
 
             result = await regenerate_epic_tasks(base_state)
 
@@ -555,11 +619,9 @@ class TestRegenerateEpicTasks:
         with (
             patch("forge.workflow.nodes.task_generation.JiraClient") as MockJira,
             patch("forge.workflow.nodes.task_generation.ForgeAgent") as MockAgent,
-            patch(
-                "forge.workflow.nodes.task_generation._generate_tasks_for_epic",
-                new_callable=AsyncMock,
-                return_value=[],
-            ),
+            patch("forge.workflow.nodes.task_generation.get_current_revision_state") as MockGetState,
+            patch("forge.workflow.nodes.task_generation.generate_revision_delta") as MockGenDelta,
+            patch("forge.workflow.nodes.task_generation.validate_delta_response") as MockValidate,
         ):
             mock_jira = AsyncMock()
             MockJira.return_value = mock_jira
@@ -570,13 +632,18 @@ class TestRegenerateEpicTasks:
                     _make_issue("TASK-101", parent_key="EPIC-10"),  # belongs to target epic
                     _make_issue("TASK-200", parent_key="EPIC-20"),  # other epic
                     _make_issue("EPIC-10", summary="Epic 10", description="Plan 10"),
-                    _make_issue("EPIC-20", summary="Epic 20", description="Plan 20"),
-                    _make_issue("TASK-200", summary="Old task 200"),  # remaining task ctx
                 ]
             )
             mock_jira.get_labels = AsyncMock(return_value=[])
             mock_jira.archive_issue = AsyncMock()
             MockAgent.return_value = AsyncMock()
+
+            MockGetState.return_value = [
+                {"key": "TASK-101", "summary": "Task 101", "description": "D101"},
+            ]
+            delta = {"to_create": [], "to_edit": [], "to_archive": []}
+            MockGenDelta.return_value = delta
+            MockValidate.return_value = delta
 
             with caplog.at_level(logging.WARNING, logger="forge.workflow.nodes.task_generation"):
                 await regenerate_epic_tasks(base_state)
