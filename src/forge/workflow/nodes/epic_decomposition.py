@@ -12,8 +12,8 @@ from forge.workflow.utils import (
     generate_revision_delta,
     get_current_revision_state,
     update_state_timestamp,
-    validate_delta_response,
 )
+from forge.workflow.utils.delta_processor import validate_delta_response
 from forge.workflow.utils.jira_status import post_status_comment
 from forge.workflow.utils.qa_summary import post_qa_summary_if_needed
 
@@ -298,11 +298,97 @@ async def regenerate_all_epics(state: WorkflowState) -> WorkflowState:
         # Fetch active Epic context
         epic_context = await get_current_revision_state(state, "epic", jira)
 
-        # Invoke LLM delta generation
-        delta_raw = await generate_revision_delta(state, epic_context, feedback, agent)
+        from pydantic import ValidationError
 
-        # Pass LLM output JSON to validate_delta_response
-        validated_delta = validate_delta_response(delta_raw, existing_epics)
+        current_feedback = feedback
+        validated_delta = None
+
+        for attempt in range(2):
+            try:
+                # Invoke LLM delta generation
+                delta_raw = await generate_revision_delta(state, epic_context, current_feedback, agent)
+
+                # Normalize to_archive if it contains dicts instead of strings (backward compatibility)
+                if isinstance(delta_raw, dict) and "to_archive" in delta_raw and isinstance(delta_raw["to_archive"], list):
+                    normalized_archive = []
+                    for item in delta_raw["to_archive"]:
+                        if isinstance(item, dict) and "key" in item:
+                            normalized_archive.append(str(item["key"]))
+                        elif isinstance(item, str):
+                            normalized_archive.append(item)
+                        else:
+                            normalized_archive.append(item)
+                    delta_raw["to_archive"] = normalized_archive
+
+                # Invoke validate_delta_response on the generated LLM response
+                validated_res = validate_delta_response(delta_raw, existing_epics)
+
+                if isinstance(validated_res, dict):
+                    validated_delta = validated_res
+                else:
+                    validated_delta = {
+                        "to_create": [
+                            {
+                                "summary": item.summary,
+                                "description": item.description,
+                                "repo": item.repo,
+                                "parent_epic_key": item.parent_epic_key,
+                            }
+                            for item in validated_res.to_create
+                        ],
+                        "to_edit": [
+                            {
+                                "key": item.key,
+                                "summary": item.summary,
+                                "description": item.description,
+                                "repo": item.repo,
+                            }
+                            for item in validated_res.to_edit
+                        ],
+                        "to_archive": [
+                            {"key": key}
+                            for key in validated_res.to_archive
+                        ],
+                    }
+                break
+            except (ValidationError, ValueError) as e:
+                error_msg = str(e)
+                logger.warning(
+                    f"Validation or key mismatch error on attempt {attempt + 1}: {error_msg}"
+                )
+                if attempt == 0:
+                    # Post a status comment on the Feature ticket in Jira
+                    comment_text = (
+                        f"⚠️ Forge detected a validation error in the generated plan: {error_msg}. "
+                        "Retrying with corrective feedback..."
+                    )
+                    await post_status_comment(jira, ticket_key, comment_text)
+
+                    # Build a corrective prompt containing the validation error message and request a corrected JSON
+                    current_feedback = (
+                        f"The JSON payload you generated previously failed validation with the following error:\n"
+                        f"{error_msg}\n\n"
+                        f"Please correct the payload and regenerate the JSON matching the required schema and constraints.\n"
+                        f"Ensure all keys in to_edit or to_archive are present in the list of active keys: {existing_epics}.\n"
+                        f"Original feedback:\n{feedback}\n\n"
+                        f"Do not include any explanation or preamble. Output ONLY the corrected JSON block."
+                    )
+                else:
+                    # On a second consecutive validation failure, cleanly halt execution
+                    logger.error(
+                        f"Consecutive validation failures for {ticket_key}. Cleanly halting execution."
+                    )
+                    # Keep state and tickets entirely untouched
+                    # Log the failure and post a status comment on the parent feature in Jira indicating that manual intervention is required
+                    halt_comment = (
+                        "⚠️ Forge has halted execution because it received an invalid plan from the AI generator twice consecutively.\n\n"
+                        "Manual intervention is required to review or refine the requirements."
+                    )
+                    await post_status_comment(jira, ticket_key, halt_comment)
+                    return state
+
+        if validated_delta is None:
+            return state
 
         final_epic_keys = list(existing_epics)
 
