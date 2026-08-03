@@ -252,6 +252,7 @@ class TestBugWorkflowExecution:
         class _FakeRunner:
             async def run(self, workspace_path, **_kwargs):
                 import json
+
                 from tests.unit.workflow.nodes.test_rca_analysis import SAMPLE_RCA_JSON
 
                 forge_dir = workspace_path / ".forge"
@@ -393,8 +394,8 @@ class TestGraphStructure:
 
     def test_graph_has_required_nodes(self):
         """Verify all required nodes are present in the graphs."""
-        from forge.workflow.feature import FeatureWorkflow
         from forge.workflow.bug import BugWorkflow
+        from forge.workflow.feature import FeatureWorkflow
 
         feature_graph = FeatureWorkflow().build_graph()
         bug_graph = BugWorkflow().build_graph()
@@ -422,8 +423,8 @@ class TestGraphStructure:
 
     def test_graph_compiles_without_error(self):
         """Verify the graphs compile successfully."""
-        from forge.workflow.feature import FeatureWorkflow
         from forge.workflow.bug import BugWorkflow
+        from forge.workflow.feature import FeatureWorkflow
 
         assert FeatureWorkflow().build_graph().compile() is not None
         assert BugWorkflow().build_graph().compile() is not None
@@ -431,8 +432,9 @@ class TestGraphStructure:
     def test_graph_compiles_with_checkpointer(self, temp_checkpoint_db):
         """Verify the graphs compile with a checkpointer."""
         import asyncio
-        from forge.workflow.feature import FeatureWorkflow
+
         from forge.workflow.bug import BugWorkflow
+        from forge.workflow.feature import FeatureWorkflow
 
         async def _test():
             async with AsyncSqliteSaver.from_conn_string(str(temp_checkpoint_db)) as checkpointer:

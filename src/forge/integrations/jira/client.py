@@ -924,14 +924,14 @@ class JiraClient:
             List of matching JiraIssue objects.
         """
         client = await self._get_client()
-        params: dict[str, Any] = {
+        payload: dict[str, Any] = {
             "jql": jql,
             "maxResults": max_results,
         }
         if fields:
-            params["fields"] = ",".join(fields)
+            payload["fields"] = fields
 
-        response = await client.get("/search", params=params)
+        response = await client.post("/search/jql", json=payload)
         response.raise_for_status()
         data = response.json()
 
