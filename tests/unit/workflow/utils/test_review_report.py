@@ -346,6 +346,7 @@ class TestMergeReviewExhaustion:
         prior entry. When a single node calls it twice (e.g., ci_evaluator
         for analyze_ci then fix_ci), the second call silently drops the first.
         """
+
         def _exhausted_result(task_key: str, step_name: str) -> ContainerResult:
             return ContainerResult(
                 success=True,
@@ -368,7 +369,9 @@ class TestMergeReviewExhaustion:
         state: dict = {}
 
         # First call: analyze_ci step exhausted
-        state = merge_review_exhaustion(state, _exhausted_result("T-1", "analyze_ci"), "T-1", "analyze_ci")
+        state = merge_review_exhaustion(
+            state, _exhausted_result("T-1", "analyze_ci"), "T-1", "analyze_ci"
+        )
         assert "T-1__analyze_ci" in state["review_exhaustion_report"]
 
         # Second call: fix_ci step also exhausted

@@ -11,11 +11,7 @@ class TestCORSConfiguration:
         from forge.main import create_app
 
         app = create_app()
-        cors = next(
-            m
-            for m in app.user_middleware
-            if m.cls is CORSMiddleware
-        )
+        cors = next(m for m in app.user_middleware if m.cls is CORSMiddleware)
         assert cors.kwargs["allow_credentials"] is False
 
 
