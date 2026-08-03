@@ -6,7 +6,10 @@ from typing import Any
 from langgraph.graph import END
 
 from forge.workflow.utils.comment_classifier import CommentType, classify_comment
-from forge.workflow.utils.delta_orchestration import get_current_revision_state
+from forge.workflow.utils.delta_orchestration import (
+    generate_revision_delta,
+    get_current_revision_state,
+)
 from forge.workflow.utils.jira_status import (
     post_status_comment,
     remove_implementing_label,
@@ -90,6 +93,7 @@ __all__ = [
     "CommentType",
     "classify_comment",
     "collect_review_exhaustion",
+    "generate_revision_delta",
     "get_current_revision_state",
     "merge_review_exhaustion",
     "post_qa_summary_if_needed",

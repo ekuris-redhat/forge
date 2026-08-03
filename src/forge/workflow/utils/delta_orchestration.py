@@ -2,10 +2,14 @@
 
 import asyncio
 import contextlib
+import json
 import logging
+import re
 from typing import Any
 
+from forge.integrations.agents import ForgeAgent
 from forge.integrations.jira.client import JiraClient
+from forge.prompts import load_prompt
 from forge.workflow.feature.state import FeatureState
 
 logger = logging.getLogger(__name__)
@@ -98,3 +102,76 @@ async def get_current_revision_state(
 
     # Filter out None values in case of fetch failures
     return [res for res in results if res is not None]
+
+
+async def generate_revision_delta(
+    state: FeatureState,
+    ticket_data: list[dict[str, Any]],
+    feedback: str,
+    agent: ForgeAgent,
+) -> dict[str, Any]:
+    """Generate delta-revision instruction set using the LLM.
+
+    Args:
+        state: Current FeatureState.
+        ticket_data: Structured details of existing active tickets.
+        feedback: Product Owner or Developer feedback.
+        agent: ForgeAgent client to invoke the LLM.
+
+    Returns:
+        A dictionary containing to_create, to_edit, and to_archive lists.
+    """
+    ticket_key = state.get("ticket_key", "")
+
+    # Serialize existing tickets to a JSON string or clear list for the prompt
+    serialized_tickets = json.dumps(ticket_data, indent=2)
+
+    # Load prompt template
+    prompt = load_prompt(
+        "generate-revision-delta",
+        ticket_data=serialized_tickets,
+        feedback=feedback,
+    )
+
+    # Invoke the agent for raw completion using run_task
+    logger.info("Invoking ForgeAgent for delta-revision orchestration.")
+    response_text = await agent.run_task(
+        task="generate-revision-delta",
+        prompt=prompt,
+        context={"ticket_key": ticket_key},
+    )
+
+    # Parse and validate conforming JSON delta structure
+    try:
+        # Robustly extract JSON from potential markdown/code block wrapper
+        cleaned = response_text.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            cleaned = "\n".join(lines).strip()
+
+        # Find first '{' and last '}'
+        match = re.search(r"(\{.*\})", cleaned, re.DOTALL)
+        if match:
+            cleaned = match.group(1)
+
+        delta = json.loads(cleaned)
+    except Exception as e:
+        logger.error(f"Failed to parse delta-revision JSON from agent response: {e}")
+        logger.debug(f"Raw response was: {response_text}")
+        # Return an empty delta structure on parsing failure
+        return {"to_create": [], "to_edit": [], "to_archive": []}
+
+    # Ensure all required keys exist and are lists
+    if not isinstance(delta, dict):
+        delta = {}
+
+    for key in ("to_create", "to_edit", "to_archive"):
+        if key not in delta or not isinstance(delta[key], list):
+            delta[key] = []
+
+    return delta
+

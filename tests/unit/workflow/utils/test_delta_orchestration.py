@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from forge.integrations.jira.client import JiraClient
-from forge.workflow.utils.delta_orchestration import get_current_revision_state
+from forge.integrations.agents import ForgeAgent
+from forge.workflow.utils.delta_orchestration import (
+    generate_revision_delta,
+    get_current_revision_state,
+)
 
 
 @pytest.fixture
@@ -242,3 +246,116 @@ async def test_get_current_revision_state_concurrent_execution(mock_jira_client:
     assert events[1].startswith("start-")
     assert events[2].startswith("end-")
     assert events[3].startswith("end-")
+
+
+@pytest.mark.asyncio
+async def test_generate_revision_delta_success() -> None:
+    """Test successful generation and parsing of delta-revision JSON."""
+    state = {
+        "ticket_key": "PROJ-123",
+    }
+    ticket_data = [
+        {"key": "EPIC-1", "summary": "Epic One", "description": "Desc One"},
+    ]
+    feedback = "Add database migration details to Epic One"
+
+    mock_agent = MagicMock(spec=ForgeAgent)
+    # Mock return value with exact valid JSON structure
+    mock_agent.run_task = AsyncMock(return_value="""
+    {
+        "to_create": [
+            {"summary": "New Task", "description": "New Task description"}
+        ],
+        "to_edit": [
+            {"key": "EPIC-1", "summary": "Epic One Revised", "description": "Revised Desc"}
+        ],
+        "to_archive": []
+    }
+    """)
+
+    result = await generate_revision_delta(state, ticket_data, feedback, mock_agent)
+
+    # Verify result structure
+    assert result["to_create"] == [{"summary": "New Task", "description": "New Task description"}]
+    assert result["to_edit"] == [{"key": "EPIC-1", "summary": "Epic One Revised", "description": "Revised Desc"}]
+    assert result["to_archive"] == []
+
+    # Verify agent.run_task call parameters and prompt rendering
+    mock_agent.run_task.assert_called_once()
+    call_kwargs = mock_agent.run_task.call_args.kwargs
+    assert call_kwargs["task"] == "generate-revision-delta"
+    assert call_kwargs["context"] == {"ticket_key": "PROJ-123"}
+
+    prompt = call_kwargs["prompt"]
+    assert "EPIC-1" in prompt
+    assert "Epic One" in prompt
+    assert "Add database migration" in prompt
+
+
+@pytest.mark.asyncio
+async def test_generate_revision_delta_markdown_wrapped() -> None:
+    """Test parsing of delta JSON that is wrapped in markdown code blocks."""
+    state = {"ticket_key": "PROJ-123"}
+    ticket_data = []
+    feedback = "Refactor everything"
+
+    mock_agent = MagicMock(spec=ForgeAgent)
+    mock_agent.run_task = AsyncMock(return_value="""
+Here is the delta you requested:
+```json
+{
+    "to_create": [],
+    "to_edit": [],
+    "to_archive": [{"key": "TASK-1"}]
+}
+```
+Let me know if you need anything else!
+""")
+
+    result = await generate_revision_delta(state, ticket_data, feedback, mock_agent)
+
+    assert result["to_create"] == []
+    assert result["to_edit"] == []
+    assert result["to_archive"] == [{"key": "TASK-1"}]
+
+
+@pytest.mark.asyncio
+async def test_generate_revision_delta_parsing_error() -> None:
+    """Test robust fallback to empty delta when agent response is invalid JSON."""
+    state = {"ticket_key": "PROJ-123"}
+    ticket_data = []
+    feedback = "Refactor everything"
+
+    mock_agent = MagicMock(spec=ForgeAgent)
+    mock_agent.run_task = AsyncMock(return_value="This is not JSON at all.")
+
+    result = await generate_revision_delta(state, ticket_data, feedback, mock_agent)
+
+    # Should fall back gracefully to empty lists
+    assert result == {"to_create": [], "to_edit": [], "to_archive": []}
+
+
+@pytest.mark.asyncio
+async def test_generate_revision_delta_missing_keys_or_malformed() -> None:
+    """Test that missing/invalid keys are safely normalized to empty lists."""
+    state = {"ticket_key": "PROJ-123"}
+    ticket_data = []
+    feedback = "Refactor everything"
+
+    mock_agent = MagicMock(spec=ForgeAgent)
+    # JSON has to_create but missing to_edit and to_archive is not a list (malformed type)
+    mock_agent.run_task = AsyncMock(return_value="""
+    {
+        "to_create": [{"summary": "Simple Task", "description": "Just build it"}],
+        "to_archive": "this should be a list but is a string"
+    }
+    """)
+
+    result = await generate_revision_delta(state, ticket_data, feedback, mock_agent)
+
+    assert result["to_create"] == [{"summary": "Simple Task", "description": "Just build it"}]
+    # Missing to_edit should be normalized to []
+    assert result["to_edit"] == []
+    # Invalid type to_archive should be normalized to []
+    assert result["to_archive"] == []
+
