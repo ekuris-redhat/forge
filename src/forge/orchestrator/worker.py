@@ -146,7 +146,10 @@ class OrchestratorWorker:
         """
         self.settings = get_settings()
         self.consumer_name = consumer_name or f"worker-{uuid.uuid4().hex[:8]}"
-        self.consumer = QueueConsumer(self.consumer_name)
+        self.consumer = QueueConsumer(
+            self.consumer_name,
+            terminal_failure_handler=self._handle_terminal_failure,
+        )
         self.router = router or create_default_router()
         self._shutdown_event = asyncio.Event()
         self._checkpointer = None
@@ -166,6 +169,37 @@ class OrchestratorWorker:
         if login:
             self._forge_github_login = login
         return login
+
+    async def _handle_terminal_failure(self, message: QueueMessage, error: str) -> None:
+        """Post one Jira comment after queue retries are exhausted."""
+        jira = JiraClient()
+        event_marker = f"Event/correlation ID: {message.event_id}"
+        try:
+            comments = await jira.get_comments(message.ticket_key)
+            if any(event_marker in comment.body for comment in comments):
+                logger.info(
+                    f"Terminal failure notification already exists for event {message.event_id}"
+                )
+                return
+
+            safe_error = redact_secrets(error)
+            if len(safe_error) > 500:
+                safe_error = f"{safe_error[:500]}..."
+            details = (
+                f"{safe_error}\n\n"
+                f"Ticket: {message.ticket_key}\n"
+                f"{event_marker}\n"
+                "Recovery: inspect the dead-letter entry, resolve the root cause, "
+                "then requeue the event."
+            )
+            await jira.add_error_comment(
+                issue_key=message.ticket_key,
+                error_message=details,
+                node_name="queue execution (retries exhausted)",
+            )
+            logger.info(f"Posted terminal queue failure notification to {message.ticket_key}")
+        finally:
+            await jira.close()
 
     async def _handle_jira_event(self, message: QueueMessage) -> None:
         """Handle a Jira webhook event.
@@ -1218,9 +1252,8 @@ class OrchestratorWorker:
                 if review_state in ("changes_requested", "commented"):
                     repo_full = payload.get("repository", {}).get("full_name", "")
                     pr_number = payload.get("pull_request", {}).get("number")
-                    review_id = review.get("id")
                     inline_comments: list[dict[str, Any]] = []
-                    if repo_full and pr_number and review_id:
+                    if repo_full and pr_number:
                         _owner, _repo = repo_full.split("/", 1)
                         gh = GitHubClient()
                         try:
@@ -1297,11 +1330,16 @@ class OrchestratorWorker:
                         logger.info(
                             f"PRD PR question for {message.ticket_key}: {comment_body[:100]}..."
                         )
-                    else:
+                    elif comment_type == CommentType.FEEDBACK:
                         is_rejected = True
-                        feedback = comment_body
+                        feedback = re.sub(r"^\s*!\s*", "", comment_body)
                         logger.info(
-                            f"PRD PR feedback for {message.ticket_key}: {comment_body[:100]}..."
+                            f"PRD PR feedback for {message.ticket_key}: {feedback[:100]}..."
+                        )
+                    else:
+                        logger.info(
+                            f"Informational comment on PRD PR for {message.ticket_key}, "
+                            f"ignoring: {comment_body[:100]}..."
                         )
 
         # GitHub events targeting the spec proposals PR — same pattern as PRD PR.
@@ -1316,9 +1354,8 @@ class OrchestratorWorker:
                 if review_state in ("changes_requested", "commented"):
                     repo_full = payload.get("repository", {}).get("full_name", "")
                     pr_number = payload.get("pull_request", {}).get("number")
-                    review_id = review.get("id")
-                    inline_comments = []
-                    if repo_full and pr_number and review_id:
+                    inline_comments: list[dict[str, Any]] = []
+                    if repo_full and pr_number:
                         _owner, _repo = repo_full.split("/", 1)
                         gh = GitHubClient()
                         try:
@@ -1424,11 +1461,16 @@ class OrchestratorWorker:
                         logger.info(
                             f"Spec PR question for {message.ticket_key}: {comment_body[:100]}..."
                         )
-                    else:
+                    elif comment_type == CommentType.FEEDBACK:
                         is_rejected = True
-                        feedback = comment_body
+                        feedback = re.sub(r"^\s*!\s*", "", comment_body)
                         logger.info(
-                            f"Spec PR feedback for {message.ticket_key}: {comment_body[:100]}..."
+                            f"Spec PR feedback for {message.ticket_key}: {feedback[:100]}..."
+                        )
+                    else:
+                        logger.info(
+                            f"Informational comment on spec PR for {message.ticket_key}, "
+                            f"ignoring: {comment_body[:100]}..."
                         )
 
         # Automated proposal reviewers often publish detailed suggestions even when
@@ -1441,7 +1483,12 @@ class OrchestratorWorker:
         is_spec_review = self._is_spec_pr_event(message, current_state) and current_node in (
             _SPEC_GATE_NODES
         )
-        if is_rejected and proposal_review_threads and (is_prd_review or is_spec_review):
+        if (
+            is_rejected
+            and proposal_review_threads
+            and (is_prd_review or is_spec_review)
+            and is_bot_sender(payload)
+        ):
             previous_decisions = {
                 item.get("thread_id"): item
                 for item in current_state.get("proposal_review_decisions", [])
