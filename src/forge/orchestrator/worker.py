@@ -935,9 +935,14 @@ class OrchestratorWorker:
                                             updated_at=datetime.now(UTC),
                                         )
 
-                                        await DraftManager.save_draft_attachment(
-                                            jira, message.ticket_key, updated_draft, filename
-                                        )
+                                        if filename == FORGE_TASKS_DRAFT_FILENAME:
+                                            await DraftManager.save_task_draft_with_slices(
+                                                jira, message.ticket_key, updated_draft
+                                            )
+                                        else:
+                                            await DraftManager.save_draft_attachment(
+                                                jira, message.ticket_key, updated_draft, filename
+                                            )
 
                                         # Update the original review comment with the new breakdown (SC-002)
                                         await self._update_original_review_comment(
@@ -979,9 +984,14 @@ class OrchestratorWorker:
                                         revised_json_str
                                     )
 
-                                    await DraftManager.save_draft_attachment(
-                                        jira, message.ticket_key, updated_draft, filename
-                                    )
+                                    if filename == FORGE_TASKS_DRAFT_FILENAME:
+                                        await DraftManager.save_task_draft_with_slices(
+                                            jira, message.ticket_key, updated_draft
+                                        )
+                                    else:
+                                        await DraftManager.save_draft_attachment(
+                                            jira, message.ticket_key, updated_draft, filename
+                                        )
 
                                     # Update the original review comment with the new breakdown (SC-002)
                                     await self._update_original_review_comment(
@@ -1005,9 +1015,14 @@ class OrchestratorWorker:
                                 )
                                 if original_draft:
                                     try:
-                                        await DraftManager.save_draft_attachment(
-                                            jira, message.ticket_key, original_draft, filename
-                                        )
+                                        if filename == FORGE_TASKS_DRAFT_FILENAME:
+                                            await DraftManager.save_task_draft_with_slices(
+                                                jira, message.ticket_key, original_draft
+                                            )
+                                        else:
+                                            await DraftManager.save_draft_attachment(
+                                                jira, message.ticket_key, original_draft, filename
+                                            )
                                     except Exception as rollback_err:
                                         logger.error(
                                             f"Failed to roll back draft attachment: {rollback_err}",
@@ -2354,6 +2369,7 @@ class OrchestratorWorker:
             )
 
         yolo_mode = ForgeLabel.YOLO in labels
+        direct_mode = "forge:direct-mode" in labels
 
         return {
             "ticket_key": message.ticket_key,
@@ -2368,6 +2384,7 @@ class OrchestratorWorker:
             "is_paused": False,
             "retry_count": message.retry_count,
             "yolo_mode": yolo_mode,
+            "direct_mode": direct_mode,
         }
 
     async def start(self) -> None:

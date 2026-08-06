@@ -37,6 +37,7 @@ class BaseState(TypedDict, total=False):
     feedback_comment: str | None
     revision_requested: bool
     yolo_mode: bool  # When True, approval gates auto-pass without human input
+    direct_mode: bool  # When True, directly provision tickets instead of drafting
 
     # Message history
     messages: Annotated[list[Any], add_messages]
