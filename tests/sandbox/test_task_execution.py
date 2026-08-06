@@ -112,7 +112,7 @@ class TestTaskExecutionSandbox:
     @pytest.mark.asyncio
     @patch("asyncio.create_subprocess_exec")
     async def test_execute_task_changes_successful_workflow(
-        self, mock_create_proc: AsyncMock
+        self, mock_create_proc: AsyncMock, mock_settings
     ) -> None:
         """Test the execute_task_changes workflow node with successful container execution."""
         # Arrange
@@ -139,7 +139,7 @@ class TestTaskExecutionSandbox:
                     "forge.workflow.nodes.task_takeover_execution.prepare_workspace",
                     return_value=(str(workspace_path), mock_git),
                 ),
-                patch("forge.workflow.nodes.task_takeover_execution.get_settings"),
+                patch("forge.workflow.nodes.task_takeover_execution.get_settings", return_value=mock_settings),
             ):
                 # Act
                 updated_state = await execute_task_changes(state)
@@ -167,7 +167,7 @@ class TestTaskExecutionSandbox:
     @pytest.mark.asyncio
     @patch("asyncio.create_subprocess_exec")
     async def test_build_and_test_recovery_workflow_iterative_self_correction(
-        self, mock_create_proc: AsyncMock
+        self, mock_create_proc: AsyncMock, mock_settings
     ) -> None:
         """Test build-and-test recovery workflow where compilation errors/test failures are fed back.
 
@@ -202,7 +202,7 @@ class TestTaskExecutionSandbox:
                     "forge.workflow.nodes.task_takeover_execution.prepare_workspace",
                     return_value=(str(workspace_path), mock_git_fail),
                 ),
-                patch("forge.workflow.nodes.task_takeover_execution.get_settings"),
+                patch("forge.workflow.nodes.task_takeover_execution.get_settings", return_value=mock_settings),
             ):
                 # Act
                 state_after_fail = await execute_task_changes(state_initial)
@@ -237,7 +237,7 @@ class TestTaskExecutionSandbox:
                     "forge.workflow.nodes.task_takeover_execution.prepare_workspace",
                     return_value=(str(workspace_path), mock_git_success),
                 ),
-                patch("forge.workflow.nodes.task_takeover_execution.get_settings"),
+                patch("forge.workflow.nodes.task_takeover_execution.get_settings", return_value=mock_settings),
             ):
                 # Act
                 state_after_success = await execute_task_changes(state_after_fail)
