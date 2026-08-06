@@ -127,6 +127,7 @@ class TestImplementationStatusInstrumentationStartComment:
 
         # Verify post_status_comment was called before container_run
         assert call_order.index("post_status_comment") < call_order.index("container_run")
+        assert mock_runner.run.await_args.kwargs["policy_key"] == "implement_task"
 
 
 class TestImplementationStatusInstrumentationCompletionComment:

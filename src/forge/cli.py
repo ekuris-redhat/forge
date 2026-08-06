@@ -500,41 +500,69 @@ async def cmd_project_setup(args: argparse.Namespace) -> int:
     jira = JiraClient()
 
     try:
+
+        def parse_repo(raw: str) -> str | dict:
+            if raw.startswith("{"):
+                try:
+                    repo = json.loads(raw)
+                except Exception as exc:
+                    raise ValueError(f"failed to parse JSON repo config {raw!r}: {exc}") from exc
+                if not isinstance(repo, dict) or "name" not in repo:
+                    raise ValueError(
+                        f"JSON repo config must be a dictionary with a 'name' key, got: {raw!r}"
+                    )
+                name = repo["name"]
+                if not isinstance(name, str) or "/" not in name:
+                    raise ValueError(f"repo name in JSON config must contain '/', got: {name!r}")
+                return repo
+            if "/" not in raw:
+                raise ValueError(f"invalid repo format (expected owner/repo): {raw!r}")
+            return raw
+
+        def repo_name(repo: str | dict) -> str | None:
+            return repo if isinstance(repo, str) else repo.get("name")
+
         # forge.repos
-        if args.repo:
-            parsed_repos = []
-            for r in args.repo:
-                if r.startswith("{"):
-                    try:
-                        repo_dict = json.loads(r)
-                    except Exception as e:
-                        print(
-                            f"Error: failed to parse JSON repo config {r!r}: {e}",
-                            file=sys.stderr,
-                        )
-                        return 1
-                    if not isinstance(repo_dict, dict) or "name" not in repo_dict:
-                        print(
-                            f"Error: JSON repo config must be a dictionary with a 'name' key, got: {r!r}",
-                            file=sys.stderr,
-                        )
-                        return 1
-                    name = repo_dict["name"]
-                    if not isinstance(name, str) or "/" not in name:
-                        print(
-                            f"Error: repo name in JSON config must contain '/', got: {name!r}",
-                            file=sys.stderr,
-                        )
-                        return 1
-                    parsed_repos.append(repo_dict)
+        add_repos = getattr(args, "add_repo", None) or []
+        remove_repos = getattr(args, "remove_repo", None) or []
+        if args.repo and (add_repos or remove_repos):
+            print(
+                "Error: --repo replaces the full list and cannot be combined with "
+                "--add-repo or --remove-repo",
+                file=sys.stderr,
+            )
+            return 1
+        if args.repo or add_repos or remove_repos:
+            try:
+                if args.repo:
+                    parsed_repos = [parse_repo(raw) for raw in args.repo]
                 else:
-                    if "/" not in r:
+                    existing = await jira.get_project_property(project_key, "forge.repos")
+                    if not isinstance(existing, list):
                         print(
-                            f"Error: invalid repo format (expected owner/repo): {r!r}",
+                            "Error: existing forge.repos must be a list before using incremental options",
                             file=sys.stderr,
                         )
                         return 1
-                    parsed_repos.append(r)
+                    parsed_repos = list(existing)
+                    additions = [parse_repo(raw) for raw in add_repos]
+                    removals = {repo_name(parse_repo(raw)) for raw in remove_repos}
+                    parsed_repos = [r for r in parsed_repos if repo_name(r) not in removals]
+                    indexes = {repo_name(r): i for i, r in enumerate(parsed_repos)}
+                    for addition in additions:
+                        name = repo_name(addition)
+                        if name in indexes:
+                            parsed_repos[indexes[name]] = addition
+                        else:
+                            indexes[name] = len(parsed_repos)
+                            parsed_repos.append(addition)
+            except ValueError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 1
+
+            if not parsed_repos:
+                print("Error: forge.repos cannot be empty", file=sys.stderr)
+                return 1
 
             await jira.set_project_property(project_key, "forge.repos", parsed_repos)
             print(f"[OK] forge.repos = {parsed_repos}")
@@ -551,7 +579,17 @@ async def cmd_project_setup(args: argparse.Namespace) -> int:
             print(f"[OK] forge.default_repo = {args.default_repo!r}")
 
         # forge.prd_proposals_repo — opt-in / opt-out for PRD approval via GitHub PR
-        if args.prd_proposals_repo is not None:
+        remove_prd_repo = getattr(args, "remove_prd_proposals_repo", False)
+        if remove_prd_repo and args.prd_proposals_repo is not None:
+            print(
+                "Error: --remove-prd-proposals-repo cannot be combined with --prd-proposals-repo",
+                file=sys.stderr,
+            )
+            return 1
+        if remove_prd_repo:
+            await jira.delete_project_property(project_key, "forge.prd_proposals_repo")
+            print("[OK] forge.prd_proposals_repo removed (PRD approval via Jira labels)")
+        elif args.prd_proposals_repo is not None:
             if args.prd_proposals_repo == "":
                 await jira.delete_project_property(project_key, "forge.prd_proposals_repo")
                 print("[OK] forge.prd_proposals_repo removed (PRD approval via Jira labels)")
@@ -568,7 +606,17 @@ async def cmd_project_setup(args: argparse.Namespace) -> int:
                 print(f"[OK] forge.prd_proposals_repo = {args.prd_proposals_repo!r}")
 
         # forge.prd_proposals_path — base directory for enhancement folders
-        if args.prd_proposals_path is not None:
+        remove_prd_path = getattr(args, "remove_prd_proposals_path", False)
+        if remove_prd_path and args.prd_proposals_path is not None:
+            print(
+                "Error: --remove-prd-proposals-path cannot be combined with --prd-proposals-path",
+                file=sys.stderr,
+            )
+            return 1
+        if remove_prd_path:
+            await jira.delete_project_property(project_key, "forge.prd_proposals_path")
+            print("[OK] forge.prd_proposals_path removed (reset to default: repo root)")
+        elif args.prd_proposals_path is not None:
             if args.prd_proposals_path == "":
                 await jira.delete_project_property(project_key, "forge.prd_proposals_path")
                 print("[OK] forge.prd_proposals_path removed (reset to default: repo root)")
@@ -621,7 +669,17 @@ async def cmd_project_setup(args: argparse.Namespace) -> int:
                 entry["path"] = ""
             skill_entries.append(entry)
 
-        if skill_entries:
+        remove_skills = getattr(args, "remove_skills", False)
+        if remove_skills and (args.skills_config or args.add_skill):
+            print(
+                "Error: --remove-skills cannot be combined with --skills-config or --add-skill",
+                file=sys.stderr,
+            )
+            return 1
+        if remove_skills:
+            await jira.delete_project_property(project_key, "forge.skills")
+            print("[OK] forge.skills removed")
+        elif skill_entries:
             from forge.skills.models import SkillEntry
 
             validated = []
@@ -636,20 +694,137 @@ async def cmd_project_setup(args: argparse.Namespace) -> int:
             await jira.set_project_property(project_key, "forge.skills", skill_entries)
             print(f"[OK] forge.skills = {len(skill_entries)} entries")
 
+        # forge.model_policy — exact per-stage project overrides. User
+        # workstations validate syntax only; the Forge runtime owns and
+        # authorizes the deployment's connection/model allowlist.
+        model_policy: dict[str, Any] = {}
+        remove_models = getattr(args, "remove_model", None) or []
+        clear_model_policy = getattr(args, "clear_model_policy", False)
+        clear_model_default = getattr(args, "clear_model_default", False)
+        if clear_model_policy and (args.model_policy or args.model or remove_models):
+            print(
+                "Error: --clear-model-policy cannot be combined with stage model options",
+                file=sys.stderr,
+            )
+            return 1
+        if clear_model_default and args.model_all:
+            print(
+                "Error: --clear-model-default cannot be combined with --model-all",
+                file=sys.stderr,
+            )
+            return 1
+        if clear_model_policy:
+            await jira.delete_project_property(project_key, "forge.model_policy")
+            print("[OK] forge.model_policy deleted")
+        elif args.model_policy:
+            try:
+                model_policy = json.loads(args.model_policy)
+            except json.JSONDecodeError as exc:
+                print(f"Error: --model-policy is not valid JSON: {exc}", file=sys.stderr)
+                return 1
+            if not isinstance(model_policy, dict):
+                print("Error: --model-policy must be a JSON object", file=sys.stderr)
+                return 1
+        elif args.model or remove_models:
+            existing_policy = await jira.get_project_property(project_key, "forge.model_policy")
+            if existing_policy is not None and not isinstance(existing_policy, dict):
+                print(
+                    "Error: existing forge.model_policy must be a JSON object",
+                    file=sys.stderr,
+                )
+                return 1
+            model_policy = dict(existing_policy or {})
+        for policy_key in remove_models:
+            if not policy_key:
+                print("Error: --remove-model requires a non-empty policy key", file=sys.stderr)
+                return 1
+            model_policy.pop(policy_key, None)
+        for raw in args.model or []:
+            policy_key, separator, target = raw.partition("=")
+            connection, target_separator, model = target.partition(":")
+            if (
+                not separator
+                or not target_separator
+                or not policy_key
+                or not connection
+                or not model
+            ):
+                print(
+                    "Error: --model must use NODE_OR_SKILL=CONNECTION:MODEL",
+                    file=sys.stderr,
+                )
+                return 1
+            model_policy[policy_key] = {"connection": connection, "model": model}
+        if args.model_policy or args.model or remove_models:
+            from forge.models.model_policy import KNOWN_MODEL_POLICY_KEYS, ModelTarget
+
+            try:
+                unknown_keys = set(model_policy) - set(KNOWN_MODEL_POLICY_KEYS)
+                if unknown_keys:
+                    raise ValueError(f"Unknown model policy key '{sorted(unknown_keys)[0]}'")
+                for key, target in model_policy.items():
+                    if not key:
+                        raise ValueError("Model policy keys must not be empty")
+                    ModelTarget.model_validate(target)
+            except ValueError as exc:
+                print(f"Error: invalid model policy: {exc}", file=sys.stderr)
+                return 1
+            if model_policy:
+                await jira.set_project_property(project_key, "forge.model_policy", model_policy)
+                print(f"[OK] forge.model_policy = {len(model_policy)} overrides")
+            else:
+                await jira.delete_project_property(project_key, "forge.model_policy")
+                print("[OK] forge.model_policy deleted (no overrides remain)")
+
+        if args.model_all:
+            from forge.models.model_policy import ModelTarget
+
+            connection, separator, model = args.model_all.partition(":")
+            if not separator or not connection or not model:
+                print("Error: --model-all must use CONNECTION:MODEL", file=sys.stderr)
+                return 1
+            model_default = {"connection": connection, "model": model}
+            try:
+                ModelTarget.model_validate(model_default)
+            except ValueError as exc:
+                print(f"Error: invalid model default: {exc}", file=sys.stderr)
+                return 1
+            await jira.set_project_property(project_key, "forge.model_default", model_default)
+            print("[OK] forge.model_default set")
+        elif clear_model_default:
+            await jira.delete_project_property(project_key, "forge.model_default")
+            print("[OK] forge.model_default deleted")
+
         if not any(
             [
                 args.repo,
+                add_repos,
+                remove_repos,
                 args.default_repo,
                 args.prd_proposals_repo is not None,
                 args.prd_proposals_path is not None,
                 args.skills_config,
                 args.add_skill,
+                remove_prd_repo,
+                remove_prd_path,
+                remove_skills,
+                args.model_policy,
+                args.model,
+                args.model_all,
+                remove_models,
+                clear_model_policy,
+                clear_model_default,
             ]
         ):
             print(
                 "Nothing to set — specify at least one of: "
-                "--repo, --default-repo, --prd-proposals-repo, "
-                "--prd-proposals-path, --skills-config, --add-skill"
+                "--repo, --add-repo, --remove-repo, --default-repo, "
+                "--prd-proposals-repo, --remove-prd-proposals-repo, "
+                "--prd-proposals-path, --remove-prd-proposals-path, "
+                "--skills-config, --add-skill, --remove-skills"
+                ", --model-policy, --model, --model-all"
+                ", --remove-model, --clear-model-policy"
+                ", --clear-model-default"
             )
             return 1
 
@@ -698,6 +873,8 @@ async def cmd_get_config(args: argparse.Namespace) -> int:
             "forge.prd_proposals_path",
             "forge.skills",
             "forge.references",
+            "forge.model_policy",
+            "forge.model_default",
         ]
 
         # Combine standard keys with extra discovered keys (avoid duplicates, preserve order/sort)
@@ -835,6 +1012,28 @@ async def cmd_get_config(args: argparse.Namespace) -> int:
             effective_config["forge.references"] = {"value": refs_val, "source": "project"}
         else:
             effective_config["forge.references"] = {"value": None, "source": "unset"}
+
+        model_policy_val = project_properties.get("forge.model_policy")
+        effective_config["forge.model_policy"] = {
+            "value": model_policy_val,
+            "source": "project" if model_policy_val is not None else "unset",
+        }
+        model_default_val = project_properties.get("forge.model_default")
+        effective_config["forge.model_default"] = {
+            "value": model_default_val,
+            "source": "project" if model_default_val is not None else "unset",
+        }
+
+        if getattr(args, "models", False):
+            try:
+                resolved = settings.model_policy_resolver().resolve_all(
+                    model_policy_val or {}, model_default_val
+                )
+            except ValueError as exc:
+                print(f"Error: invalid model policy: {exc}", file=sys.stderr)
+                return 1
+            print(json.dumps(resolved, indent=2))
+            return 0
 
         # 7. Discovered keys
         for key in extra_keys:
@@ -1216,6 +1415,18 @@ Examples:
         help="GitHub repo in owner/repo format (repeatable, sets forge.repos)",
     )
     setup_parser.add_argument(
+        "--add-repo",
+        action="append",
+        metavar="OWNER/REPO",
+        help="Add or update one GitHub repo while preserving the existing forge.repos list",
+    )
+    setup_parser.add_argument(
+        "--remove-repo",
+        action="append",
+        metavar="OWNER/REPO",
+        help="Remove one GitHub repo while preserving the rest of forge.repos",
+    )
+    setup_parser.add_argument(
         "--default-repo",
         metavar="OWNER/REPO",
         help="Primary GitHub repo (sets forge.default_repo)",
@@ -1230,6 +1441,11 @@ Examples:
         ),
     )
     setup_parser.add_argument(
+        "--remove-prd-proposals-repo",
+        action="store_true",
+        help="Remove forge.prd_proposals_repo (use Jira labels for PRD approval)",
+    )
+    setup_parser.add_argument(
         "--prd-proposals-path",
         metavar="PATH",
         default=None,
@@ -1238,6 +1454,11 @@ Examples:
             "(sets forge.prd_proposals_path). Default is repo root. "
             "Pass empty string to reset to default."
         ),
+    )
+    setup_parser.add_argument(
+        "--remove-prd-proposals-path",
+        action="store_true",
+        help="Remove forge.prd_proposals_path (reset to the configured default)",
     )
     setup_parser.add_argument(
         "--add-skill",
@@ -1252,6 +1473,53 @@ Examples:
         "--skills-config",
         metavar="JSON",
         help="Full forge.skills value as a JSON array of SkillEntry objects",
+    )
+    setup_parser.add_argument(
+        "--remove-skills",
+        action="store_true",
+        help="Remove the optional forge.skills project configuration",
+    )
+    setup_parser.add_argument(
+        "--model",
+        action="append",
+        metavar="NODE_OR_SKILL=CONNECTION:MODEL",
+        help="Add or replace one exact model override while preserving other project overrides",
+    )
+    setup_parser.add_argument(
+        "--model-all",
+        "--all-stages-model",
+        metavar="CONNECTION:MODEL",
+        help=(
+            "Set the separate project-wide model fallback in forge.model_default; "
+            "explicit --model stage overrides win"
+        ),
+    )
+    setup_parser.add_argument(
+        "--model-policy",
+        metavar="JSON",
+        help=(
+            "Replace the full forge.model_policy JSON object; later --model entries overwrite "
+            "matching keys"
+        ),
+    )
+    setup_parser.add_argument(
+        "--remove-model",
+        action="append",
+        metavar="POLICY_KEY",
+        help=(
+            "Remove one project model override while preserving the others; repeatable, "
+            "and later --model entries win"
+        ),
+    )
+    setup_parser.add_argument(
+        "--clear-model-policy",
+        action="store_true",
+        help="Delete the complete forge.model_policy Jira project property",
+    )
+    setup_parser.add_argument(
+        "--clear-model-default",
+        action="store_true",
+        help="Delete the project-wide forge.model_default fallback",
     )
 
     # get-config command
@@ -1278,6 +1546,11 @@ Examples:
         "--property",
         metavar="name",
         help="Retrieve a single resolved property value (case-insensitive)",
+    )
+    group.add_argument(
+        "--models",
+        action="store_true",
+        help="Validate and print resolved non-secret model targets for all known stages",
     )
 
     args = parser.parse_args(argv)
